@@ -1,8 +1,8 @@
 '''
-Author:     Sai Vignesh Golla
+Author:     Suraj
 LinkedIn:   https://www.linkedin.com/in/saivigneshgolla/
 
-Copyright (C) 2024 Sai Vignesh Golla
+Copyright (C) 2024 Suraj
 
 License:    GNU Affero General Public License
             https://www.gnu.org/licenses/agpl-3.0.en.html
@@ -10,7 +10,7 @@ License:    GNU Affero General Public License
 GitHub:     https://github.com/GodsScion/Auto_job_applier_linkedIn
 
 version:    24.12.29.12.30
-'''
+''' 
 
 
 from config.secrets import *
@@ -200,13 +200,22 @@ def ai_extract_skills(client: OpenAI, job_description: str, stream: bool = strea
     * Returns a `dict` object representing JSON response
     """
     print_lg("-- EXTRACTING SKILLS FROM JOB DESCRIPTION")
-    try:        
+    try:
+        import time
+        from modules.dashboard import metrics as _m
         prompt = extract_skills_prompt.format(job_description)
 
         messages = [{"role": "user", "content": prompt}]
-        ##> ------ Dheeraj Deshwal : dheeraj20194@iiitd.ac.in/dheerajdeshwal9811@gmail.com - Bug fix ------
-        return ai_completion(client, messages, response_format=extract_skills_response_format, stream=stream)
-    ##<
+        start = time.perf_counter()
+        result = ai_completion(client, messages, response_format=extract_skills_response_format, stream=stream)
+        duration = time.perf_counter() - start
+        try:
+            _m.append_sample('jd_analysis', duration)
+            _m.set_metric('jd_last', duration)
+            _m.inc('jobs_processed')
+        except Exception:
+            pass
+        return result
     except Exception as e:
         ai_error_alert(f"Error occurred while extracting skills from job description. {apiCheckInstructions}", e)
 
@@ -218,6 +227,11 @@ def ai_answer_question(
     job_description: str = None, about_company: str = None, user_information_all: str = None,
     stream: bool = stream_output
 ) -> dict | ValueError:
+    # Instrument question answering duration into metrics
+    import time
+    from modules.dashboard import metrics as _m
+    _m.inc('questions_answered_total')
+    start_time = time.perf_counter()
     """
     Function to generate AI-based answers for questions in a form.
     
@@ -247,6 +261,12 @@ def ai_answer_question(
         messages = [{"role": "user", "content": prompt}]
         print_lg("Prompt we are passing to AI: ", prompt)
         response =  ai_completion(client, messages, stream=stream)
+        duration = time.perf_counter() - start_time
+        try:
+            _m.append_sample('question_answer_time', duration)
+            _m.set_metric('question_last', duration)
+        except Exception:
+            pass
         # print_lg("Response from AI: ", response)
         return response
     except Exception as e:
@@ -255,12 +275,26 @@ def ai_answer_question(
 
 
 def ai_gen_experience(
-    client: OpenAI, 
-    job_description: str, about_company: str, 
+    client: OpenAI,
+    job_description: str, about_company: str,
     required_skills: dict, user_experience: dict,
     stream: bool = stream_output
 ) -> dict | ValueError:
-    pass
+    """
+    Function to generate experience description based on job requirements.
+    * Takes in `client` of type `OpenAI`
+    * Takes in job and user details
+    * Returns a `dict` object with generated experience
+    """
+    print_lg("-- GENERATING EXPERIENCE DESCRIPTION")
+    try:
+        prompt = f"Based on the following job description and required skills, generate a professional experience description that highlights relevant experience:\n\nJob Description: {job_description}\n\nRequired Skills: {required_skills}\n\nUser Experience: {user_experience}\n\nAbout Company: {about_company}\n\nGenerate a concise, professional experience description that would be suitable for a resume or application."
+
+        messages = [{"role": "user", "content": prompt}]
+        result = ai_completion(client, messages, stream=stream)
+        return {"experience_description": result}
+    except Exception as e:
+        ai_error_alert(f"Error occurred while generating experience description. {apiCheckInstructions}", e)
 
 
 
@@ -290,29 +324,41 @@ def ai_generate_coverletter(
 
 ##< Evaluation Agents
 def ai_evaluate_resume(
-    client: OpenAI, 
+    client: OpenAI,
     job_description: str, about_company: str, required_skills: dict,
     resume: str,
     stream: bool = stream_output
 ) -> dict | ValueError:
-    pass
+    """
+    Function to evaluate resume against job requirements.
+    """
+    print_lg("-- EVALUATING RESUME")
+    try:
+        prompt = f"Evaluate the following resume against the job description and provide a score out of 100 and feedback:\n\nJob Description: {job_description}\n\nRequired Skills: {required_skills}\n\nAbout Company: {about_company}\n\nResume: {resume}\n\nProvide a JSON response with 'score' and 'feedback' fields."
 
-
-
-def ai_evaluate_resume(
-    client: OpenAI, 
-    job_description: str, about_company: str, required_skills: dict,
-    resume: str,
-    stream: bool = stream_output
-) -> dict | ValueError:
-    pass
+        messages = [{"role": "user", "content": prompt}]
+        result = ai_completion(client, messages, response_format={"type": "json_object"}, stream=stream)
+        return result
+    except Exception as e:
+        ai_error_alert(f"Error occurred while evaluating resume. {apiCheckInstructions}", e)
 
 
 
 def ai_check_job_relevance(
-    client: OpenAI, 
+    client: OpenAI,
     job_description: str, about_company: str,
     stream: bool = stream_output
 ) -> dict:
-    pass
+    """
+    Function to check job relevance based on description and company info.
+    """
+    print_lg("-- CHECKING JOB RELEVANCE")
+    try:
+        prompt = f"Analyze the following job and determine its relevance for a software developer role:\n\nJob Description: {job_description}\n\nAbout Company: {about_company}\n\nProvide a JSON response with 'relevance_score' (0-100) and 'reasoning'."
+
+        messages = [{"role": "user", "content": prompt}]
+        result = ai_completion(client, messages, response_format={"type": "json_object"}, stream=stream)
+        return result
+    except Exception as e:
+        ai_error_alert(f"Error occurred while checking job relevance. {apiCheckInstructions}", e)
 #>

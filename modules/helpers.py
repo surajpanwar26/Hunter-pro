@@ -1,8 +1,8 @@
 '''
-Author:     Sai Vignesh Golla
-LinkedIn:   https://www.linkedin.com/in/saivigneshgolla/
+Author:     Suraj Panwar
+LinkedIn:   https://www.linkedin.com/in/surajpanwar26/
 
-Copyright (C) 2024 Sai Vignesh Golla
+Copyright (C) 2024 Suraj Panwar
 
 License:    GNU Affero General Public License
             https://www.gnu.org/licenses/agpl-3.0.en.html
@@ -127,6 +127,15 @@ def print_lg(*msgs: str | dict, end: str = "\n", pretty: bool = False, flush: bo
             pprint(message) if pretty else print(message, end=end, flush=flush)
             with open(__logs_file_path, 'a+', encoding="utf-8") as file:
                 file.write(str(message) + end)
+            # Publish to dashboard if available (non-blocking)
+            try:
+                from modules.dashboard import log_handler
+                try:
+                    log_handler.publish(str(message))
+                except Exception:
+                    pass
+            except Exception:
+                pass
     except Exception as e:
         trail = f'Skipped saving this message: "{message}" to log.txt!' if from_critical else "We'll try one more time to log..."
         alert(f"log.txt in {logs_folder_path} is open or is occupied by another program! Please close it! {trail}", "Failed Logging")

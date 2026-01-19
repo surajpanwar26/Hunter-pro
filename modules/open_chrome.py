@@ -1,8 +1,8 @@
 '''
-Author:     Sai Vignesh Golla
-LinkedIn:   https://www.linkedin.com/in/saivigneshgolla/
+Author:     Suraj Panwar
+LinkedIn:   https://www.linkedin.com/in/surajpanwar26/
 
-Copyright (C) 2024 Sai Vignesh Golla
+Copyright (C) 2024 Suraj Panwar
 
 License:    GNU Affero General Public License
             https://www.gnu.org/licenses/agpl-3.0.en.html

@@ -163,7 +163,7 @@ Once your code is tested, your changes will be merged to the `main` branch in ne
   2. Examples for proper attestation:
   New feature example
   ```python
-  ##> ------ Sai Vignesh Golla : godsscion - Feature ------
+  ##> ------ Suraj Panwar : surajpanwar26 - Feature ------
   def alert_box(title: str, message: str) -> None:
     '''
     Shows an alert box with the given `title` and `message`.
@@ -182,7 +182,7 @@ Once your code is tested, your changes will be merged to the `main` branch in ne
     '''
     from pyautogui import alert
 
-  ##> ------ Sai Vignesh Golla : saivigneshgolla@outlook.com - Bug fix ------
+  ##> ------ Suraj Panwar : surajpanwar26@users.noreply.github.com - Bug fix ------
     return alert(message, title)
   ##<
   ```
@@ -276,9 +276,20 @@ Please consider the following:
 - **Chrome Driver**: This program utilizes the Chrome Driver for web scraping. Please review and comply with the terms and conditions specified for Chrome Driver.
 
 
+## Dashboard
+
+A Tkinter-based dashboard is available to start/stop the bot and view live logs, metrics, and progress.
+
+- Install dashboard requirements: `pip install -r requirements.txt`
+- Launch: `python run_dashboard.py`
+
+Ollama integration (optional): The dashboard can use your local Ollama runtime for Qwen-3-14B if `ollama` is available on PATH. The project will fallback gracefully if `ollama` is not installed.
+
+---
+
 ## ⚖️ License
 
-Copyright (C) 2024 Sai Vignesh Golla
+Copyright (C) 2024 Suraj Panwar
 
 This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 

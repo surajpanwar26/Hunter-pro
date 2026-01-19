@@ -1,13 +1,13 @@
 '''
-Author:     Sai Vignesh Golla
-LinkedIn:   https://www.linkedin.com/in/saivigneshgolla/
+Author:     Suraj Panwar
+LinkedIn:   https://www.linkedin.com/in/surajpanwar26/
 
-Copyright (C) 2024 Sai Vignesh Golla
+Copyright (C) 2024 Suraj Panwar
 
 License:    GNU Affero General Public License
             https://www.gnu.org/licenses/agpl-3.0.en.html
             
-GitHub:     https://github.com/GodsScion/Auto_job_applier_linkedIn
+GitHub:     https://github.com/surajpanwar26/Auto_job_applier_linkedIn
 
 version:    24.12.29.12.30
 '''
@@ -97,6 +97,44 @@ about_company_for_ai = None # TODO extract about company for AI
 ##<
 
 #>
+
+
+# Runner control helpers
+import threading
+_bot_thread: threading.Thread | None = None
+_stop_requested = False
+
+def start_bot_thread() -> bool:
+    """Start the bot in a background thread. Returns False if already running."""
+    global _bot_thread, _stop_requested
+    if _bot_thread and _bot_thread.is_alive():
+        return False
+    _stop_requested = False
+    _bot_thread = threading.Thread(target=main, daemon=True)
+    _bot_thread.start()
+    return True
+
+
+def stop_bot() -> None:
+    """Request stop and attempt to quit driver to exit main loop."""
+    global _stop_requested, run_non_stop
+    _stop_requested = True
+    try:
+        run_non_stop = False
+    except Exception:
+        pass
+    try:
+        if 'driver' in globals() and driver:
+            try:
+                driver.quit()
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
+def is_bot_running() -> bool:
+    return _bot_thread is not None and _bot_thread.is_alive()
 
 
 #< Login Functions
@@ -884,9 +922,12 @@ def apply_to_jobs(search_terms: list[str]) -> None:
 
             
                 for job in job_listings:
+                    import time
                     if keep_screen_awake: pyautogui.press('shiftright')
                     if current_count >= switch_number: break
                     print_lg("\n-@-\n")
+
+                    job_start_time = time.perf_counter()
 
                     job_id,title,company,work_location,work_style,skip = get_job_main_details(job, blacklisted_companies, rejected_jobs)
                     
@@ -977,14 +1018,50 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                     if use_AI and description != "Unknown":
                         ##> ------ Yang Li : MARKYangL - Feature ------
                         try:
+                            import time
+                            from modules.dashboard import metrics as _dash_metrics
+                            ai_start = time.perf_counter()
                             if ai_provider.lower() == "openai":
                                 skills = ai_extract_skills(aiClient, description)
                             elif ai_provider.lower() == "deepseek":
                                 skills = deepseek_extract_skills(aiClient, description)
                             elif ai_provider.lower() == "gemini":
                                 skills = gemini_extract_skills(aiClient, description)
+                            elif ai_provider.lower() == "ollama":
+                                # Use local Ollama wrapper; prefer streaming if available
+                                try:
+                                    from modules.ai import ollama_integration as _oll
+                                    res = _oll.generate(description, timeout=120, stream=True)
+                                    if isinstance(res, str):
+                                        skills = res
+                                    else:
+                                        # res is an iterator
+                                        out = []
+                                        try:
+                                            from modules.dashboard import log_handler as _lh
+                                        except Exception:
+                                            _lh = None
+                                        for chunk in res:
+                                            text = str(chunk).strip()
+                                            out.append(text)
+                                            if _lh:
+                                                try:
+                                                    _lh.publish('[AI] ' + text)
+                                                except Exception:
+                                                    pass
+                                        skills = ' '.join(out)
+                                except Exception as e:
+                                    skills = f"[Ollama Error] {e}"
                             else:
                                 skills = "In Development"
+                            duration = time.perf_counter() - ai_start
+                            try:
+                                # record under 'jd_analysis' for dashboard time-series and keep legacy name
+                                _dash_metrics.append_sample('jd_analysis', duration)
+                                _dash_metrics.append_sample('jd_analysis_time', duration)
+                                _dash_metrics.inc('jd_analysis_count')
+                            except Exception:
+                                pass
                             print_lg(f"Extracted skills using {ai_provider} AI")
                         except Exception as e:
                             print_lg("Failed to extract skills:", e)
@@ -1072,9 +1149,40 @@ def apply_to_jobs(search_terms: list[str]) -> None:
 
                     print_lg(f'Successfully saved "{title} | {company}" job. Job ID: {job_id} info')
                     current_count += 1
-                    if application_link == "Easy Applied": easy_applied_count += 1
-                    else:   external_jobs_count += 1
+                    if application_link == "Easy Applied":
+                        easy_applied_count += 1
+                        try:
+                            from modules.dashboard import metrics as _dash_metrics
+                            _dash_metrics.inc('easy_applied')
+                        except Exception:
+                            pass
+                    else:
+                        external_jobs_count += 1
+                        try:
+                            from modules.dashboard import metrics as _dash_metrics
+                            _dash_metrics.inc('external_jobs')
+                        except Exception:
+                            pass
                     applied_jobs.add(job_id)
+
+                    # Job timing & ETA updates for dashboard metrics
+                    try:
+                        import time
+                        from modules.dashboard import metrics as _dash_metrics
+                        duration = time.perf_counter() - job_start_time
+                        _dash_metrics.append_sample('job_time', duration)
+                        _dash_metrics.inc('jobs_processed')
+                        jobs_done = _dash_metrics.get_metrics().get('jobs_processed', 0)
+                        eta = _dash_metrics.get_eta(jobs_done, max_jobs_to_process)
+                        _dash_metrics.set_metric('eta_seconds', eta if eta is not None else 0)
+                        if max_jobs_to_process and max_jobs_to_process > 0:
+                            percent = int(100 * jobs_done / max_jobs_to_process)
+                            _dash_metrics.set_metric('overall_progress', percent)
+                            # Keep JD & resume progress in sync for now
+                            _dash_metrics.set_metric('jd_progress', percent)
+                            _dash_metrics.set_metric('resume_progress', percent)
+                    except Exception:
+                        pass
 
 
 
@@ -1216,7 +1324,7 @@ def main() -> None:
             "Obstacles are those frightful things you see when you take your eyes off your goal. - Henry Ford",
             "The only limit to our realization of tomorrow will be our doubts of today. - Franklin D. Roosevelt"
             ])
-        msg = f"\n{quote}\n\n\nBest regards,\nSai Vignesh Golla\nhttps://www.linkedin.com/in/saivigneshgolla/\n\n"
+        msg = f"\n{quote}\n\n\nBest regards,\nSuraj Panwar\nhttps://www.linkedin.com/in/surajpanwar26/\n\n"
         pyautogui.alert(msg, "Exiting..")
         print_lg(msg,"Closing the browser...")
         if tabs_count >= 10:

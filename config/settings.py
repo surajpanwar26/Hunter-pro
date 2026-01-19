@@ -1,15 +1,9 @@
 '''
-Author:     Sai Vignesh Golla
-LinkedIn:   https://www.linkedin.com/in/saivigneshgolla/
+Author:     Suraj Panwar
 
-Copyright (C) 2024 Sai Vignesh Golla
-
-License:    GNU Affero General Public License
-            https://www.gnu.org/licenses/agpl-3.0.en.html
             
-GitHub:     https://github.com/GodsScion/Auto_job_applier_linkedIn
+GitHub:     https://github.com/surajpanwar26
 
-version:    24.12.29.12.30
 '''
 
 
@@ -57,6 +51,14 @@ generated_resume_path = "all resumes/" # (In Development)
 
 # >>>>>>>>>>> Global Settings <<<<<<<<<<<
 
+# Owner and dashboard
+OWNER = "Suraj Panwar"             # Display name to use in dashboards/exports
+enable_dashboard = True             # If True, dashboard module can be launched
+
+# If you know how many jobs you expect to process in a run, set this for better ETA estimates (0 = unknown)
+max_jobs_to_process = 0
+
+
 # Directory and name of the files where history of applied jobs is saved (Sentence after the last "/" will be considered as the file name).
 file_name = "all excels/all_applied_applications_history.csv"
 failed_file_name = "all excels/all_failed_applications_history.csv"
@@ -72,7 +74,7 @@ run_in_background = False           # True or False, Note: True or False are cas
 disable_extensions = False          # True or False, Note: True or False are case-sensitive
 
 # Run in safe mode. Set this true if chrome is taking too long to open or if you have multiple profiles in browser. This will open chrome in guest profile!
-safe_mode = False                   # True or False, Note: True or False are case-sensitive
+safe_mode = True                   # True or False, Note: True or False are case-sensitive
 
 # Do you want scrolling to be smooth or instantaneous? (Can reduce performance if True)
 smooth_scroll = False               # True or False, Note: True or False are case-sensitive
@@ -81,7 +83,7 @@ smooth_scroll = False               # True or False, Note: True or False are cas
 keep_screen_awake = True            # True or False, Note: True or False are case-sensitive (Note: Will temporarily deactivate when any application dialog boxes are present (Eg: Pause before submit, Help needed for a question..))
 
 # Run in undetected mode to bypass anti-bot protections (Preview Feature, UNSTABLE. Recommended to leave it as False)
-stealth_mode = True                # True or False, Note: True or False are case-sensitive
+stealth_mode = False                # True or False, Note: True or False are case-sensitive
 
 # Do you want to get alerts on errors related to AI API connection?
 showAiErrorAlerts = False            # True or False, Note: True or False are case-sensitive
@@ -112,6 +114,6 @@ As an independent developer, I pour my heart and soul into creating tools like t
 Your support, whether through donations big or small or simply spreading the word, means the world to me and helps keep this project alive and thriving.
 
 Gratefully yours 🙏🏻,
-Sai Vignesh Golla
+Suraj Panwar
 '''
 ############################################################################################################
