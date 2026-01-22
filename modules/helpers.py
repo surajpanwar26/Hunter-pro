@@ -19,6 +19,7 @@ import os
 import sys
 import json
 import pathlib
+import threading
 
 from time import sleep
 from random import randint
@@ -27,6 +28,10 @@ from pyautogui import alert
 from pprint import pprint
 
 from config.settings import logs_folder_path
+
+
+# Thread-safe logging lock
+_log_lock = threading.Lock()
 
 
 
@@ -118,30 +123,61 @@ def get_log_path():
 __logs_file_path = get_log_path()
 
 
+def chrome_setup_help_message() -> str:
+    return (
+        'Seems like either... '\
+        '\n\n1. Chrome is already running. '\
+        '\nA. Close all Chrome windows and try again. '\
+        '\n\n2. Google Chrome or Chromedriver is out dated. '\
+        '\nA. Update browser and Chromedriver (You can run "windows-setup.bat" in /setup folder for Windows PC to update Chromedriver)! '\
+        '\n\n3. If error occurred when using "stealth_mode", try reinstalling undetected-chromedriver. '\
+        '\nA. Open a terminal and use commands "pip uninstall undetected-chromedriver" and "pip install undetected-chromedriver". '\
+        '\n\n\nIf issue persists, try Safe Mode. Set, safe_mode = True in config.py '\
+        '\n\nPlease check GitHub discussions/support for solutions https://github.com/GodsScion/Auto_job_applier_linkedIn '\
+        '\n                                   OR '\
+        '\nReach out in discord ( https://discord.gg/fFp7uUzWCY )'
+    )
+
+
 def print_lg(*msgs: str | dict, end: str = "\n", pretty: bool = False, flush: bool = False, from_critical: bool = False) -> None:
     '''
     Function to log and print. **Note that, `end` and `flush` parameters are ignored if `pretty = True`**
+    Thread-safe implementation.
     '''
-    try:
-        for message in msgs:
-            pprint(message) if pretty else print(message, end=end, flush=flush)
-            with open(__logs_file_path, 'a+', encoding="utf-8") as file:
-                file.write(str(message) + end)
-            # Publish to dashboard if available (non-blocking)
-            try:
-                from modules.dashboard import log_handler
+    with _log_lock:
+        try:
+            for message in msgs:
+                pprint(message) if pretty else print(message, end=end, flush=flush)
                 try:
-                    log_handler.publish(str(message))
+                    with open(__logs_file_path, 'a+', encoding="utf-8") as file:
+                        file.write(str(message) + end)
+                except (IOError, PermissionError) as file_error:
+                    if not from_critical:
+                        print(f"Warning: Could not write to log file: {file_error}")
+                
+                # Publish to dashboard if available (non-blocking)
+                try:
+                    from modules.dashboard import log_handler
+                    try:
+                        log_handler.publish(str(message))
+                    except Exception:
+                        pass
                 except Exception:
                     pass
+        except Exception as e:
+            trail = f'Skipped saving this message: "{msgs}" to log.txt!' if from_critical else "We'll try one more time to log..."
+            try:
+                alert(f"log.txt in {logs_folder_path} is open or is occupied by another program! Please close it! {trail}", "Failed Logging")
             except Exception:
-                pass
-    except Exception as e:
-        trail = f'Skipped saving this message: "{message}" to log.txt!' if from_critical else "We'll try one more time to log..."
-        alert(f"log.txt in {logs_folder_path} is open or is occupied by another program! Please close it! {trail}", "Failed Logging")
-        if not from_critical:
-            critical_error_log("Log.txt is open or is occupied by another program!", e)
+                print(f"Logging error: {e}")
+            if not from_critical:
+                critical_error_log("Log.txt is open or is occupied by another program!", e)
 #>
+
+
+# Bot speed control - adjust these for speed vs human-like behavior
+BOT_SLOW_MODE = True  # Set to True for slower, more human-like behavior
+BASE_DELAY_MULTIPLIER = 1.0  # Multiplier for all delays (1.0 = normal speed, 1.5 = slower)
 
 
 def buffer(speed: int=0) -> None:
@@ -149,18 +185,32 @@ def buffer(speed: int=0) -> None:
     Function to wait within a period of selected random range.
     * Will not wait if input `speed <= 0`
     * Will wait within a random range of 
-      - `0.6 to 1.0 secs` if `1 <= speed < 2`
-      - `1.0 to 1.8 secs` if `2 <= speed < 3`
-      - `1.8 to speed secs` if `3 <= speed`
+      - `0.3 to 0.8 secs` if `1 <= speed < 2`
+      - `0.6 to 1.2 secs` if `2 <= speed < 3`
+      - `1.0 to speed secs` if `3 <= speed`
+    * When BOT_SLOW_MODE is True, delays are multiplied by BASE_DELAY_MULTIPLIER
     '''
     if speed<=0:
         return
-    elif speed <= 1 and speed < 2:
-        return sleep(randint(6,10)*0.1)
-    elif speed <= 2 and speed < 3:
-        return sleep(randint(10,18)*0.1)
+    
+    multiplier = BASE_DELAY_MULTIPLIER if BOT_SLOW_MODE else 1.0
+    
+    if speed >= 1 and speed < 2:
+        return sleep(randint(3, 8) * 0.1 * multiplier)
+    elif speed >= 2 and speed < 3:
+        return sleep(randint(6, 12) * 0.1 * multiplier)
     else:
-        return sleep(randint(18,round(speed)*10)*0.1)
+        return sleep(randint(10, max(12, round(speed) * 5)) * 0.1 * multiplier)
+
+
+def human_delay(min_sec: float = 0.3, max_sec: float = 1.0) -> None:
+    '''
+    Add a random human-like delay between actions.
+    Useful to make bot behavior less predictable.
+    '''
+    multiplier = BASE_DELAY_MULTIPLIER if BOT_SLOW_MODE else 1.0
+    delay = randint(int(min_sec * 100), int(max_sec * 100)) / 100.0 * multiplier
+    sleep(delay)
     
 
 def manual_login_retry(is_logged_in: callable, limit: int = 2) -> None:

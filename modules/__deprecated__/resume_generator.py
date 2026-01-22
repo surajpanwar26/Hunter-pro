@@ -26,13 +26,13 @@ def is_logged_in_GPT():
     try:
         WebDriverWait(driver,2).until(EC.presence_of_element_located((By.ID, "prompt-textarea")))
         return True
-    except Exception as e: 
+    except Exception: 
         print_lg("Didn't find Prompt text area! So highly likely that not logged in!")
         # print_lg(e)
     try:
         driver.find_element(By.XPATH, "//button[contains(., 'Log in')]")
         return False
-    except Exception as e:
+    except Exception:
         print_lg("Didn't find Log In button! Highly likely to be on Human Verification page!")
         # print_lg(e)
     if driver.current_url == "https://chat.openai.com/":
@@ -59,7 +59,7 @@ def login_GPT():
         buffer(gap)
         driver.find_element(By.XPATH, '//button[@type="submit" and contains(text(), "Continue") and (not(@aria-hidden) or @aria-hidden!="true")]').click()
         buffer(gap)
-    except Exception as e:
+    except Exception:
         print_lg("Sign in failed! Possibly due to Human Verification. Try logging in manually!")
         # print_lg(e)
 
@@ -68,7 +68,7 @@ def login_GPT():
         wait.until(EC.url_to_be("https://chat.openai.com/"))
         wait.until(EC.presence_of_element_located((By.ID, "prompt-textarea")))
         return print_lg("Login successful!")
-    except Exception as e:
+    except Exception:
         print_lg("Seems like login attempt failed! Possibly due to wrong credentials or already logged in or Human verification! Try logging in manually!")
         # print_lg(e)
         manual_login_retry(is_logged_in_GPT, 2)

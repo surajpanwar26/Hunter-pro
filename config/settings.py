@@ -28,9 +28,9 @@ follow_companies = False            # True or False, Note: True or False are cas
 # connect_request_message = ""       # Leave Empty to send connection request without personalized invitation (recommended to leave it empty, since you only get 10 per month without LinkedIn Premium*)
 
 # Do you want the program to run continuously until you stop it? (Beta)
-run_non_stop = False                # True or False, Note: True or False are case-sensitive
+run_non_stop = True                # True or False, Note: True or False are case-sensitive
 '''
-Note: Will be treated as False if `run_in_background = True`
+Note: Will be treated as False if `run_in_background = False`
 '''
 alternate_sortby = True             # True or False, Note: True or False are case-sensitive
 cycle_date_posted = True            # True or False, Note: True or False are case-sensitive
@@ -44,6 +44,83 @@ stop_date_cycle_at_24hr = True      # True or False, Note: True or False are cas
 
 # Give the path to the folder where all the generated resumes are to be stored
 generated_resume_path = "all resumes/" # (In Development)
+
+# Folder for master resume storage
+master_resume_folder = "all resumes/master resume/"
+
+# Resume Tailoring (Standalone + In-Flow)
+# Enable AI resume tailoring feature
+resume_tailoring_enabled = True
+# Ask for confirmation after filters are applied
+resume_tailoring_confirm_after_filters = True
+# Ask for a custom prompt before analyzing each JD
+resume_tailoring_prompt_before_jd = True
+
+# ============================================================================
+# RESUME TAILORING INSTRUCTIONS (Reference for AI behavior)
+# ============================================================================
+# CRITICAL RULES:
+# 1. DO NOT over-edit the resume - preserve originality and authenticity
+# 2. Reframe existing content to match JD keywords, but don't rewrite entirely
+# 3. MUST keep resume to exactly 1 PAGE - no exceptions
+# 4. PRESERVE the exact layout, format, and font styling of the master resume
+# 5. Only make subtle, strategic tweaks - not major overhauls
+# 6. Mirror JD keywords naturally within existing bullet points
+# 7. Never invent new experiences, skills, or achievements
+# ============================================================================
+
+resume_tailoring_default_instructions = """
+=== PRIORITY FOCUS (What to Optimize) ===
+
+1. Highlight my most relevant technical skills that match the job requirements
+2. Emphasize quantifiable achievements (metrics, percentages, scale)
+3. Mirror the exact keywords and terminology from the job description
+4. Ensure my summary/objective aligns with the target role
+5. Keep my strongest, most relevant experience bullets prominent
+
+Style Preferences:
+- Use strong action verbs (Led, Developed, Implemented, Optimized)
+- Maintain professional but confident tone
+- Keep bullet points concise and impactful
+
+
+=== CRITICAL CONSTRAINTS (How to Do It) ===
+
+1. PRESERVE ORIGINALITY:
+   - Do NOT over-edit or rewrite the resume
+   - Keep my authentic voice and writing style
+   - Only make subtle, strategic tweaks to existing content
+   - Reframe sentences to include JD keywords, but maintain original meaning
+
+2. ONE PAGE LIMIT:
+   - The tailored resume MUST fit on exactly 1 page
+   - Do not add new sections or significantly expand content
+   - If needed, trim less relevant details to maintain length
+
+3. MAINTAIN ORIGINAL FORMAT:
+   - Keep the EXACT same layout as the master resume
+   - Preserve all section headings and their order
+   - Maintain the same bullet point structure
+   - Do not change formatting, spacing, or organization
+
+4. KEYWORD OPTIMIZATION (Subtle):
+   - Naturally weave JD keywords into EXISTING bullet points
+   - Reorder skills to put JD-matching ones first
+   - Don't keyword-stuff - keep it natural and readable
+
+5. WHAT TO CHANGE:
+   - Reframe action verbs to match JD language
+   - Emphasize relevant achievements already present
+   - Adjust summary/objective to align with target role
+   - Reorder skills section to prioritize matching skills
+
+6. WHAT NOT TO CHANGE:
+   - Dates, company names, job titles
+   - Education details
+   - Contact information
+   - Overall structure and layout
+   - Fundamental meaning of achievements
+"""
 
 
 
@@ -65,7 +142,7 @@ failed_file_name = "all excels/all_failed_applications_history.csv"
 logs_folder_path = "logs/"
 
 # Set the maximum amount of time allowed to wait between each click in secs
-click_gap = 1                       # Enter max allowed secs to wait approximately. (Only Non Negative Integers Eg: 0,1,2,3,....)
+click_gap = 20                       # Enter max allowed secs to wait approximately. (Only Non Negative Integers Eg: 0,1,2,3,....)
 
 # If you want to see Chrome running then set run_in_background as False (May reduce performance). 
 run_in_background = False           # True or False, Note: True or False are case-sensitive ,   If True, this will make pause_at_failed_question, pause_before_submit and run_in_background as False
@@ -77,7 +154,7 @@ disable_extensions = False          # True or False, Note: True or False are cas
 safe_mode = True                   # True or False, Note: True or False are case-sensitive
 
 # Do you want scrolling to be smooth or instantaneous? (Can reduce performance if True)
-smooth_scroll = False               # True or False, Note: True or False are case-sensitive
+smooth_scroll = True                # True or False, Note: True or False are case-sensitive
 
 # If enabled (True), the program would keep your screen active and prevent PC from sleeping. Instead you could disable this feature (set it to false) and adjust your PC sleep settings to Never Sleep or a preferred time. 
 keep_screen_awake = True            # True or False, Note: True or False are case-sensitive (Note: Will temporarily deactivate when any application dialog boxes are present (Eg: Pause before submit, Help needed for a question..))

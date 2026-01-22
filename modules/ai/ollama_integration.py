@@ -1,12 +1,23 @@
-"""Ollama Qwen-3-14B wrapper with streaming support"""
+"""Ollama local model wrapper with streaming support"""
 import subprocess
 import shlex
-import threading
 import time
 from typing import Optional, Iterator
 
 OLLAMA_BINARY = "ollama"  # assumes `ollama` is on PATH
-MODEL_NAME = "qwen-3-14b"
+try:
+    from config.secrets import ollama_model as _OLLAMA_MODEL
+except Exception:
+    _OLLAMA_MODEL = "llama2:13b"
+
+MODEL_NAME = _OLLAMA_MODEL
+
+
+def set_model(model_name: str) -> None:
+    """Set the default Ollama model name for this process."""
+    global MODEL_NAME
+    if model_name:
+        MODEL_NAME = model_name
 
 
 def _read_process_stream(proc: subprocess.Popen) -> Iterator[str]:
@@ -27,11 +38,14 @@ def _read_process_stream(proc: subprocess.Popen) -> Iterator[str]:
 
 def stream_generate(prompt: str, timeout: int = 60, cmd_extra: Optional[str] = None) -> Iterator[str]:
     """Generator yielding incremental text from local `ollama` call."""
-    cmd = [OLLAMA_BINARY, 'run', MODEL_NAME, '--prompt', prompt]
+    cmd = [OLLAMA_BINARY, 'run', MODEL_NAME]
     if cmd_extra:
         cmd.extend(shlex.split(cmd_extra))
     try:
-        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding='utf-8', errors='replace')
+        if proc.stdin:
+            proc.stdin.write(prompt)
+            proc.stdin.close()
     except FileNotFoundError:
         yield "[Ollama Error] ollama binary not found on PATH"
         return
@@ -62,9 +76,9 @@ def generate(prompt: str, timeout: int = 60, stream: bool = False) -> str | Iter
     if stream:
         return stream_generate(prompt, timeout)
 
-    cmd = [OLLAMA_BINARY, 'run', MODEL_NAME, '--prompt', prompt]
+    cmd = [OLLAMA_BINARY, 'run', MODEL_NAME]
     try:
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        proc = subprocess.run(cmd, input=prompt, capture_output=True, text=True, timeout=timeout, encoding='utf-8', errors='replace')
         if proc.returncode == 0:
             text = proc.stdout.strip()
             try:

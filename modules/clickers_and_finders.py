@@ -13,7 +13,7 @@ version:    24.12.29.12.30
 ''' 
 
 from config.settings import click_gap, smooth_scroll
-from modules.helpers import buffer, print_lg, sleep
+from modules.helpers import buffer, print_lg, human_delay
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -21,8 +21,46 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.common.action_chains import ActionChains
+from selenium.common.exceptions import (
+    StaleElementReferenceException, 
+    ElementClickInterceptedException,
+    TimeoutException,
+    NoSuchElementException
+)
+from functools import wraps
+import time
+
+
+def retry_on_stale(max_retries: int = 3, delay: float = 0.5):
+    """
+    Decorator to retry operations that might fail due to stale elements.
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            last_exception = None
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except StaleElementReferenceException as e:
+                    last_exception = e
+                    if attempt < max_retries - 1:
+                        time.sleep(delay)
+                        continue
+                    print_lg(f"Stale element after {max_retries} retries in {func.__name__}")
+                except ElementClickInterceptedException as e:
+                    last_exception = e
+                    if attempt < max_retries - 1:
+                        time.sleep(delay)
+                        continue
+                    print_lg(f"Element click intercepted after {max_retries} retries in {func.__name__}")
+            if last_exception:
+                raise last_exception
+        return wrapper
+    return decorator
 
 # Click Functions
+@retry_on_stale(max_retries=3, delay=0.5)
 def wait_span_click(driver: WebDriver, text: str, time: float=5.0, click: bool=True, scroll: bool=True, scrollTop: bool=False) -> WebElement | bool:
     '''
     Finds the span element with the given `text`.
@@ -37,12 +75,18 @@ def wait_span_click(driver: WebDriver, text: str, time: float=5.0, click: bool=T
             button = WebDriverWait(driver,time).until(EC.presence_of_element_located((By.XPATH, './/span[normalize-space(.)="'+text+'"]')))
             if scroll:  scroll_to_view(driver, button, scrollTop)
             if click:
-                button.click()
+                try:
+                    button.click()
+                except ElementClickInterceptedException:
+                    # Try JavaScript click as fallback
+                    driver.execute_script("arguments[0].click();", button)
                 buffer(click_gap)
             return button
-        except Exception as e:
+        except (TimeoutException, NoSuchElementException):
             print_lg("Click Failed! Didn't find '"+text+"'")
-            # print_lg(e)
+            return False
+        except Exception as e:
+            print_lg(f"Unexpected error in wait_span_click for '{text}': {e}")
             return False
 
 def multi_sel(driver: WebDriver, texts: list, time: float=5.0) -> None:
@@ -59,7 +103,7 @@ def multi_sel(driver: WebDriver, texts: list, time: float=5.0) -> None:
             scroll_to_view(driver, button)
             button.click()
             buffer(click_gap)
-        except Exception as e:
+        except Exception:
             print_lg("Click Failed! Didn't find '"+text+"'")
             # print_lg(e)
 
@@ -75,7 +119,7 @@ def multi_sel_noWait(driver: WebDriver, texts: list, actions: ActionChains = Non
             scroll_to_view(driver, button)
             button.click()
             buffer(click_gap)
-        except Exception as e:
+        except Exception:
             if actions: company_search_click(driver,actions,text)
             else:   print_lg("Click Failed! Didn't find '"+text+"'")
             # print_lg(e)
@@ -90,7 +134,7 @@ def boolean_button_click(driver: WebDriver, actions: ActionChains, text: str) ->
         scroll_to_view(driver, button)
         actions.move_to_element(button).click().perform()
         buffer(click_gap)
-    except Exception as e:
+    except Exception:
         print_lg("Click Failed! Didn't find '"+text+"'")
         # print_lg(e)
 
@@ -109,9 +153,13 @@ def scroll_to_view(driver: WebDriver, element: WebElement, top: bool = False, sm
     - `top` will scroll to the `element` to top of the view.
     '''
     if top:
-        return driver.execute_script('arguments[0].scrollIntoView();', element)
+        result = driver.execute_script('arguments[0].scrollIntoView();', element)
+        human_delay(0.15, 0.35)  # Small delay after scroll
+        return result
     behavior = "smooth" if smooth_scroll else "instant"
-    return driver.execute_script('arguments[0].scrollIntoView({block: "center", behavior: "'+behavior+'" });', element)
+    result = driver.execute_script('arguments[0].scrollIntoView({block: "center", behavior: "'+behavior+'" });', element)
+    human_delay(0.15, 0.4)  # Small delay after scroll
+    return result
 
 # Enter input text functions
 def text_input_by_ID(driver: WebDriver, id: str, value: str, time: float=5.0) -> None | Exception:
@@ -149,19 +197,21 @@ def company_search_click(driver: WebDriver, actions: ActionChains, companyName: 
     wait_span_click(driver,"Add a company",1)
     search = driver.find_element(By.XPATH,"(.//input[@placeholder='Add a company'])[1]")
     search.send_keys(Keys.CONTROL + "a")
+    human_delay(0.3, 0.8)  # Brief pause before typing
     search.send_keys(companyName)
-    buffer(3)
+    human_delay(2.5, 4.0)  # Wait for search results to appear
     actions.send_keys(Keys.DOWN).perform()
+    human_delay(0.2, 0.5)
     actions.send_keys(Keys.ENTER).perform()
     print_lg(f'Tried searching and adding "{companyName}"')
 
 def text_input(actions: ActionChains, textInputEle: WebElement | bool, value: str, textFieldName: str = "Text") -> None | Exception:
     if textInputEle:
-        sleep(1)
+        human_delay(0.5, 1.2)  # Delay before typing like a human
         # actions.key_down(Keys.CONTROL).send_keys("a").key_up(Keys.CONTROL).perform()
         textInputEle.clear()
         textInputEle.send_keys(value.strip())
-        sleep(2)
+        human_delay(1.0, 2.0)  # Delay after typing
         actions.send_keys(Keys.ENTER).perform()
     else:
         print_lg(f'{textFieldName} input was not given!')

@@ -24,13 +24,20 @@ csv.field_size_limit(1000000)  # Set to 1MB instead of default 131KB
 
 from random import choice, shuffle, randint
 from datetime import datetime
+from time import sleep
 
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support.select import Select
 from selenium.webdriver.remote.webelement import WebElement
-from selenium.common.exceptions import NoSuchElementException, ElementClickInterceptedException, NoSuchWindowException, ElementNotInteractableException, WebDriverException
+from selenium.common.exceptions import (
+    NoSuchElementException, 
+    ElementClickInterceptedException, 
+    NoSuchWindowException, 
+    ElementNotInteractableException, 
+    WebDriverException
+)
 
 from config.personals import *
 from config.questions import *
@@ -38,20 +45,258 @@ from config.search import *
 from config.secrets import use_AI, username, password, ai_provider
 from config.settings import *
 
-from modules.open_chrome import *
+from modules.open_chrome import start_chrome, close_driver
 from modules.helpers import *
 from modules.clickers_and_finders import *
 from modules.validator import validate_config
+from modules.ai.prompt_safety import sanitize_prompt_input, wrap_delimited
+
+# Import fault tolerance utilities
+try:
+    from modules.fault_tolerance import (
+        retry_with_backoff, 
+        RetryConfig, 
+        safe_execute, 
+        get_ai_circuit_breaker,
+        get_selenium_circuit_breaker,
+        with_circuit_breaker
+    )
+    from modules.resource_manager import get_session_manager, get_resource_manager
+    FAULT_TOLERANCE_AVAILABLE = True
+except ImportError:
+    FAULT_TOLERANCE_AVAILABLE = False
+    # Fallback decorator if fault tolerance not available
+    def retry_with_backoff(*args, **kwargs):
+        def decorator(func):
+            return func
+        return decorator
+    
+    def safe_execute(func, *args, default=None, **kwargs):
+        try:
+            return func(*args, **kwargs)
+        except Exception:
+            return default
+
+# ============ LEARNED ANSWERS SYSTEM ============
+import json
+import tkinter as tk
+from tkinter import simpledialog, messagebox
+from threading import Thread, Event
+
+LEARNED_ANSWERS_FILE = os.path.join(os.path.dirname(__file__), "config", "learned_answers.json")
+
+def load_learned_answers() -> dict:
+    """Load previously learned answers from JSON file"""
+    try:
+        if os.path.exists(LEARNED_ANSWERS_FILE):
+            with open(LEARNED_ANSWERS_FILE, 'r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        print_lg(f"Warning: Could not load learned answers: {e}")
+    return {
+        "text_answers": {},
+        "select_answers": {},
+        "radio_answers": {},
+        "textarea_answers": {},
+        "checkbox_answers": {}
+    }
+
+def save_learned_answers(data: dict):
+    """Save learned answers to JSON file"""
+    try:
+        data["_last_updated"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(LEARNED_ANSWERS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+        print_lg(f"✅ Saved learned answer to {LEARNED_ANSWERS_FILE}")
+    except Exception as e:
+        print_lg(f"Warning: Could not save learned answers: {e}")
+
+def get_learned_answer(question: str, question_type: str) -> str | None:
+    """Get a previously learned answer for a question"""
+    data = load_learned_answers()
+    key = f"{question_type}_answers"
+    if key in data:
+        # Normalize question for matching (lowercase, strip whitespace)
+        normalized = question.lower().strip()
+        for saved_q, answer in data[key].items():
+            if saved_q.lower().strip() == normalized or normalized in saved_q.lower():
+                return answer
+    return None
+
+def save_learned_answer(question: str, answer: str, question_type: str):
+    """Save a new learned answer"""
+    data = load_learned_answers()
+    key = f"{question_type}_answers"
+    if key not in data:
+        data[key] = {}
+    data[key][question] = answer
+    save_learned_answers(data)
+
+# Global for user intervention
+_user_intervention_result = None
+_user_intervention_event = Event()
+
+def ask_user_for_answer(question: str, options: list = None, question_type: str = "text") -> str | None:
+    """
+    Show a popup dialog asking user for answer to unknown question.
+    Returns the answer or None if skipped.
+    """
+    global _user_intervention_result, _user_intervention_event
+    
+    _user_intervention_result = None
+    _user_intervention_event.clear()
+    
+    def show_dialog():
+        global _user_intervention_result
+        try:
+            root = tk.Tk()
+            root.withdraw()  # Hide main window
+            root.attributes('-topmost', True)
+            
+            # Build message
+            msg = f"🤖 Unknown Question Encountered!\n\n"
+            msg += f"Question: {question}\n\n"
+            if options:
+                msg += f"Available Options:\n"
+                for i, opt in enumerate(options, 1):
+                    msg += f"  {i}. {opt}\n"
+                msg += "\n"
+            msg += f"Type: {question_type}\n\n"
+            msg += "Please provide an answer (or click Cancel to skip):"
+            
+            if options and question_type in ["select", "radio"]:
+                # Show choice dialog for select/radio
+                result = simpledialog.askstring(
+                    "📝 User Input Required",
+                    msg,
+                    parent=root
+                )
+            else:
+                # Show text input for text/textarea
+                result = simpledialog.askstring(
+                    "📝 User Input Required",
+                    msg,
+                    parent=root
+                )
+            
+            _user_intervention_result = result
+            root.destroy()
+        except Exception as e:
+            print_lg(f"Dialog error: {e}")
+            _user_intervention_result = None
+        finally:
+            _user_intervention_event.set()
+    
+    # Run dialog in separate thread to avoid blocking
+    dialog_thread = Thread(target=show_dialog, daemon=True)
+    dialog_thread.start()
+    
+    # Wait for user input with timeout (60 seconds)
+    _user_intervention_event.wait(timeout=60)
+    
+    return _user_intervention_result
+
+def robust_answer_unknown_question(question: str, options: list = None, question_type: str = "text", 
+                                    job_description: str = None) -> tuple[str, bool]:
+    """
+    Robust handler for unknown questions:
+    1. Check learned answers first
+    2. Try AI if enabled
+    3. Ask user for intervention
+    4. Save the answer for future use
+    
+    Returns: (answer, was_user_input)
+    """
+    # 1. Check learned answers first (fastest)
+    learned = get_learned_answer(question, question_type)
+    if learned:
+        print_lg(f"✅ Using learned answer for '{question[:50]}...': {learned[:50]}...")
+        return learned, False
+    
+    # 2. Try AI if available
+    if use_AI and aiClient:
+        try:
+            ai_answer = None
+            if ai_provider.lower() == "ollama":
+                from modules.ai import ollama_integration as _oll
+                safe_q = sanitize_prompt_input(question, max_len=500)
+                safe_jd = sanitize_prompt_input(job_description or "", max_len=1500)
+                options_str = ", ".join(options) if options else "free text"
+                prompt = f"Answer this job application question concisely. Question: {safe_q}. Options: {options_str}. Job: {safe_jd}"
+                ai_answer = _oll.generate(prompt, timeout=20)
+            elif ai_provider.lower() == "openai":
+                ai_answer = ai_answer_question(aiClient, question, question_type=question_type, 
+                                               job_description=job_description, user_information_all=user_information_all)
+            elif ai_provider.lower() == "deepseek":
+                ai_answer = deepseek_answer_question(aiClient, question, options=options, question_type=question_type,
+                                                    job_description=job_description, user_information_all=user_information_all)
+            elif ai_provider.lower() == "gemini":
+                ai_answer = gemini_answer_question(aiClient, question, options=options, question_type=question_type,
+                                                  job_description=job_description, user_information_all=user_information_all)
+            
+            if ai_answer and len(ai_answer.strip()) > 0:
+                # Save AI answer for future
+                save_learned_answer(question, ai_answer.strip(), question_type)
+                print_lg(f"✅ AI answered and saved: '{question[:40]}...' -> '{ai_answer[:40]}...'")
+                return ai_answer.strip(), False
+        except Exception as e:
+            print_lg(f"AI failed for question: {e}")
+    
+    # 3. Ask user for intervention if pause_at_failed_question is True
+    if pause_at_failed_question and not run_in_background:
+        print_lg(f"⚠️ UNKNOWN QUESTION - Requesting user input for: {question[:60]}...")
+        user_answer = ask_user_for_answer(question, options, question_type)
+        
+        if user_answer and len(user_answer.strip()) > 0:
+            # Save user answer for future reference
+            save_learned_answer(question, user_answer.strip(), question_type)
+            print_lg(f"✅ User provided answer saved: '{question[:40]}...' -> '{user_answer[:40]}...'")
+            return user_answer.strip(), True
+    
+    # 4. Fallback to default or empty
+    print_lg(f"⚠️ No answer found for: {question[:60]}... Using fallback")
+    return "", False
+
+# ============ END LEARNED ANSWERS SYSTEM ============
 
 if use_AI:
     from modules.ai.openaiConnections import ai_create_openai_client, ai_extract_skills, ai_answer_question, ai_close_openai_client
-    from modules.ai.deepseekConnections import deepseek_create_client, deepseek_extract_skills, deepseek_answer_question
+    from modules.ai.deepseekConnections import deepseek_create_client, deepseek_extract_skills, deepseek_answer_question, deepseek_close_client
     from modules.ai.geminiConnections import gemini_create_client, gemini_extract_skills, gemini_answer_question
+    from modules.ai.resume_tailoring import tailor_resume_to_files, open_preview
 
 from typing import Literal
 
 
 pyautogui.FAILSAFE = False
+
+
+# Global error tracking for fault tolerance
+_consecutive_failures = 0
+_max_consecutive_failures = 10
+_last_successful_operation = None
+
+
+def track_success():
+    """Track successful operations to reset failure counter."""
+    global _consecutive_failures, _last_successful_operation
+    _consecutive_failures = 0
+    _last_successful_operation = datetime.now()
+
+
+def track_failure():
+    """Track failures and check if we should abort."""
+    global _consecutive_failures
+    _consecutive_failures += 1
+    if _consecutive_failures >= _max_consecutive_failures:
+        print_lg(f"WARNING: {_consecutive_failures} consecutive failures detected!")
+        return True
+    return False
+
+
+def should_abort():
+    """Check if we should abort due to too many failures."""
+    return _consecutive_failures >= _max_consecutive_failures
 # if use_resume_generator:    from resume_generator import is_logged_in_GPT, login_GPT, open_resume_chat, create_custom_resume
 
 
@@ -101,8 +346,16 @@ about_company_for_ai = None # TODO extract about company for AI
 
 # Runner control helpers
 import threading
+import subprocess
 _bot_thread: threading.Thread | None = None
 _stop_requested = False
+_chrome_pid: int | None = None
+
+
+def is_stop_requested() -> bool:
+    """Check if stop has been requested - use this in loops."""
+    return _stop_requested
+
 
 def start_bot_thread() -> bool:
     """Start the bot in a background thread. Returns False if already running."""
@@ -115,22 +368,62 @@ def start_bot_thread() -> bool:
     return True
 
 
+def _kill_chrome_processes() -> None:
+    """Kill all Chrome processes associated with this bot."""
+    import os
+    print_lg("Killing Chrome processes...")
+    try:
+        if os.name == 'nt':  # Windows
+            # Kill chromedriver and chrome processes
+            subprocess.run(['taskkill', '/F', '/IM', 'chromedriver.exe'], 
+                         capture_output=True, timeout=5)
+            subprocess.run(['taskkill', '/F', '/IM', 'chrome.exe'], 
+                         capture_output=True, timeout=5)
+        else:  # Linux/Mac
+            subprocess.run(['pkill', '-f', 'chromedriver'], 
+                         capture_output=True, timeout=5)
+            subprocess.run(['pkill', '-f', 'chrome'], 
+                         capture_output=True, timeout=5)
+        print_lg("Chrome processes terminated.")
+    except Exception as e:
+        print_lg(f"Error killing Chrome processes: {e}")
+
+
 def stop_bot() -> None:
-    """Request stop and attempt to quit driver to exit main loop."""
-    global _stop_requested, run_non_stop
+    """Request stop and forcefully terminate all bot processes."""
+    global _stop_requested, run_non_stop, driver, _bot_thread
     _stop_requested = True
+    print_lg("Stop requested - shutting down bot...")
+    
+    # Stop the run loop
     try:
         run_non_stop = False
     except Exception:
         pass
+    
+    # Try graceful driver close first
     try:
-        if 'driver' in globals() and driver:
-            try:
-                driver.quit()
-            except Exception:
-                pass
-    except Exception:
-        pass
+        close_driver()
+    except Exception as e:
+        print_lg(f"Error during graceful close: {e}")
+    
+    # Give a moment for graceful shutdown
+    sleep(0.5)
+    
+    # Force kill Chrome processes if still running
+    _kill_chrome_processes()
+    
+    # Wait for the thread to finish (with timeout)
+    if _bot_thread and _bot_thread.is_alive():
+        print_lg("Waiting for bot thread to finish...")
+        _bot_thread.join(timeout=3.0)
+        if _bot_thread.is_alive():
+            print_lg("Bot thread did not stop gracefully - processes killed.")
+        else:
+            print_lg("Bot thread stopped cleanly.")
+    
+    _bot_thread = None
+    print_lg("Bot stopped completely.")
 
 
 def is_bot_running() -> bool:
@@ -164,21 +457,23 @@ def login_LN() -> None:
         wait.until(EC.presence_of_element_located((By.LINK_TEXT, "Forgot password?")))
         try:
             text_input_by_ID(driver, "username", username, 1)
-        except Exception as e:
+        except Exception:
             print_lg("Couldn't find username field.")
             # print_lg(e)
         try:
             text_input_by_ID(driver, "password", password, 1)
-        except Exception as e:
+        except Exception:
             print_lg("Couldn't find password field.")
             # print_lg(e)
         # Find the login submit button and click it
-        driver.find_element(By.XPATH, '//button[@type="submit" and contains(text(), "Sign in")]').click()
-    except Exception as e1:
+        login_button = driver.find_element(By.XPATH, '//button[@type="submit" and contains(text(), "Sign in")]')
+        login_button.click()
+        buffer(3)  # Wait for login to process
+    except Exception:
         try:
             profile_button = find_by_class(driver, "profile__details")
             profile_button.click()
-        except Exception as e2:
+        except Exception:
             # print_lg(e1, e2)
             print_lg("Couldn't Login!")
 
@@ -186,10 +481,17 @@ def login_LN() -> None:
         # Wait until successful redirect, indicating successful login
         wait.until(EC.url_to_be("https://www.linkedin.com/feed/")) # wait.until(EC.presence_of_element_located((By.XPATH, '//button[normalize-space(.)="Start a post"]')))
         return print_lg("Login successful!")
-    except Exception as e:
-        print_lg("Seems like login attempt failed! Possibly due to wrong credentials or already logged in! Try logging in manually!")
-        # print_lg(e)
-        manual_login_retry(is_logged_in_LN, 2)
+    except Exception:
+        # Check if already logged in by checking if we're on the feed page
+        if driver.current_url == "https://www.linkedin.com/feed/":
+            return print_lg("Already logged in!")
+        # Check if we're on the home page which is also a valid logged-in state
+        elif "linkedin.com" in driver.current_url and ("feed" in driver.current_url or "home" in driver.current_url):
+            return print_lg("Successfully logged in!")
+        else:
+            print_lg("Seems like login attempt failed! Possibly due to wrong credentials. Try logging in manually!")
+            # print_lg(e)
+            manual_login_retry(is_logged_in_LN, 2)
 #>
 
 
@@ -240,46 +542,99 @@ def apply_filters() -> None:
     set_search_location()
 
     try:
-        recommended_wait = 1 if click_gap < 1 else 0
+        # Use shorter waits for faster execution
+        recommended_wait = 1
+        short_wait = 0.5
 
+        # Wait before clicking All filters
+        buffer(short_wait)
         wait.until(EC.presence_of_element_located((By.XPATH, '//button[normalize-space()="All filters"]'))).click()
         buffer(recommended_wait)
 
         wait_span_click(driver, sort_by)
         wait_span_click(driver, date_posted)
-        buffer(recommended_wait)
+        buffer(short_wait)
 
         multi_sel_noWait(driver, experience_level) 
         multi_sel_noWait(driver, companies, actions)
-        if experience_level or companies: buffer(recommended_wait)
+        if experience_level or companies: buffer(short_wait)
 
         multi_sel_noWait(driver, job_type)
         multi_sel_noWait(driver, on_site)
-        if job_type or on_site: buffer(recommended_wait)
+        if job_type or on_site: buffer(short_wait)
 
-        if easy_apply_only: boolean_button_click(driver, actions, "Easy Apply")
+        if easy_apply_only: 
+            boolean_button_click(driver, actions, "Easy Apply")
         
         multi_sel_noWait(driver, location)
         multi_sel_noWait(driver, industry)
-        if location or industry: buffer(recommended_wait)
+        if location or industry: buffer(short_wait)
 
         multi_sel_noWait(driver, job_function)
         multi_sel_noWait(driver, job_titles)
-        if job_function or job_titles: buffer(recommended_wait)
+        if job_function or job_titles: buffer(short_wait)
 
-        if under_10_applicants: boolean_button_click(driver, actions, "Under 10 applicants")
-        if in_your_network: boolean_button_click(driver, actions, "In your network")
-        if fair_chance_employer: boolean_button_click(driver, actions, "Fair Chance Employer")
+        if under_10_applicants: 
+            boolean_button_click(driver, actions, "Under 10 applicants")
+        if in_your_network: 
+            boolean_button_click(driver, actions, "In your network")
+        if fair_chance_employer: 
+            boolean_button_click(driver, actions, "Fair Chance Employer")
 
         wait_span_click(driver, salary)
-        buffer(recommended_wait)
         
         multi_sel_noWait(driver, benefits)
         multi_sel_noWait(driver, commitments)
-        if benefits or commitments: buffer(recommended_wait)
+        if benefits or commitments: buffer(short_wait)
 
-        show_results_button: WebElement = driver.find_element(By.XPATH, '//button[contains(@aria-label, "Apply current filters to show")]')
-        show_results_button.click()
+        # Brief wait before clicking show results
+        buffer(recommended_wait)
+        
+        # Try multiple selectors for the show results button
+        show_results_button = None
+        button_selectors = [
+            '//button[contains(@aria-label, "Apply current filters")]',
+            '//button[contains(@aria-label, "Show") and contains(@aria-label, "result")]',
+            '//button[starts-with(normalize-space(), "Show") and contains(normalize-space(), "result")]',
+            '//button[contains(normalize-space(), "Show") and (contains(normalize-space(), "result") or contains(normalize-space(), "+"))]',
+            '//div[contains(@class, "search-reusables__filters")]//button[contains(@class, "artdeco-button--primary")]',
+            '//button[contains(@class, "search-reusables__filter") and contains(@class, "apply")]',
+            '//footer//button[contains(@class, "artdeco-button--primary")]',
+        ]
+        
+        for selector in button_selectors:
+            try:
+                show_results_button = driver.find_element(By.XPATH, selector)
+                if show_results_button and show_results_button.is_displayed() and show_results_button.is_enabled():
+                    break
+                show_results_button = None
+            except:
+                continue
+        
+        if show_results_button:
+            scroll_to_view(driver, show_results_button)
+            try:
+                show_results_button.click()
+            except ElementClickInterceptedException:
+                # Try JavaScript click as fallback
+                driver.execute_script("arguments[0].click();", show_results_button)
+            buffer(recommended_wait)
+            print_lg("Filters applied successfully!")
+        else:
+            # Fallback: try to find any primary button in the filter modal footer
+            try:
+                footer_btn = driver.find_element(By.XPATH, '//div[contains(@class, "artdeco-modal__actionbar")]//button[contains(@class, "primary")]')
+                footer_btn.click()
+                buffer(recommended_wait)
+                print_lg("Filters applied using footer button!")
+            except:
+                print_lg("Could not find the 'Show results' button, trying to close filter panel...")
+                try:
+                    close_btn = driver.find_element(By.XPATH, '//button[@aria-label="Dismiss"]')
+                    close_btn.click()
+                except:
+                    # Press Escape as last resort
+                    actions.send_keys(Keys.ESCAPE).perform()
 
         global pause_after_filters
         if pause_after_filters and "Turn off Pause after search" == pyautogui.confirm("These are your configured search results and filter. It is safe to change them while this dialog is open, any changes later could result in errors and skipping this search run.", "Please check your results", ["Turn off Pause after search", "Look's good, Continue"]):
@@ -287,7 +642,7 @@ def apply_filters() -> None:
 
     except Exception as e:
         print_lg("Setting the preferences failed!")
-        # print_lg(e)
+        print_lg(e)
 
 
 
@@ -336,23 +691,29 @@ def get_job_main_details(job: WebElement, blacklisted_companies: set, rejected_j
     # Skip if previously rejected due to blacklist or already applied
     skip = False
     if company in blacklisted_companies:
-        print_lg(f'Skipping "{title} | {company}" job (Blacklisted Company). Job ID: {job_id}!')
+        print_lg(f'⛔ BLACKLISTED: {company} - skipping')
         skip = True
     elif job_id in rejected_jobs: 
-        print_lg(f'Skipping previously rejected "{title} | {company}" job. Job ID: {job_id}!')
+        print_lg(f'⏭️ SKIP: Previously rejected job')
         skip = True
     try:
         if job.find_element(By.CLASS_NAME, "job-card-container__footer-job-state").text == "Applied":
             skip = True
-            print_lg(f'Already applied to "{title} | {company}" job. Job ID: {job_id}!')
+            print_lg(f'⏭️ SKIP: Already applied to {company}')
     except: pass
     try: 
-        if not skip: job_details_button.click()
-    except Exception as e:
-        print_lg(f'Failed to click "{title} | {company}" job on details button. Job ID: {job_id}!') 
+        if not skip: 
+            # Add human-like delay before clicking on job
+            human_delay(0.5, 1.5)
+            job_details_button.click()
+    except Exception:
+        print_lg(f'⚠️ Could not click job details button') 
         # print_lg(e)
         discard_job()
+        human_delay(0.3, 0.8)
         job_details_button.click() # To pass the error outside
+    # Wait for job details to load
+    human_delay(1.0, 2.0)
     buffer(click_gap)
     return (job_id,title,company,work_location,work_style,skip)
 
@@ -441,23 +802,149 @@ def get_job_description(
                 skipMessage = f'\n{jobDescription}\n\nExperience required {experience_required} > Current Experience {current_experience + found_masters}. Skipping this job!\n'
                 skipReason = "Required experience is high"
                 skip = True
-    except Exception as e:
+    except Exception:
         if jobDescription == "Unknown":    print_lg("Unable to extract job description!")
         else:
             experience_required = "Error in extraction"
             print_lg("Unable to extract years of experience required!")
             # print_lg(e)
-    finally:
-        return jobDescription, experience_required, skip, skipReason, skipMessage
+    
+    return jobDescription, experience_required, skip, skipReason, skipMessage
         
+
+
+# Function to dismiss popups that may appear during application
+def dismiss_deloitte_popup() -> None:
+    """Dismiss Deloitte or similar upload popup if it appears.
+    Handles both browser-based popups and external/overlay popups from corporate tools.
+    """
+    try:
+        from modules.helpers import human_delay
+        import pyautogui
+        
+        human_delay(0.5, 1.0)  # Wait for popup to appear
+        
+        # First, try to dismiss using keyboard (works for most popups)
+        # Press Enter to click the default OK button, or Escape to close
+        try:
+            pyautogui.press('enter')
+            human_delay(0.3, 0.5)
+            print_lg("Pressed Enter to dismiss popup")
+        except Exception:
+            pass
+        
+        # Try browser-based selectors as backup
+        popup_selectors = [
+            # LinkedIn modal popups with OK button
+            "//div[contains(@class, 'artdeco-modal')]//button[normalize-space()='OK']",
+            "//div[contains(@class, 'artdeco-modal')]//button[contains(text(), 'OK')]",
+            "//div[contains(@class, 'modal')]//button[normalize-space()='OK']",
+            # Footer buttons in modals
+            "//footer//button[normalize-space()='OK']",
+            # Generic OK buttons
+            "//button[normalize-space()='OK']",
+            "//button[text()='OK']",
+            # Primary buttons
+            "//button[contains(@class, 'artdeco-button--primary')][last()]",
+            # Toast notifications
+            "//div[contains(@class, 'artdeco-toast')]//button",
+            # Dismiss buttons
+            "//button[@aria-label='Dismiss']",
+            # Dialog buttons
+            "//div[@role='dialog']//button[normalize-space()='OK']",
+        ]
+        
+        for selector in popup_selectors:
+            try:
+                elements = driver.find_elements(By.XPATH, selector)
+                for elem in elements:
+                    if elem.is_displayed() and elem.is_enabled():
+                        try:
+                            elem.click()
+                            human_delay(0.3, 0.5)
+                            print_lg("Dismissed browser popup")
+                            return
+                        except Exception:
+                            try:
+                                driver.execute_script("arguments[0].click();", elem)
+                                human_delay(0.3, 0.5)
+                                return
+                            except Exception:
+                                continue
+            except Exception:
+                continue
+        
+        # If browser selectors didn't work, try clicking bottom-right area with pyautogui
+        # This handles external/overlay popups from corporate tools like Deloitte Pendo
+        try:
+            screen_width, screen_height = pyautogui.size()
+            # Bottom-right corner where OK buttons typically appear
+            ok_button_x = screen_width - 150  # 150 pixels from right edge
+            ok_button_y = screen_height - 100  # 100 pixels from bottom
+            
+            # Try clicking in the approximate area where OK button might be
+            pyautogui.click(ok_button_x, ok_button_y)
+            human_delay(0.2, 0.4)
+            print_lg(f"Clicked bottom-right area ({ok_button_x}, {ok_button_y}) to dismiss external popup")
+        except Exception:
+            pass
+            
+    except Exception:
+        pass
 
 
 # Function to upload resume
 def upload_resume(modal: WebElement, resume: str) -> tuple[bool, str]:
     try:
-        modal.find_element(By.NAME, "file").send_keys(os.path.abspath(resume))
-        return True, os.path.basename(default_resume_path)
-    except: return False, "Previous resume"
+        # Check if the resume file exists before attempting upload
+        if not os.path.exists(resume):
+            print_lg(f"Resume file does not exist: {resume}")
+            return False, "Previous resume"
+        
+        # Check if the resume is a valid PDF file
+        if not resume.lower().endswith('.pdf'):
+            print_lg(f"Resume file is not a PDF: {resume}")
+            return False, "Previous resume"
+        
+        # Try multiple selectors to find the file input
+        file_input = None
+        selectors = [
+            (By.NAME, "file"),
+            (By.CSS_SELECTOR, "input[type='file']"),
+            (By.XPATH, ".//input[@type='file']"),
+            (By.CSS_SELECTOR, "input[name='resume']"),
+            (By.XPATH, ".//input[contains(@id, 'file')]"),
+        ]
+        
+        for by, selector in selectors:
+            try:
+                file_input = modal.find_element(by, selector)
+                if file_input:
+                    break
+            except NoSuchElementException:
+                continue
+        
+        # Also try searching in the whole driver if not found in modal
+        if not file_input:
+            for by, selector in selectors:
+                try:
+                    file_input = driver.find_element(by, selector)
+                    if file_input:
+                        break
+                except NoSuchElementException:
+                    continue
+        
+        if file_input:
+            file_input.send_keys(os.path.abspath(resume))
+            dismiss_deloitte_popup()
+            print_lg(f"Successfully uploaded resume: {os.path.basename(resume)}")
+            return True, os.path.basename(resume)
+        else:
+            print_lg("Could not find file input field for resume upload - might already have resume uploaded")
+            return False, "Previous resume"
+    except Exception as e:
+        print_lg(f"Failed to upload resume: {e}")
+        return False, "Previous resume"
 
 # Function to answer common questions for Easy Apply
 def answer_common_questions(label: str, answer: str) -> str:
@@ -518,7 +1005,7 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
                     answer = answer_common_questions(label,answer)
                 try: 
                     select.select_by_visible_text(answer)
-                except NoSuchElementException as e:
+                except NoSuchElementException:
                     # Define similar phrases for common answers
                     possible_answer_phrases = []
                     if answer == 'Decline':
@@ -546,11 +1033,55 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
                                 foundOption = True
                                 break
                     if not foundOption:
-                        #TODO: Use AI to answer the question need to be implemented logic to extract the options for the question
-                        print_lg(f'Failed to find an option with text "{answer}" for question labelled "{label_org}", answering randomly!')
-                        select.select_by_index(randint(1, len(select.options)-1))
-                        answer = select.first_selected_option.text
-                        randomly_answered_questions.add((f'{label_org} [ {options} ]',"select"))
+                        # Try robust answer system with user intervention
+                        print_lg(f'⚠️ No matching option for "{answer}" in question "{label_org}"')
+                        
+                        # Check learned answers first
+                        learned = get_learned_answer(label_org, "select")
+                        if learned:
+                            # Try to match learned answer to an option
+                            for option in optionsText:
+                                if learned.lower() in option.lower() or option.lower() in learned.lower():
+                                    select.select_by_visible_text(option)
+                                    answer = option
+                                    foundOption = True
+                                    print_lg(f"✅ Used learned answer: {option}")
+                                    break
+                        
+                        if not foundOption:
+                            # Ask user for intervention
+                            user_answer, _ = robust_answer_unknown_question(
+                                label_org,
+                                options=optionsText,
+                                question_type="select",
+                                job_description=job_description
+                            )
+                            
+                            if user_answer:
+                                # Try to match user answer to options
+                                for option in optionsText:
+                                    if user_answer.lower() in option.lower() or option.lower() in user_answer.lower():
+                                        select.select_by_visible_text(option)
+                                        answer = option
+                                        foundOption = True
+                                        break
+                                    # Also try by index if user entered a number
+                                    try:
+                                        idx = int(user_answer) - 1
+                                        if 0 <= idx < len(optionsText):
+                                            select.select_by_visible_text(optionsText[idx])
+                                            answer = optionsText[idx]
+                                            foundOption = True
+                                            break
+                                    except ValueError:
+                                        pass
+                        
+                        # Ultimate fallback - random selection
+                        if not foundOption:
+                            print_lg(f'Answering randomly for "{label_org}"')
+                            select.select_by_index(randint(1, len(select.options)-1))
+                            answer = select.first_selected_option.text
+                            randomly_answered_questions.add((f'{label_org} [ {options} ]',"select"))
             questions_list.add((f'{label_org} [ {options} ]', answer, "select", prev_answer))
             continue
         
@@ -597,14 +1128,47 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
                                 answer = f'Decline ({option_label})' if len(possible_answer_phrases) > 1 else option_label
                                 break
                         if foundOption: break
-                    # if answer == 'Decline':
-                    #     answer = options_labels[0]
-                    #     for phrase in ["Prefer not", "not want", "not wish"]:
-                    #         foundOption = try_xp(radio, f".//label[normalize-space()='{phrase}']", False)
-                    #         if foundOption:
-                    #             answer = f'Decline ({phrase})'
-                    #             ele = foundOption
-                    #             break
+                    
+                    # If still not found, use robust answer system
+                    if not foundOption:
+                        # Check learned answers
+                        learned = get_learned_answer(label_org, "radio")
+                        if learned:
+                            for i, opt_label in enumerate(options_labels):
+                                if learned.lower() in opt_label.lower():
+                                    ele = options[i]
+                                    answer = opt_label
+                                    foundOption = ele
+                                    print_lg(f"✅ Used learned answer for radio: {opt_label}")
+                                    break
+                        
+                        if not foundOption:
+                            # Ask user
+                            clean_options = [ol.split('"')[1] if '"' in ol else ol for ol in options_labels]
+                            user_answer, _ = robust_answer_unknown_question(
+                                label_org.replace(' [ ', ''),
+                                options=clean_options,
+                                question_type="radio",
+                                job_description=job_description
+                            )
+                            if user_answer:
+                                for i, opt_label in enumerate(options_labels):
+                                    if user_answer.lower() in opt_label.lower():
+                                        ele = options[i]
+                                        answer = opt_label
+                                        foundOption = ele
+                                        break
+                                    # Try by index
+                                    try:
+                                        idx = int(user_answer) - 1
+                                        if 0 <= idx < len(options):
+                                            ele = options[idx]
+                                            answer = options_labels[idx]
+                                            foundOption = ele
+                                            break
+                                    except ValueError:
+                                        pass
+                    
                     actions.move_to_element(ele).click().perform()
                     if not foundOption: randomly_answered_questions.add((f'{label_org} ]',"radio"))
             else: answer = prev_answer
@@ -668,36 +1232,23 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
                 elif 'zip' in label or 'postal' in label or 'code' in label: answer = zipcode
                 elif 'country' in label: answer = country
                 else: answer = answer_common_questions(label,answer)
-                ##> ------ Yang Li : MARKYangL - Feature ------
+                
+                # Use robust answer system for unknown questions
                 if answer == "":
-                    if use_AI and aiClient:
-                        try:
-                            if ai_provider.lower() == "openai":
-                                answer = ai_answer_question(aiClient, label_org, question_type="text", job_description=job_description, user_information_all=user_information_all)
-                            elif ai_provider.lower() == "deepseek":
-                                answer = deepseek_answer_question(aiClient, label_org, options=None, question_type="text", job_description=job_description, about_company=None, user_information_all=user_information_all)
-                            elif ai_provider.lower() == "gemini":
-                                answer = gemini_answer_question(aiClient, label_org, options=None, question_type="text", job_description=job_description, about_company=None, user_information_all=user_information_all)
-                            else:
-                                randomly_answered_questions.add((label_org, "text"))
-                                answer = years_of_experience
-                            if answer and isinstance(answer, str) and len(answer) > 0:
-                                print_lg(f'AI Answered received for question "{label_org}" \nhere is answer: "{answer}"')
-                            else:
-                                randomly_answered_questions.add((label_org, "text"))
-                                answer = years_of_experience
-                        except Exception as e:
-                            print_lg("Failed to get AI answer!", e)
-                            randomly_answered_questions.add((label_org, "text"))
-                            answer = years_of_experience
-                    else:
+                    answer, was_user_input = robust_answer_unknown_question(
+                        label_org, 
+                        options=None, 
+                        question_type="text",
+                        job_description=job_description
+                    )
+                    if not answer:
+                        answer = years_of_experience  # Ultimate fallback
                         randomly_answered_questions.add((label_org, "text"))
-                        answer = years_of_experience
-                ##<
+                
                 text.clear()
                 text.send_keys(answer)
                 if do_actions:
-                    sleep(2)
+                    sleep(1)  # Reduced from 2 seconds
                     actions.send_keys(Keys.ARROW_DOWN)
                     actions.send_keys(Keys.ENTER).perform()
             questions_list.add((label, text.get_attribute("value"), "text", prev_answer))
@@ -714,38 +1265,25 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
             if not prev_answer or overwrite_previous_answers:
                 if 'summary' in label: answer = linkedin_summary
                 elif 'cover' in label: answer = cover_letter
+                
+                # Use robust answer system for unknown textarea questions
                 if answer == "":
-                ##> ------ Yang Li : MARKYangL - Feature ------
-                    if use_AI and aiClient:
-                        try:
-                            if ai_provider.lower() == "openai":
-                                answer = ai_answer_question(aiClient, label_org, question_type="textarea", job_description=job_description, user_information_all=user_information_all)
-                            elif ai_provider.lower() == "deepseek":
-                                answer = deepseek_answer_question(aiClient, label_org, options=None, question_type="textarea", job_description=job_description, about_company=None, user_information_all=user_information_all)
-                            elif ai_provider.lower() == "gemini":
-                                answer = gemini_answer_question(aiClient, label_org, options=None, question_type="textarea", job_description=job_description, about_company=None, user_information_all=user_information_all)
-                            else:
-                                randomly_answered_questions.add((label_org, "textarea"))
-                                answer = ""
-                            if answer and isinstance(answer, str) and len(answer) > 0:
-                                print_lg(f'AI Answered received for question "{label_org}" \nhere is answer: "{answer}"')
-                            else:
-                                randomly_answered_questions.add((label_org, "textarea"))
-                                answer = ""
-                        except Exception as e:
-                            print_lg("Failed to get AI answer!", e)
-                            randomly_answered_questions.add((label_org, "textarea"))
-                            answer = ""
-                    else:
+                    answer, was_user_input = robust_answer_unknown_question(
+                        label_org,
+                        options=None,
+                        question_type="textarea",
+                        job_description=job_description
+                    )
+                    if not answer:
                         randomly_answered_questions.add((label_org, "textarea"))
+                        
             text_area.clear()
             text_area.send_keys(answer)
             if do_actions:
-                    sleep(2)
+                    sleep(1)  # Reduced from 2 seconds
                     actions.send_keys(Keys.ARROW_DOWN)
                     actions.send_keys(Keys.ENTER).perform()
             questions_list.add((label, text_area.get_attribute("value"), "textarea", prev_answer))
-            ##<
             continue
 
         # Check if it's a checkbox question
@@ -813,10 +1351,13 @@ def external_apply(pagination_element: WebElement, job_id: str, job_link: str, r
 
 
 
-def follow_company(modal: WebDriver = driver) -> None:
+def follow_company(modal: WebDriver = None) -> None:
     '''
     Function to follow or un-follow easy applied companies based om `follow_companies`
     '''
+    global driver
+    if modal is None:
+        modal = driver
     try:
         follow_checkbox_input = try_xp(modal, ".//input[@id='follow-company-checkbox' and @type='checkbox']", False)
         if follow_checkbox_input and follow_checkbox_input.is_selected() != follow_companies:
@@ -903,14 +1444,52 @@ def apply_to_jobs(search_terms: list[str]) -> None:
     if randomize_search_order:  shuffle(search_terms)
     for searchTerm in search_terms:
         driver.get(f"https://www.linkedin.com/jobs/search/?keywords={searchTerm}")
+        # Wait for page to fully load before interacting
+        human_delay(1.0, 2.0)
         print_lg("\n________________________________________________________________________________________________________________________\n")
         print_lg(f'\n>>>> Now searching for "{searchTerm}" <<<<\n\n')
 
         apply_filters()
 
+        # Resume tailoring confirmation after filters
+        tailor_resume_for_search = resume_tailoring_enabled
+        if resume_tailoring_enabled and resume_tailoring_confirm_after_filters:
+            decision = pyautogui.confirm(
+                "Resume tailoring is enabled. Do you want to tailor resume and apply for this search?",
+                "Resume Tailoring",
+                ["Tailor resume and apply", "Apply without tailoring"],
+            )
+            tailor_resume_for_search = decision == "Tailor resume and apply"
+        if tailor_resume_for_search:
+            global master_resume_path
+            if not master_resume_path or not os.path.exists(master_resume_path):
+                new_path = pyautogui.prompt(
+                    "Please enter the full path to your master resume (docx/pdf).",
+                    "Master Resume Required",
+                    default=master_resume_path or "",
+                )
+                if new_path and os.path.exists(new_path):
+                    try:
+                        base_dir = os.path.abspath(master_resume_folder)
+                        candidate = os.path.abspath(new_path)
+                        if candidate.startswith(base_dir):
+                            master_resume_path = new_path
+                        else:
+                            print_lg("Master resume must be inside the master resume folder. Tailoring disabled for this search.")
+                            tailor_resume_for_search = False
+                    except Exception:
+                        master_resume_path = new_path
+                else:
+                    print_lg("Master resume not found. Tailoring disabled for this search.")
+                    tailor_resume_for_search = False
+
         current_count = 0
         try:
             while current_count < switch_number:
+                # Check for stop request at each page
+                if is_stop_requested():
+                    print_lg("Stop requested - exiting job search loop...")
+                    return
                 # Wait until job listings are loaded
                 wait.until(EC.presence_of_all_elements_located((By.XPATH, "//li[@data-occludable-job-id]")))
 
@@ -922,10 +1501,14 @@ def apply_to_jobs(search_terms: list[str]) -> None:
 
             
                 for job in job_listings:
+                    # Check for stop request at each job
+                    if is_stop_requested():
+                        print_lg("🛑 Stop requested - exiting...")
+                        return
                     import time
                     if keep_screen_awake: pyautogui.press('shiftright')
                     if current_count >= switch_number: break
-                    print_lg("\n-@-\n")
+                    print_lg("\n" + "═"*50)
 
                     job_start_time = time.perf_counter()
 
@@ -935,10 +1518,12 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                     # Redundant fail safe check for applied jobs!
                     try:
                         if job_id in applied_jobs or find_by_class(driver, "jobs-s-apply__application-link", 2):
-                            print_lg(f'Already applied to "{title} | {company}" job. Job ID: {job_id}!')
+                            print_lg(f'⏭️ SKIP: Already applied to {company}')
                             continue
-                    except Exception as e:
-                        print_lg(f'Trying to Apply to "{title} | {company}" job. Job ID: {job_id}')
+                    except Exception:
+                        print_lg(f'🎯 NEW JOB FOUND')
+                        print_lg(f'   └─ {title[:45]}{"..." if len(title)>45 else ""}')
+                        print_lg(f'   └─ {company} | {work_location}')
 
                     job_link = "https://www.linkedin.com/jobs/view/"+job_id
                     application_link = "Easy Applied"
@@ -949,6 +1534,8 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                     date_listed = "Unknown"
                     skills = "Needs an AI" # Still in development
                     resume = "Pending"
+                    resume_to_upload = default_resume_path
+                    force_resume_upload = False
                     reposted = False
                     questions_list = None
                     screenshot_name = "Not Available"
@@ -960,7 +1547,7 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                         failed_job(job_id, job_link, resume, date_listed, "Found Blacklisted words in About Company", e, "Skipped", screenshot_name)
                         skip_count += 1
                         continue
-                    except Exception as e:
+                    except Exception:
                         print_lg("Failed to scroll to About Company!")
                         # print_lg(e)
 
@@ -987,7 +1574,7 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                         #     message_box = driver.find_element(By.XPATH, "//div[@aria-label='Write a message…']")
                         #     message_box.send_keys()
                         #     try_xp(driver, "//button[normalize-space()='Send']")        
-                    except Exception as e:
+                    except Exception:
                         print_lg(f'HR info was not given for "{title}" with Job ID: {job_id}!')
                         # print_lg(e)
 
@@ -1014,77 +1601,222 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                         skip_count += 1
                         continue
 
+                    # Reset per-job progress indicators
+                    try:
+                        from modules.dashboard import metrics as _dash_metrics
+                        _dash_metrics.set_metric('jd_progress', 0)
+                        _dash_metrics.set_metric('resume_progress', 0)
+                    except Exception:
+                        pass
+
                     
                     if use_AI and description != "Unknown":
+                        # Optional resume tailoring prompt before JD analysis
+                        tailoring_instruction = None
+                        if resume_tailoring_enabled and resume_tailoring_prompt_before_jd and tailor_resume_for_search:
+                            tailoring_instruction = pyautogui.prompt(
+                                "Enter optional tailoring instructions for this job (leave blank to use defaults):",
+                                "Resume Tailoring Prompt",
+                                default="",
+                            )
+
+                        if resume_tailoring_enabled and tailor_resume_for_search:
+                            # Ask user if they want to tailor resume for this job
+                            tailor_choice = pyautogui.confirm(
+                                f"🎯 New Job Found:\n{title[:50]}...\n\nCompany: {company}\n\nWould you like to tailor your resume for this job?",
+                                "Resume Tailoring",
+                                ["Tailor Resume", "Skip & Continue", "Skip All"]
+                            )
+                            
+                            if tailor_choice == "Skip All":
+                                # Disable tailoring for this session
+                                tailor_resume_for_search = False
+                                print_lg("⏭️ Resume tailoring disabled for this session")
+                            elif tailor_choice == "Skip & Continue":
+                                print_lg("⏭️ Skipping resume tailoring for this job")
+                            elif tailor_choice == "Tailor Resume":
+                              try:
+                                import time
+                                from modules.dashboard import metrics as _dash_metrics
+                                
+                                # Step 1: Initialize (10%)
+                                _dash_metrics.set_metric('resume_progress', 10)
+                                print_lg(f"📝 RESUME TAILORING STARTED")
+                                print_lg(f"   └─ Job: {title[:50]}{'...' if len(title)>50 else ''}")
+                                print_lg(f"   └─ Company: {company}")
+                                print_lg(f"   └─ Using: {ai_provider.upper()} AI")
+                                
+                                # Step 2: Reading resume (20%)
+                                _dash_metrics.set_metric('resume_progress', 20)
+                                print_lg(f"   └─ Reading master resume...")
+                                
+                                t_start = time.perf_counter()
+                                
+                                # Step 3: Sending to AI (40%)
+                                _dash_metrics.set_metric('resume_progress', 40)
+                                print_lg(f"   └─ Analyzing with AI...")
+                                
+                                tailored_paths = tailor_resume_to_files(
+                                    resume_text=None,
+                                    job_description=description,
+                                    instructions=tailoring_instruction,
+                                    provider=ai_provider,
+                                    client=aiClient,
+                                    resume_path=master_resume_path,
+                                    job_title=title,
+                                    candidate_name=first_name,
+                                    enable_preview=True,
+                                )
+                                
+                                # Step 4: Files created (80%)
+                                _dash_metrics.set_metric('resume_progress', 80)
+                                print_lg(f"   └─ Generating files...")
+                                
+                                t_duration = time.perf_counter() - t_start
+                                
+                                # Step 5: Complete (100%)
+                                _dash_metrics.set_metric('resume_progress', 100)
+                                _dash_metrics.append_sample('resume_tailoring', t_duration)
+                                _dash_metrics.set_metric('resume_last', t_duration)
+                                
+                                resume_to_upload = tailored_paths.get("pdf") or tailored_paths.get("docx") or default_resume_path
+                                resume = os.path.basename(resume_to_upload)
+                                force_resume_upload = True
+                                
+                                print_lg(f"✅ RESUME TAILORED ({t_duration:.1f}s)")
+                                print_lg(f"   └─ File: {resume}")
+                                if tailored_paths.get('diff'):
+                                    print_lg(f"   └─ Changes report generated")
+
+                                # Show preview dialog
+                                preview_choice = pyautogui.confirm(
+                                    f"✅ Resume tailored for:\n{title[:40]}...\n\n"
+                                    f"📄 {resume}\n"
+                                    f"⏱️ {t_duration:.1f}s\n\n"
+                                    f"Preview before applying?",
+                                    "✨ Resume Ready",
+                                    ["Preview", "Continue"],
+                                )
+                                if preview_choice == "Preview":
+                                    print_lg("📖 Opening preview GUI...")
+                                    open_preview(
+                                        tailored_paths, 
+                                        tailored_paths.get("diff"),
+                                        master_text=tailored_paths.get("master_text", ""),
+                                        tailored_text=tailored_paths.get("tailored_text", ""),
+                                        jd_text=tailored_paths.get("jd_text", ""),
+                                        job_title=tailored_paths.get("job_title", job_title or "Job")
+                                    )
+                                    # User can view PDF/DOCX from GUI buttons, then close and continue
+                                    continue_choice = pyautogui.confirm(
+                                        "Ready to continue with application?\n\n(Use the Preview window buttons to open PDF/DOCX if needed)",
+                                        "Continue?",
+                                        ["Apply Now", "Cancel"]
+                                    )
+                                    if continue_choice == "Cancel":
+                                        print_lg("❌ Cancelled by user")
+                                        raise Exception("Application cancelled after preview")
+                              except Exception as e:
+                                _dash_metrics.set_metric('resume_progress', 0)
+                                print_lg(f"❌ RESUME TAILORING FAILED: {str(e)[:100]}")
                         ##> ------ Yang Li : MARKYangL - Feature ------
                         try:
                             import time
                             from modules.dashboard import metrics as _dash_metrics
+                            
+                            # Step 1: Initialize (10%)
+                            _dash_metrics.set_metric('jd_progress', 10)
+                            print_lg(f"📋 JD ANALYSIS STARTED")
+                            print_lg(f"   └─ Using: {ai_provider.upper()} AI")
+                            
                             ai_start = time.perf_counter()
+                            
+                            # Step 2: Sending to AI (30%)
+                            _dash_metrics.set_metric('jd_progress', 30)
+                            
                             if ai_provider.lower() == "openai":
+                                _dash_metrics.set_metric('jd_progress', 50)
                                 skills = ai_extract_skills(aiClient, description)
                             elif ai_provider.lower() == "deepseek":
+                                _dash_metrics.set_metric('jd_progress', 50)
                                 skills = deepseek_extract_skills(aiClient, description)
                             elif ai_provider.lower() == "gemini":
+                                _dash_metrics.set_metric('jd_progress', 50)
                                 skills = gemini_extract_skills(aiClient, description)
                             elif ai_provider.lower() == "ollama":
                                 # Use local Ollama wrapper; prefer streaming if available
                                 try:
                                     from modules.ai import ollama_integration as _oll
+                                    _dash_metrics.set_metric('jd_progress', 40)
                                     res = _oll.generate(description, timeout=120, stream=True)
                                     if isinstance(res, str):
                                         skills = res
+                                        _dash_metrics.set_metric('jd_progress', 80)
                                     else:
-                                        # res is an iterator
+                                        # res is an iterator - track streaming progress
                                         out = []
-                                        try:
-                                            from modules.dashboard import log_handler as _lh
-                                        except Exception:
-                                            _lh = None
+                                        chunk_count = 0
                                         for chunk in res:
                                             text = str(chunk).strip()
                                             out.append(text)
-                                            if _lh:
-                                                try:
-                                                    _lh.publish('[AI] ' + text)
-                                                except Exception:
-                                                    pass
+                                            chunk_count += 1
+                                            # Update progress incrementally (40-80%)
+                                            progress = min(40 + (chunk_count * 2), 80)
+                                            _dash_metrics.set_metric('jd_progress', progress)
                                         skills = ' '.join(out)
                                 except Exception as e:
                                     skills = f"[Ollama Error] {e}"
                             else:
                                 skills = "In Development"
+                            
                             duration = time.perf_counter() - ai_start
-                            try:
-                                # record under 'jd_analysis' for dashboard time-series and keep legacy name
-                                _dash_metrics.append_sample('jd_analysis', duration)
-                                _dash_metrics.append_sample('jd_analysis_time', duration)
-                                _dash_metrics.inc('jd_analysis_count')
-                            except Exception:
-                                pass
-                            print_lg(f"Extracted skills using {ai_provider} AI")
+                            
+                            # Step 3: Complete (100%)
+                            _dash_metrics.set_metric('jd_progress', 100)
+                            _dash_metrics.append_sample('jd_analysis', duration)
+                            _dash_metrics.append_sample('jd_analysis_time', duration)
+                            _dash_metrics.inc('jd_analysis_count')
+                            
+                            print_lg(f"✅ JD ANALYZED ({duration:.1f}s)")
+                            print_lg(f"   └─ Skills extracted successfully")
                         except Exception as e:
-                            print_lg("Failed to extract skills:", e)
+                            _dash_metrics.set_metric('jd_progress', 0)
+                            print_lg(f"❌ JD ANALYSIS FAILED: {str(e)[:80]}")
                             skills = "Error extracting skills"
                         ##<
 
                     uploaded = False
                     # Case 1: Easy Apply Button
+                    # Add delay before clicking Easy Apply to be more human-like
+                    human_delay(0.5, 1.2)
                     if try_xp(driver, ".//button[contains(@class,'jobs-apply-button') and contains(@class, 'artdeco-button--3') and contains(@aria-label, 'Easy')]"):
                         try: 
                             try:
                                 errored = ""
+                                # Wait for modal to fully load
+                                human_delay(0.8, 1.5)
                                 modal = find_by_class(driver, "jobs-easy-apply-modal")
-                                wait_span_click(modal, "Next", 1)
+                                human_delay(0.3, 0.6)
+                                wait_span_click(driver, "Next", 1)
                                 # if description != "Unknown":
                                 #     resume = create_custom_resume(description)
                                 resume = "Previous resume"
                                 next_button = True
                                 questions_list = set()
                                 next_counter = 0
+                                max_iterations = 20  # Increased from 15 to give more attempts
                                 while next_button:
+                                    # Small delay between loop iterations
+                                    human_delay(0.3, 0.8)
+                                    # Check for and dismiss any popups at start of each iteration
+                                    dismiss_deloitte_popup()
+                                    # Re-fetch modal to avoid stale element references
+                                    try:
+                                        modal = find_by_class(driver, "jobs-easy-apply-modal")
+                                    except Exception:
+                                        print_lg("Could not re-fetch modal, continuing with existing reference")
                                     next_counter += 1
-                                    if next_counter >= 15: 
+                                    if next_counter >= max_iterations: 
                                         if pause_at_failed_question:
                                             screenshot(driver, job_id, "Needed manual intervention for failed question")
                                             pyautogui.alert("Couldn't answer one or more questions.\nPlease click \"Continue\" once done.\nDO NOT CLICK Back, Next or Review button in LinkedIn.\n\n\n\n\nYou can turn off \"Pause at failed question\" setting in config.py", "Help Needed", "Continue")
@@ -1095,11 +1827,54 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                                         errored = "stuck"
                                         raise Exception("Seems like stuck in a continuous loop of next, probably because of new questions.")
                                     questions_list = answer_questions(modal, questions_list, work_location, job_description=description)
-                                    if useNewResume and not uploaded: uploaded, resume = upload_resume(modal, default_resume_path)
-                                    try: next_button = modal.find_element(By.XPATH, './/span[normalize-space(.)="Review"]') 
-                                    except NoSuchElementException:  next_button = modal.find_element(By.XPATH, './/button[contains(span, "Next")]')
-                                    try: next_button.click()
-                                    except ElementClickInterceptedException: break    # Happens when it tries to click Next button in About Company photos section
+                                    if (force_resume_upload or useNewResume) and not uploaded:
+                                        uploaded, resume = upload_resume(modal, resume_to_upload)
+                                        # Dismiss any popups that may appear after upload (e.g., Deloitte)
+                                        dismiss_deloitte_popup()
+                                                                
+                                    # Check if we've reached the review stage
+                                    try: 
+                                        next_button = modal.find_element(By.XPATH, './/span[normalize-space(.)="Review"]')
+                                        # If we find the Review button, break the loop as we're at the final step
+                                        break
+                                    except NoSuchElementException:  
+                                        try:
+                                            # Look for Next or Continue button
+                                            next_button = modal.find_element(By.XPATH, './/button[contains(span, "Next")]')
+                                            if not next_button.is_enabled():
+                                                print_lg("Next button is disabled, breaking loop")
+                                                break
+                                        except NoSuchElementException:
+                                            # If neither Next nor Review buttons are found, try other selectors
+                                            try:
+                                                next_button = modal.find_element(By.XPATH, './/button[contains(@aria-label, "Continue") or contains(span, "Continue")]')
+                                            except NoSuchElementException:
+                                                print_lg("Could not find Next/Review/Continue button, breaking loop")
+                                                break
+                                                                
+                                    try: 
+                                        # Add human-like delay before clicking
+                                        human_delay(0.4, 1.0)
+                                        next_button.click()
+                                        buffer(click_gap)
+                                        # Dismiss any popup that may appear after clicking Next
+                                        dismiss_deloitte_popup()
+                                    except ElementClickInterceptedException: 
+                                        print_lg("Element click intercepted, trying to dismiss popup...")
+                                        dismiss_deloitte_popup()
+                                        human_delay(0.3, 0.5)
+                                        # Retry the click after dismissing popup
+                                        try:
+                                            next_button.click()
+                                            buffer(click_gap)
+                                        except Exception:
+                                            print_lg("Still can't click, breaking loop")
+                                            break
+                                    except Exception as e:
+                                        print_lg(f"Error clicking next button: {e}")
+                                        break
+                                    # Add extra delay after clicking for page to load
+                                    human_delay(0.5, 1.2)
                                     buffer(click_gap)
 
                             except NoSuchElementException: errored = "nose"
@@ -1107,7 +1882,10 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                                 if questions_list and errored != "stuck": 
                                     print_lg("Answered the following questions...", questions_list)
                                     print("\n\n" + "\n".join(str(question) for question in questions_list) + "\n\n")
+                                # Add delay before clicking Review
+                                human_delay(0.5, 1.0)
                                 wait_span_click(driver, "Review", 1, scrollTop=True)
+                                human_delay(0.8, 1.2)
                                 cur_pause_before_submit = pause_before_submit
                                 if errored != "stuck" and cur_pause_before_submit:
                                     decision = pyautogui.confirm('1. Please verify your information.\n2. If you edited something, please return to this final screen.\n3. DO NOT CLICK "Submit Application".\n\n\n\n\nYou can turn off "Pause before submit" setting in config.py\nTo TEMPORARILY disable pausing, click "Disable Pause"', "Confirm your information",["Disable Pause", "Discard Application", "Submit Application"])
@@ -1115,8 +1893,12 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                                     pause_before_submit = False if "Disable Pause" == decision else True
                                     # try_xp(modal, ".//span[normalize-space(.)='Review']")
                                 follow_company(modal)
+                                # Add delay before submitting - important for appearing human
+                                human_delay(0.8, 1.5)
                                 if wait_span_click(driver, "Submit application", 2, scrollTop=True): 
                                     date_applied = datetime.now()
+                                    # Wait after submission
+                                    human_delay(0.8, 1.5)
                                     if not wait_span_click(driver, "Done", 2): actions.send_keys(Keys.ESCAPE).perform()
                                 elif errored != "stuck" and cur_pause_before_submit and "Yes" in pyautogui.confirm("You submitted the application, didn't you 😒?", "Failed to find Submit Application!", ["Yes", "No"]):
                                     date_applied = datetime.now()
@@ -1129,8 +1911,8 @@ def apply_to_jobs(search_terms: list[str]) -> None:
 
 
                         except Exception as e:
-                            print_lg("Failed to Easy apply!")
-                            # print_lg(e)
+                            print_lg("❌ APPLICATION FAILED")
+                            print_lg(f"   └─ Reason: {str(e)[:60]}")
                             critical_error_log("Somewhere in Easy Apply process",e)
                             failed_job(job_id, job_link, resume, date_listed, "Problem in Easy Applying", e, application_link, screenshot_name)
                             failed_count += 1
@@ -1140,17 +1922,20 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                         # Case 2: Apply externally
                         skip, application_link, tabs_count = external_apply(pagination_element, job_id, job_link, resume, date_listed, application_link, screenshot_name)
                         if dailyEasyApplyLimitReached:
-                            print_lg("\n###############  Daily application limit for Easy Apply is reached!  ###############\n")
+                            print_lg("\n⚠️ DAILY LIMIT REACHED - Easy Apply limit hit!\n")
                             return
                         if skip: continue
 
                     submitted_jobs(job_id, title, company, work_location, work_style, description, experience_required, skills, hr_name, hr_link, resume, reposted, date_listed, date_applied, job_link, application_link, questions_list, connect_request)
-                    if uploaded:   useNewResume = False
+                    if uploaded and not force_resume_upload:
+                        useNewResume = False
 
-                    print_lg(f'Successfully saved "{title} | {company}" job. Job ID: {job_id} info')
+                    print_lg(f'✅ APPLICATION SENT!')
+                    print_lg(f'   └─ {title[:40]}{"..." if len(title)>40 else ""} at {company}')
                     current_count += 1
                     if application_link == "Easy Applied":
                         easy_applied_count += 1
+                        print_lg(f'   └─ Type: Easy Apply')
                         try:
                             from modules.dashboard import metrics as _dash_metrics
                             _dash_metrics.inc('easy_applied')
@@ -1158,6 +1943,7 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                             pass
                     else:
                         external_jobs_count += 1
+                        print_lg(f'   └─ Type: External Application')
                         try:
                             from modules.dashboard import metrics as _dash_metrics
                             _dash_metrics.inc('external_jobs')
@@ -1178,9 +1964,6 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                         if max_jobs_to_process and max_jobs_to_process > 0:
                             percent = int(100 * jobs_done / max_jobs_to_process)
                             _dash_metrics.set_metric('overall_progress', percent)
-                            # Keep JD & resume progress in sync for now
-                            _dash_metrics.set_metric('jd_progress', percent)
-                            _dash_metrics.set_metric('resume_progress', percent)
                     except Exception:
                         pass
 
@@ -1193,6 +1976,8 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                 try:
                     pagination_element.find_element(By.XPATH, f"//button[@aria-label='Page {current_page+1}']").click()
                     print_lg(f"\n>-> Now on Page {current_page+1} \n")
+                    # Wait for new page to fully load
+                    human_delay(1.5, 2.5)
                 except NoSuchElementException:
                     print_lg(f"\n>-> Didn't find Page {current_page+1}. Probably at the end page of results!\n")
                     break
@@ -1213,17 +1998,30 @@ def apply_to_jobs(search_terms: list[str]) -> None:
 def run(total_runs: int) -> int:
     if dailyEasyApplyLimitReached:
         return total_runs
+    # Check if stop was requested
+    if is_stop_requested():
+        print_lg("Stop requested - skipping run cycle...")
+        return total_runs
     print_lg("\n########################################################################################################################\n")
     print_lg(f"Date and Time: {datetime.now()}")
     print_lg(f"Cycle number: {total_runs}")
     print_lg(f"Currently looking for jobs posted within '{date_posted}' and sorting them by '{sort_by}'")
     apply_to_jobs(search_terms)
     print_lg("########################################################################################################################\n")
-    if not dailyEasyApplyLimitReached:
+    if not dailyEasyApplyLimitReached and not is_stop_requested():
         print_lg("Sleeping for 10 min...")
-        sleep(300)
+        # Sleep in smaller increments so we can check for stop requests
+        for _ in range(60):  # 60 * 5 seconds = 5 minutes
+            if is_stop_requested():
+                print_lg("Stop requested during sleep - exiting...")
+                return total_runs + 1
+            sleep(5)
         print_lg("Few more min... Gonna start with in next 5 min...")
-        sleep(300)
+        for _ in range(60):  # 60 * 5 seconds = 5 minutes
+            if is_stop_requested():
+                print_lg("Stop requested during sleep - exiting...")
+                return total_runs + 1
+            sleep(5)
     buffer(3)
     return total_runs + 1
 
@@ -1232,15 +2030,29 @@ def run(total_runs: int) -> int:
 chatGPT_tab = False
 linkedIn_tab = False
 
+# Global driver references (will be set when Chrome starts)
+driver = None
+wait = None
+actions = None
+
 def main() -> None:
+    global driver, wait, actions
     try:
         global linkedIn_tab, tabs_count, useNewResume, aiClient
         alert_title = "Error Occurred. Closing Browser!"
         total_runs = 1        
         validate_config()
         
+        # Start Chrome browser
+        print_lg("Initializing automation...")
+        driver, wait, actions = start_chrome()
+        
         if not os.path.exists(default_resume_path):
-            pyautogui.alert(text='Your default resume "{}" is missing! Please update it\'s folder path "default_resume_path" in config.py\n\nOR\n\nAdd a resume with exact name and path (check for spelling mistakes including cases).\n\n\nFor now the bot will continue using your previous upload from LinkedIn!'.format(default_resume_path), title="Missing Resume", button="OK")
+            pyautogui.alert(text=('Your default resume "{}" is missing! Please update it\'s folder path "default_resume_path" in config.py' + 
+                                '\n\nOR\n\n' + 
+                                'Add a resume with exact name and path (check for spelling mistakes including cases).' + 
+                                '\n\n\n' + 
+                                'For now the bot will continue using your previous upload from LinkedIn!').format(default_resume_path), title="Missing Resume", button="OK")
             useNewResume = False
         
         # Login to LinkedIn
@@ -1281,7 +2093,11 @@ def main() -> None:
         # Start applying to jobs
         driver.switch_to.window(linkedIn_tab)
         total_runs = run(total_runs)
-        while(run_non_stop):
+        while(run_non_stop and not is_stop_requested()):
+            # Check for stop request at each iteration
+            if is_stop_requested():
+                print_lg("Stop requested - exiting main loop...")
+                break
             if cycle_date_posted:
                 date_options = ["Any time", "Past month", "Past week", "Past 24 hours"]
                 global date_posted
@@ -1289,9 +2105,11 @@ def main() -> None:
             if alternate_sortby:
                 global sort_by
                 sort_by = "Most recent" if sort_by == "Most relevant" else "Most relevant"
-                total_runs = run(total_runs)
+                if not is_stop_requested():
+                    total_runs = run(total_runs)
                 sort_by = "Most recent" if sort_by == "Most relevant" else "Most relevant"
-            total_runs = run(total_runs)
+            if not is_stop_requested():
+                total_runs = run(total_runs)
             if dailyEasyApplyLimitReached:
                 break
         
@@ -1337,20 +2155,18 @@ def main() -> None:
                 if ai_provider.lower() == "openai":
                     ai_close_openai_client(aiClient)
                 elif ai_provider.lower() == "deepseek":
-                    ai_close_openai_client(aiClient)
+                    deepseek_close_client(aiClient)
                 elif ai_provider.lower() == "gemini":
                     pass # Gemini client does not need to be closed
                 print_lg(f"Closed {ai_provider} AI client.")
             except Exception as e:
                 print_lg("Failed to close AI client:", e)
         ##<
+        # Close Chrome browser properly
         try:
-            if driver:
-                driver.quit()
-        except WebDriverException as e:
-            print_lg("Browser already closed.", e)
+            close_driver()
         except Exception as e: 
-            critical_error_log("When quitting...", e)
+            critical_error_log("When closing browser...", e)
 
 
 if __name__ == "__main__":
