@@ -1,0 +1,33 @@
+{
+   "action": {
+      "default_title": "Deloitte Assistant"
+   },
+   "background": {
+      "service_worker": "background-wrapper.js"
+   },
+   "content_security_policy": {
+      "extension_pages": "script-src 'self'; object-src 'self'; frame-src https://login.microsoftonline.com https://d1-webchat.slate.deloitte.com https://d2-webchat.slate.deloitte.com https://d3-webchat.slate.deloitte.com https://d4-webchat.slate.deloitte.com https://d5-webchat.slate.deloitte.com https://d6-webchat.slate.deloitte.com https://d7-webchat.slate.deloitte.com https://q1-webchat.slate.deloitte.com https://q2-webchat.slate.deloitte.com https://s1-webchat.slate.deloitte.com https://sglobal-assistant.deloitte.com https://assistant.deloitte.com https://global.assistant.deloitte.com",
+      "sandbox": "sandbox allow-scripts; script-src 'self' 'unsafe-eval'; object-src 'self"
+   },
+   "externally_connectable": {
+      "matches": [ "https://d1.slate.deloitte.com/*", "https://d2.slate.deloitte.com/*", "https://d3.slate.deloitte.com/*", "https://d4.slate.deloitte.com/*", "https://d5.slate.deloitte.com/*", "https://d6.slate.deloitte.com/*", "https://d7.slate.deloitte.com/*", "https://q1.slate.deloitte.com/*", "https://q2.slate.deloitte.com/*", "https://sglobal.slate.deloitte.com/*", "https://s1.slate.deloitte.com/*", "https://slate.deloitte.com/*" ]
+   },
+   "host_permissions": [ "http://*/", "https://*/" ],
+   "icons": {
+      "128": "assets/Icon-128.png",
+      "16": "assets/Icon-16.png",
+      "19": "assets/Icon-19.png",
+      "38": "assets/Icon-38.png"
+   },
+   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAz6qWQpQlVIOtG2nbHy138gb59mvwToAxo9Wq0FSCLW5cZct09wLnvf+BP1stms0+6gGCGQ0Ab2FVsycoGTRm8HnfZzjJPk4ttO5DOJz6b1COIViswLPd7WfljoCbkqhv4XpjS8IQo1CINowrb34iLzdUSdq/gnKSPeQqOAzku/eO930p97VtoVIVMDxGOAySaF0RPoC7/VnWqcBhrmBhEjHCFNx9CGlqYdAXgene1ED1d55rSqraGe8HnX+MCCH9fgDNK8di6mNFsQLLx2m5P9oh6eFWiFHWK0Lo91BxJY3aLbmU1I3omtc0ncFPOecf+fxusgiffoXmBcDJJSpLewIDAQAB",
+   "manifest_version": 3,
+   "name": "Deloitte Assistant",
+   "options_page": "index.html#/options",
+   "permissions": [ "management", "tabs", "identity", "activeTab", "webNavigation", "storage", "scripting", "offscreen", "declarativeNetRequest", "declarativeNetRequestWithHostAccess", "alarms" ],
+   "update_url": "https://clients2.google.com/service/update2/crx",
+   "version": "2026.01.13.13",
+   "web_accessible_resources": [ {
+      "matches": [ "\u003Call_urls>" ],
+      "resources": [ "inject-scripts.bundle.js", "chat-content-script.bundle.js", "glide-content-script.bundle.js", "analytics-content-script.bundle.js", "auth.html", "init-widget.js", "assets/*" ]
+   } ]
+}

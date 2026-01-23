@@ -1,0 +1,15 @@
+.rte-editor {
+    display: flex;
+    height: 100%;
+    width: 100%;
+
+    editor {
+        width: 100%;
+    }
+}
+.tox .tox-menu.tox-collection.tox-collection--list {
+    min-width: 100px !important;
+}
+.tox-toolbar__group .tox-tbtn.tox-tbtn--select.tox-tbtn--bespoke {
+    width: 100px !important;
+}

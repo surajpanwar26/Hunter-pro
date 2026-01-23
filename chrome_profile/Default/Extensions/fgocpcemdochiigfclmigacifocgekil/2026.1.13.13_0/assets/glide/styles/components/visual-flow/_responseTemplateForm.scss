@@ -1,0 +1,47 @@
+.c-responseTemplate {
+
+    $bottom-hint-color: #a0a0a0;
+
+    &__wrap {
+        margin-bottom: 24px;
+    }
+
+    &__name {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        height: 50px;
+        background: $sl-color-gray--300;
+        font-weight: 600;
+        padding-left: 16px;
+        padding-right: 12px;
+
+        &Icons {
+            display: none;
+            justify-content: center;
+            align-items: center;
+        }
+
+        &:hover {
+            background: #E8E8EB;
+
+            .c-responseTemplate__nameIcons {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                cursor: pointer;
+            }
+
+        }
+    }
+
+    &__quotes-description {
+        line-height: 18px;
+    }
+
+    &__bottom-hint {
+        padding-top: 10px;
+        color: $bottom-hint-color;
+    }
+}
+

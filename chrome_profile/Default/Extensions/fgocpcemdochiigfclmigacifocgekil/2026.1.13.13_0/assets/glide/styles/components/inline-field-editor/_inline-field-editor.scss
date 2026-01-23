@@ -1,0 +1,137 @@
+.c-inlineFieldEditor {
+    display: inline-flex;
+    position: relative;
+    color: $gl-text-white;
+
+    &--edit {
+        .c-inlineFieldEditor__input {
+            border-color: $gl-border-color--gray-dark;
+        }
+
+        .c-inlineFieldEditor {
+            &__text {
+                opacity: 0;
+                min-width: 125px;
+            }
+
+            &__input {
+                flex: 1;
+            }
+        }
+    }
+
+    &--dark {
+        color: $gl-text-black;
+
+        &.c-inlineFieldEditor--edit {
+            .c-inlineFieldEditor__input {
+                color: $gl-text-black;
+
+                &,
+                &:active,
+                &:focus {
+                    border-color: $gl-border-color-field;
+                }
+
+            }
+        }
+    }
+
+    &--error {
+        .c-inlineFieldEditor__input {
+            border-color: $sl-color-red;
+
+            &:active, &:focus {
+                border-color: $sl-color-red;
+            }
+        }
+    }
+
+    &__text {
+        display: inline-flex;
+        align-items: center;
+        font-size: 16px;
+        line-height: 1.5;
+        word-break: break-word;
+        border-bottom: 1px dashed;
+        cursor: pointer;
+
+        &--editableOnClick {
+            &:hover {
+                color: $gl-text-green;
+            }
+        }
+    }
+
+    &__status {
+        display: inline-flex;
+        align-items: center;
+        padding-left: 8px;
+        font-size: 12px;
+        font-weight: 400;
+        color: $sl-color-black;
+
+        &--draft {
+            color: $sl-color-gray--500;
+        }
+    }
+
+    &__input {
+        background-color: transparent;
+        width: 100%;
+        padding: 5px 14px 7px 15px;
+        border: 1px solid transparent;
+        border-radius: $gl-border-radius-sm;
+        color: $gl-text-white;
+
+        &:active, &:focus {
+            border-color: $gl-text-white;
+        }
+
+        &::placeholder {
+            color: $gl-divider;
+        }
+    }
+
+    &__actions {
+        display: flex;
+        align-items: center;
+        padding-left: 16px;
+        gap: 16px;
+
+        .o-button {
+            height: 20px;
+            padding: 0 1px;
+
+            .o-icon {
+                font-size: 16px;
+            }
+
+        }
+    }
+
+    &__input-wrapper {
+        flex: 1;
+        position: relative;
+    }
+
+    &__error-message {
+        position: absolute;
+        left: 0;
+        right: 0;
+        font-size: 12px;
+        line-height: 16px;
+        background-color: $sl-color-red;
+        padding: 7px 16px 9px;
+        color: $sl-color-white;
+        top: calc(100% + 11px);
+        border-radius: 4px;
+        z-index: 99;
+    }
+
+    &--disabled {
+        pointer-events: none;
+        cursor: not-allowed;
+        opacity: 0.6;
+    }
+}

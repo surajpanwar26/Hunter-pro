@@ -1,0 +1,82 @@
+:host {
+    overflow: hidden;
+}
+
+.ruleset-multi-input-item {
+    display: flex;
+    align-items: center;
+    border-radius: 2px;
+    height: 24px;
+    overflow: hidden;
+
+    &Status {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100%;
+        width: 24px;
+
+        &--valid {
+            background: $sl-color-green;
+
+            .o-icon {
+                font-size: 16px;
+            }
+        }
+
+        &--invalid {
+            background: $sl-color-dark-red;
+
+            .o-icon {
+                color: white;
+            }
+        }
+
+        &--pending {
+            background: $sl-color-orange;
+        }
+
+        .o-icon {
+            font-size: 20px;
+        }
+    }
+
+    &Item {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: 5px;
+        background: $sl-color-gray--600;
+        color: $sl-color-white;
+        height: 100%;
+        padding: 3px 5px 5px 8px;
+
+        &Value {
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            font-size: 12px;
+            line-height: 16px;
+
+            .c-ruleset-multi-input--single & {
+                max-width: 78px;
+            }
+        }
+
+        .o-icon {
+            color: $sl-color-white;
+            font-size: 16px;
+        }
+
+        app-button {
+            button {
+                height: 100%;
+                border-width: 0;
+                margin-top: 2px;
+                &:hover {
+                    border-color: transparent !important;
+                }
+            }
+        }
+    }
+}

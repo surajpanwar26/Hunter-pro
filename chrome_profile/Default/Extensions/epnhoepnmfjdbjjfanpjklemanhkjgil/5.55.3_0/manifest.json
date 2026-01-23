@@ -1,0 +1,35 @@
+{
+   "action": {
+      "default_icon": {
+         "128": "icons/browser-action-off.png"
+      },
+      "default_title": "Pendo Launcher"
+   },
+   "background": {
+      "service_worker": "background.js"
+   },
+   "content_scripts": [ {
+      "js": [ "idp-metadata.js" ],
+      "matches": [ "*://*.pendo.io/*/*/admin/extension", "*://*.pendo-dev.com/*/*/admin/extension" ]
+   } ],
+   "description": "Pendo's award-winning digital adoption solutions help people adopt employee-facing software more quickly and successfully.",
+   "host_permissions": [ "\u003Call_urls>" ],
+   "icons": {
+      "128": "icons/logo.png",
+      "16": "icons/logo.png",
+      "48": "icons/logo.png"
+   },
+   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAnsAGP2pzl/AE1Mcj3ZPRHyxPJ52BW3S5AoPWKtcxMmA2CEimPtrDJSWwOD+Z4E94D3JedUvEokO9I8pA2iZH+UVIEzZkiX0CfnXmwLBsMVf4f6S6Ex8s7ryciN0FTLCI+OCR8D6IXRW86N2rzR5+JN8TkNc5GtTfXmtr/v2xsHIi9a4hsPlaRvMDhrnB7CZo6/XNk5//EZdhJts1V3KuUfEKmhqDpXNCCx5gah0tNEjQSYU2NR1AFxe9xEG3lMqnEAqQourUFkQD7Tj9TGkAqyF0DAQqw2KXPhlgHcnT+2iO01WuQBGJnrrT9EvqBfYoXClCebpSqVhDDqhVHl/zAQIDAQAB",
+   "manifest_version": 3,
+   "name": "Pendo Launcher",
+   "permissions": [ "alarms", "contextMenus", "declarativeNetRequestWithHostAccess", "identity", "identity.email", "scripting", "storage", "tabs", "webNavigation" ],
+   "storage": {
+      "managed_schema": "managed_schema.json"
+   },
+   "update_url": "https://clients2.google.com/service/update2/crx",
+   "version": "5.55.3",
+   "web_accessible_resources": [ {
+      "matches": [ "\u003Call_urls>" ],
+      "resources": [ "agent-content.js", "agent/debugger-plugin.min.js", "agent/guide.css", "agent/pendo.debugger.min.js", "agent/pendo.preview.min.js", "browser-ingest-content.js", "configuration.html", "configuration.js", "demo-loader.html", "designer.js", "double-agent.js", "iframe-visibility-monitor.js", "initialize-pendo.html", "initialize-pendo.js", "idp.html", "idp.js", "idp-metadata.js", "pendo-extensions.js", "postmessage-safeguard.js", "privacy-center.html", "privacy-center.js", "public-identify.js", "resource-center-animation.css", "guide-content/*" ]
+   } ]
+}

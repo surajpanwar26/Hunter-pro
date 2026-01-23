@@ -1,0 +1,17 @@
+{
+  "sites": [
+    {
+      "siteUrl": "https://dslate.deloitte.com/",
+      "applicationKey": ""
+    },
+    {
+      "siteUrl": "https://www.bbc.com/",
+      "applicationKey": ""
+    }
+  ],
+  "instance": "https://login.microsoftonline.com/",
+  "clientId": "c9f62ed4-695a-4287-b776-20a583815d71",
+  "tenant": "1237b763-d1f5-4242-aa18-3adfc4a8474d",
+  "widgetAppId": "ff4f8e21-fe91-4517-b6f3-1bd74d3bd3ab",
+  "widgetOriginName": "https://txarbo.azurewebsites.net/api/"
+}

@@ -1,0 +1,271 @@
+.o-checkbox {
+    @extend %extend-user-select;
+
+    z-index: 0;
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    color: $sl-color-black;
+    line-height: 1.5;
+    font-size: 13px;
+    font-weight: normal;
+
+    /* .o-checkbox__input */
+
+    &__input {
+        z-index: -1;
+        position: absolute;
+        opacity: 0;
+        pointer-events: none;
+
+        /* Checked, Indeterminate */
+
+        &:checked,
+        &:indeterminate {
+            background-color: $sl-color-black;
+
+            & + .o-checkbox__label {
+                &:before {
+                    border-color: $sl-color-black;
+                    background-color: $sl-color-black;
+                }
+
+                &:after {
+                    border-color: $sl-color-white;
+                }
+            }
+        }
+
+        &:indeterminate + .o-checkbox__label::after {
+            border-left: none;
+            transform: translate(3px, 3px);
+        }
+
+        &:active + .o-checkbox__label::before {
+            border-color: $sl-color-black;
+        }
+
+        &:disabled + .o-checkbox__label {
+            opacity: 0.4;
+            cursor: not-allowed;
+
+            &:before {
+                border-color: $sl-color-gray--400;
+            }
+        }
+    }
+
+    /* .o-checkbox__label */
+
+    &__label {
+        @extend %extend-break-word;
+
+        display: inline-block;
+        width: auto;
+        cursor: pointer;
+        white-space: normal;
+
+        &Title {
+            display: block;
+            vertical-align: top;
+            font-size: 13px;
+            color: $sl-color-black;
+            line-height: 16px;
+        }
+
+        &Subtitle {
+            margin-top: 5px;
+            vertical-align: top;
+            font-size: 12px;
+            color: $sl-color-gray--500;
+            width: 100%;
+        }
+
+        /* Box */
+
+        &:before {
+            content: "";
+            display: inline-block;
+            box-sizing: border-box;
+            margin: 3px 8px 3px 1px;
+            border: solid 1px; /* Safari */
+            border-color: $sl-color-black;
+            background: $sl-color-white;
+            border-radius: 2px;
+            width: 14px;
+            height: 14px;
+            min-width: 14px;
+            vertical-align: top;
+            transition: border-color 0.2s, background-color 0.2s;
+        }
+
+        /* Checkmark */
+
+        &:after {
+            content: "";
+            display: block;
+            position: absolute;
+            top: 3px;
+            left: 0.5px;
+            width: 9px;
+            height: 4px;
+            border: solid 1.5px transparent;
+            border-right: none;
+            border-top: none;
+            transform: translate(3px, 4px) rotate(-45deg);
+        }
+
+        &--absolute {
+            font-weight: normal;
+            padding-left: 24px;
+            line-height: 1.2;
+
+            &:before {
+                position: absolute;
+                left: 0;
+                top: 0;
+            }
+        }
+
+        &--bold {
+            font-weight: 500;
+            color: $sl-color-black;
+        }
+    }
+
+    &--ellipsed {
+        max-width: 100%;
+
+        .o-checkbox__label {
+            @extend %extend-text-ellipsis;
+        }
+    }
+
+    &--disabled {
+        opacity: 0.3;
+        cursor: not-allowed;
+
+        * {
+            pointer-events: none;
+        }
+    }
+
+    &--visible {
+        .o-checkbox {
+            &--disabled {
+                opacity: 1;
+            }
+        }
+
+        .o-checkbox {
+            &__label::before {
+                opacity: 0.3;
+            }
+        }
+    }
+
+    &--checked {
+        .o-checkbox__label {
+            &:before {
+                border-color: $sl-color-black;
+                background-color: $sl-color-black;
+            }
+
+            &:after {
+                border-color: $sl-color-white;
+            }
+        }
+    }
+
+    &--info {
+        width: 100%;
+
+        .o-checkbox__label {
+            width: auto;
+        }
+    }
+
+    &--fluid {
+        display: block;
+        width: 100%;
+    }
+
+    &--line {
+        .o-checkbox__input:checked + .o-checkbox__label,
+        .o-checkbox__input:indeterminate + .o-checkbox__label {
+            &:after {
+                top: 2px;
+                border-left: none;
+                transform: translate(3px, 4px) rotate(0deg);
+            }
+        }
+    }
+
+    &--black {
+        .o-checkbox__label:before {
+            border-color: $sl-color-black;
+            background-color: $sl-color-white;
+        }
+
+        .o-checkbox__input:checked + .o-checkbox__label:before {
+            border-color: $sl-color-black;
+            background-color: $sl-color-black;
+        }
+
+        .o-checkbox__input:checked + .o-checkbox__label:after {
+            border-color: $sl-color-white;
+        }
+    }
+
+    &--size-16 {
+        .o-checkbox__label {
+            font-size: 14px;
+            line-height: 20px;
+        }
+
+        .o-checkbox__label:before {
+            width: 16px;
+            height: 16px;
+            margin: 3px 8px 1px 0px;
+        }
+
+        .o-checkbox__label:after {
+            left: 1px;
+            top: 3.5px;
+            width: 8px;
+            height: 5px;
+            border-width: 2px;
+        }
+    }
+
+    &--primary {
+        input[type="checkbox"] {
+            border: 1px solid $sl-color-gray--400;
+            border-radius: 2px;
+            appearance: none;
+
+            &:after {
+                content: "";
+                display: none;
+                position: absolute;
+                top: 3.5px;
+                left: 2px;
+                width: 12px;
+                height: 6.5px;
+                border: solid 2px $sl-color-white;
+                border-right: none;
+                border-top: none;
+                transform: rotate(-45deg);
+            }
+
+            &:checked {
+                border: 1px solid $sl-color-primary;
+                background-color: $sl-color-primary;
+
+                &:after {
+                    display: block;
+                }
+            }
+        }
+    }
+}

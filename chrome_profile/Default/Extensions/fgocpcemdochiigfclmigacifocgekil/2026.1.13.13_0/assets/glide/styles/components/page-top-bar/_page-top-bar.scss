@@ -1,0 +1,54 @@
+.c-pageTopBar {
+    padding: 8px 0 16px;
+
+    &__wrapper {
+        display: flex;
+        align-items: center;
+    }
+
+    &__content {
+        margin-left: 12px;
+        flex: 1;
+        display: flex;
+        gap: 8px;
+        align-items: center;
+    }
+}
+
+.c-templates-dropdown,
+.c-publish-filter-dropdown {
+    &.open {
+        .o-button {
+            border-color: $gl-color-white;
+        }
+    }
+}
+
+.c-publish-filter-indicate {
+    min-width: 18px;
+    height: 18px;
+    border-radius: 2px;
+    background-color: $gl-color-yellow-green;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    position: absolute;
+    top: -3px;
+    right: -6px;
+
+    .o-icon {
+        font-size: 14px;
+        color: $gl-color-black;
+    }
+}
+
+.c-templates-dropdown {
+    &__list {
+        max-height: calc(100vh - 158px);
+        overflow-y: auto;
+    }
+}
+
+.c-environment-filter-dropdown__list {
+    margin-left: -92px;
+}

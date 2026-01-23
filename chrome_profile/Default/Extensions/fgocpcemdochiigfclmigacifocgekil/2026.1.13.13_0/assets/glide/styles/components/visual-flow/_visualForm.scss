@@ -1,0 +1,317 @@
+$vd-dropdown-border-color: #D0D0CE;
+$vd-dropdown-border-radius: 4px;
+
+@mixin vd-dropdown-border {
+    border: 1px solid $vd-dropdown-border-color;
+    border-bottom-left-radius: $vd-dropdown-border-radius;
+    border-bottom-right-radius: $vd-dropdown-border-radius;
+}
+
+@mixin vd-dropdown-host-opened {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+}
+
+.c-visualForm {
+    display: block;
+    width: 100%;
+
+    &--start-action {
+        padding-top: 6px;
+    }
+
+    // Deprecated
+    &:first-child {
+        margin-top: 0;
+    }
+
+    // TODO: Temp workaround. Layout should be revisited.
+    // Element should define its own margin-below instead margin-top
+    // Replace o-field with custom class
+    .o-field {
+        margin-top: 0;
+        margin-bottom: 24px;
+
+        &__time-range {
+            margin-bottom: 0;
+        }
+
+        &--mid {
+            margin-bottom: 14px;
+        }
+
+        &--close {
+            margin-bottom: 8px;
+        }
+
+        &__label {
+            display: flex;
+            align-items: center;
+        }
+
+        &__with-buttons {
+            display: flex;
+            width: 100%;
+
+            &--right-margin {
+                margin-right: 98px;
+            }
+
+            &__control {
+                margin-right: 14px;
+                flex-grow: 2;
+
+                &--with-info-icon {
+                    display: flex;
+                    align-items: center;
+                    margin-right: 8px;
+
+                    .o-field__input {
+                        margin-right: 8px;
+                    }
+                }
+            }
+        }
+
+        &__input,
+        &__textarea,
+        &__select {
+            &-invalid {
+                border: 1px solid $sl-color-dark-red;
+            }
+        }
+
+        &__input,
+        &__textarea {
+
+            &.bottom-suggestions-active {
+                @include vd-dropdown-host-opened;
+            }
+        }
+
+        &__combobox {
+
+            &--designer {
+
+                .o-dropdown {
+
+                    &.show {
+
+                        .o-dropdown__toggle {
+                            @include vd-dropdown-host-opened;
+                        }
+
+                        .o-dropdown__list {
+                            margin: 0;
+                            margin-top: -1px;
+                            box-shadow: none;
+                            @include vd-dropdown-border;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Overrides
+
+    .o-field__input,
+    .o-field__textarea,
+    .o-field__select {
+        border-radius: 4px;
+
+        &-invalid {
+            border: 1px solid $sl-color-dark-red;
+        }
+    }
+
+    .o-button {
+        border-radius: 4px;
+    }
+
+    &__title {
+        font-size: 16px;
+        line-height: 24px;
+        margin: 36px 0 12px;
+        font-weight: 600;
+
+        &--lg {
+            margin: 0;
+            font-size: 18px;
+            font-weight: normal;
+        }
+    }
+
+    &__subtitle {
+        display: block;
+        font-size: 16px;
+        font-weight: 600;
+        line-height: 24px;
+        margin-bottom: 14px;
+    }
+
+    &__checkbox {
+        display: block;
+        margin-bottom: 12px;
+
+        &--rightside {
+            .o-checkbox__label {
+                white-space: nowrap;
+            }
+        }
+
+        &--single-line-align {
+            padding-top: 6px;
+        }
+    }
+
+    &__link {
+        @extend %extend-user-select;
+
+        display: inline-block;
+        color: $sl-color-primary;
+        cursor: pointer;
+
+        &:hover {
+            text-decoration: underline;
+        }
+
+        &--sub-item {
+            margin-top: 8px;
+        }
+    }
+
+    &__itemHeader {
+        display: flex;
+        align-items: center;
+        margin-bottom: 24px;
+        position: relative;
+
+        &Title {
+            font-size: 18px;
+            line-height: 32px;
+            flex-grow: 1;
+        }
+
+        &ColorTag {
+            position: absolute;
+            left: -24px; // Manual correction by padding
+            top: 0;
+            z-index: 1;
+            height: 32px;
+            width: 4px;
+            border-top-right-radius: 2px;
+            border-bottom-right-radius: 2px;
+        }
+
+        &Actions {
+            display: flex;
+            align-items: center;
+        }
+
+        &Action {
+            display: flex;
+            width: 24px;
+            height: 24px;
+            align-items: center;
+            align-content: center;
+            margin-left: 10px;
+            cursor: pointer;
+
+            img {
+                display: block;
+                width: 100%;
+                height: 100%;
+            }
+        }
+    }
+
+    &__buttonSwitcher {
+        display: block;
+
+        &--formControl {
+            margin-bottom: 24px;
+        }
+    }
+
+    &__add-note {
+        margin-top: 20px;
+        padding-bottom: 36px;
+        border-bottom: 1px solid $sl-border-color--gray-light;
+
+        &-textarea {
+            min-height: auto;
+        }
+    }
+
+    &Suggestions {
+
+        &List {
+            display: block;
+            width: 100%;
+            margin: 0;
+            min-width: auto;
+            box-shadow: none;
+            @include vd-dropdown-border;
+
+            &Host {
+                position: absolute;
+                display: block;
+                width: 100%;
+
+                &--property {
+                    bottom: 1px;
+
+                    .dropdown-item__title {
+                        font-weight: 600;
+                        color: $sl-color-blue;
+                        margin-right: 4px;
+                    }
+
+                    .dropdown-item__text {
+                        color: $sl-color-gray--500;
+                    }
+                }
+
+                &--intellisense {
+                    bottom: 1px;
+
+                    .c-visualFormSuggestionsList {
+                        top: 0;
+                    }
+                }
+            }
+        }
+
+        &Item {
+
+            &:hover {
+                background-color: $sl-dropdown-item-hover-color;
+            }
+
+            &__icon {
+                width: 24px;
+                height: 24px;
+                display: inline-block;
+                margin-right: 6px;
+
+                use {
+                    fill: #000000;
+                }
+            }
+
+            .highlight {
+                background: none;
+                color: $sl-text-highlight-blue-color;
+            }
+        }
+    }
+}
+
+.vd-tab-content {
+    display: none;
+
+    &--active {
+        display: block;
+    }
+}

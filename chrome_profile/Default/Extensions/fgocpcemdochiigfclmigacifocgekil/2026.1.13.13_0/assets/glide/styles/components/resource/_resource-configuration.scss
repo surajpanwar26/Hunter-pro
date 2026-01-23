@@ -1,0 +1,23 @@
+@import '../../../../../assets/glide/styles/helpers/variables';
+
+.resource-configuration {
+    &__size-inputs {
+        display: flex;
+        gap: 24px;
+    }
+
+    &__size-input {
+        position: relative;
+
+        input {
+            padding-right: 24px;
+        }
+
+        &-icon {
+            position: absolute;
+            right: 12px;
+            top: 32px;
+            color: $gl-color-grey--550;
+        }
+    }
+}

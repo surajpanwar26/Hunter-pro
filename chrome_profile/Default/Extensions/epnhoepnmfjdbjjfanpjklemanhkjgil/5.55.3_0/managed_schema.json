@@ -1,0 +1,31 @@
+{
+    "type": "object",
+    "properties": {
+        "APIKey": {
+            "title": "API Key",
+            "description": "The API Key for your Pendo Subscription",
+            "type": "string"
+        },
+        "visitor": {
+            "type": "string"
+        },
+        "account": {
+            "type": "string"
+        },
+        "dataEnvironment": {
+            "type": "string"
+        },
+        "visitorIdPolicy": {
+            "type": "string"
+        },
+        "additionalAPIKeys": {
+            "type": "array",
+            "items": {
+                "type": "string"
+            }
+        },
+        "identityProvider": {
+            "type": "string"
+        }
+    }
+}

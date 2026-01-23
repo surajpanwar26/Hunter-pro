@@ -1,0 +1,42 @@
+.c-flow-list {
+    height: 100vh;
+    display: flex;
+
+    &__items {
+        display: flex;
+        flex-direction: column;
+        width: 400px;
+        min-width: 400px;
+        height: calc(100vh - $gl-editor-header-height);
+        margin-top: $gl-editor-header-height;
+
+        &-selection {
+            border-right: 1px solid $gl-color-grey--450;
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+        }
+    }
+
+    &__config {
+        flex: 1;
+        width: calc(100vh - 400px);
+    }
+}
+
+//to replace for appr. file
+
+.gl-flow-name {
+    display: flex;
+    gap: 8px;
+
+    &__indicator {
+        position: relative;
+
+        gl-publish-status {
+            position: absolute;
+            right: -4px;
+            bottom: -2px;
+        }
+    }
+}

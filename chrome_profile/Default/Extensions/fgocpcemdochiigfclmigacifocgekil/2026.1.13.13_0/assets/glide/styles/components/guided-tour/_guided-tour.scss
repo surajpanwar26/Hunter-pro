@@ -1,0 +1,45 @@
+.c-guidedTour {
+    height: calc(100vh - $gl-editor-header-height);
+
+    &__title-editor {
+        min-height: 38px;
+        display: flex;
+        align-items: center;
+        min-width: 310px;
+
+        .c-inlineFieldEditor {
+            width: 100%;
+        }
+    }
+
+    .c-pageToolsBar__inner {
+        padding-right: 24px;
+    }
+
+    &__body {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+
+        &--disabled {
+            opacity: .4;
+            user-select: none;
+            pointer-events: none;
+        }
+    }
+
+    .c-visualDiagram {
+        &--skill {
+            height: 100%;
+        }
+    }
+
+    .c-visual {
+        &__canvas--bg-dimmed {
+            background-color: transparent;
+        }
+    }
+    &__invisible {
+        display: none;
+    }
+}

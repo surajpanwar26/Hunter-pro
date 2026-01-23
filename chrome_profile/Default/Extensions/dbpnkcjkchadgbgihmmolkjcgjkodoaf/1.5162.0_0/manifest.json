@@ -1,0 +1,56 @@
+{
+   "action": {
+      "default_icon": {
+         "128": "icon128-logged-out.png",
+         "16": "icon16-logged-out.png",
+         "48": "icon48-logged-out.png"
+      },
+      "default_popup": "popup.html"
+   },
+   "background": {
+      "offscreen": {
+         "page": "offscreen.html"
+      },
+      "service_worker": "background.js",
+      "type": "module"
+   },
+   "content_scripts": [ {
+      "all_frames": true,
+      "js": [ "content.js" ],
+      "match_about_blank": true,
+      "matches": [ "http://*/*", "https://*/*" ],
+      "run_at": "document_start"
+   }, {
+      "all_frames": true,
+      "js": [ "injected.js" ],
+      "match_about_blank": true,
+      "matches": [ "http://*/*", "https://*/*" ],
+      "run_at": "document_start",
+      "world": "MAIN"
+   } ],
+   "description": "Prisma Browser Extension",
+   "devtools_page": "devtools.html",
+   "externally_connectable": {
+      "matches": [ "https://auth.talon-sec.com/*", "https://auth.eu.talon-sec.com/*", "https://auth.staging.talon-sec.com/*" ]
+   },
+   "host_permissions": [ "\u003Call_urls>", "chrome://*/*", "*://*/*" ],
+   "icons": {
+      "128": "icon128.png",
+      "16": "icon16.png",
+      "48": "icon48.png"
+   },
+   "incognito": "split",
+   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAsHPQI/gopBhm6/3c1xYvSJ/athnscsmXPzdIfxaj3UJVSGOSA48m3x5PftB1yo4sMHnFq13/4j6QggdEntpdgd2k6JMKSWYxJO/4QFaQOjjTlR7Mat0JEYjIu1Z7rfFvpiMiHsUY/aRTLKSgxvVHhUB4B9zDzmuuL48kd+Gq7wMuUQcT+NcSy0nkb7EMyaxqduriyYdXr3c+IgZu23T5C2Nw3A9jJwi5/KQ949HK0biR9gFaEpAn7fCE3I/ovPjmTgeNpAp81tIG5In7OKQ7NPbnGSy0c39QlldG62O29lX5UuATiF+Eo24vlpk2Br01/2njdv6vJ+sWVdXsp21VhwIDAQAB",
+   "manifest_version": 3,
+   "name": "Prisma Browser Extension",
+   "permissions": [ "alarms", "webRequest", "management", "downloads", "webRequestBlocking", "tabs", "idle", "history", "storage", "proxy", "unlimitedStorage", "identity", "identity.email", "cookies", "browsingData", "topSites", "notifications", "webNavigation", "enterprise.hardwarePlatform", "enterprise.deviceAttributes", "enterprise.networkingAttributes", "geolocation", "offscreen", "scripting", "declarativeNetRequest" ],
+   "storage": {
+      "managed_schema": "policySchema.json"
+   },
+   "update_url": "https://hawkeye-extensions.talon-sec.com/crx/iopqrweunlsadkfcmvkfdhsja?prodchannel=stable",
+   "version": "1.5162.0",
+   "web_accessible_resources": [ {
+      "matches": [ "\u003Call_urls>" ],
+      "resources": [ "startup.html", "injected.js", "block.html", "overlay.html", "ssoLogin.html", "fileSenderProxy.html", "watermark.html" ]
+   } ]
+}

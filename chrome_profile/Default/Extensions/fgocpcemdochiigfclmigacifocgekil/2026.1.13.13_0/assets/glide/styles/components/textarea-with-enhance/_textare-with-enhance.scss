@@ -1,0 +1,48 @@
+.c-textareaEnhance {
+    position: relative;
+
+    textarea.o-field__input {
+        overflow: hidden;
+        min-height: 46px;
+    }
+
+    &__btn {
+        position: absolute;
+        bottom: 4px;
+        right: 4px;
+
+        .o-button {
+            font-size: 12px;
+        }
+
+        &--enhance {
+
+            .o-button {
+                background-color: color-mix(in oklab, $gl-color-blue 20%, $gl-btn-color-white 80%);
+
+                &:hover {
+                    background-color: color-mix(in oklab, $gl-color-blue 30%, $gl-btn-color-white 70%);
+                }
+
+                &:active {
+                    background-color: color-mix(in oklab, $gl-color-blue 40%, $gl-btn-color-white 60%);
+                }
+            }
+        }
+
+        &--undo {
+
+            .o-button {
+                background-color: color-mix(in oklab, $gl-color-orange 20%, $gl-btn-color-white 80%);
+
+                &:hover {
+                    background-color: color-mix(in oklab, $gl-color-orange 30%, $gl-btn-color-white 70%);
+                }
+
+                &:active {
+                    background-color: color-mix(in oklab, $gl-color-orange 40%, $gl-btn-color-white 60%);
+                }
+            }
+        }
+    }
+}

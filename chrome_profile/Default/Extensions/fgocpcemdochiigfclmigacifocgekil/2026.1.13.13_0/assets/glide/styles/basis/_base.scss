@@ -1,0 +1,140 @@
+body {
+    margin: 0;
+    font: 14px/1.43 "Open Sans", sans-serif;
+    color: $gl-text-black;
+    overflow: hidden;
+
+    &.modal-open {
+        modal-container + bs-dropdown-container {
+            z-index: 3100;
+        }
+
+        .modal {
+            &:not(.fade) {
+                // When animation in a dialog is disabled, it means that this dialog is above all
+                z-index: 3101;
+            }
+        }
+
+        .cdk-overlay-container {
+            z-index: 3054; // to show prebuilt condition inside prebuilt modal
+
+            & + bs-dropdown-container {
+                z-index: 3100;
+            }
+
+            & ~ .modal {
+                z-index: 3052; // to show preview inside prebuilt creation modal
+            }
+        }
+
+        .modal-backdrop + .modal.show {
+            z-index: 3053;
+        }
+
+        modal-container ~ modal-container,
+        .modal-backdrop ~ .modal-backdrop {
+            z-index: 3055 !important;
+        }
+
+        &.prebuilt-preview {
+            .cdk-overlay-container {
+                z-index: 1;
+            }
+        }
+    }
+
+    .modal-backdrop {
+        &--level-2 {
+            z-index: 3053;
+        }
+    }
+}
+
+.c-container {
+    margin: 0 auto;
+    padding: 0 24px;
+
+    .c-header &,
+    .c-pageTopBar &,
+    .c-page__footer & {
+        .gl-fullscreen-mode & {
+            max-width: 100%;
+        }
+    }
+
+}
+
+.mt-48 {
+    margin-top: 48px !important;
+}
+
+.mb-32 {
+    margin-bottom: 32px !important;
+}
+
+.mt-32 {
+    margin-top: 32px !important;
+}
+
+.mb-24 {
+    margin-bottom: 24px !important;
+}
+
+.mt-24 {
+    margin-top: 24px !important;
+}
+
+.mr-16 {
+    margin-right: 16px !important;
+}
+
+.mt-16 {
+    margin-top: 16px !important;
+}
+
+.ml {
+    &-8 {
+        margin-left: 8px;
+    }
+     &-14 {
+        margin-left: 14px;
+    }
+}
+
+.p {
+
+    &-24 {
+        padding: 24px !important;
+    }
+
+    &y {
+        &-8 {
+            padding-top: 8px;
+            padding-bottom: 8px;
+        }
+    }
+
+    &l {
+        &-16 {
+            padding-left: 16px;
+        }
+
+        &-0 {
+            padding-left: 0 !important;
+        }
+
+    }
+}
+
+.cursor-pointer {
+    cursor: pointer !important;
+}
+
+.list-style-unset {
+    list-style: unset;
+}
+
+.font-weight-bold {
+    font-weight: bold;
+}

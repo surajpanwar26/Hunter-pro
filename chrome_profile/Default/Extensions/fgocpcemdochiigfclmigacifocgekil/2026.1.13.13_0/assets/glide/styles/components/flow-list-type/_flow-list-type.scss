@@ -1,0 +1,80 @@
+.c-flow-list-type {
+    height: calc(100vh - $gl-editor-header-height);
+
+    &--invisible {
+        display: none;
+    }
+
+    &__title-editor {
+        min-height: 38px;
+        display: flex;
+        align-items: center;
+
+        .c-inlineFieldEditor {
+            width: 100%;
+        }
+    }
+
+    &__body {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        padding: 0 24px 18px;
+        overflow-y: auto;
+    }
+
+    .c-pageToolsBar {
+        position: sticky;
+        top: 0;
+        z-index: 1;
+    }
+
+    &-list {
+        position: relative;
+        z-index: 0;
+    }
+
+    &__part {
+        &--disabled {
+            color: rgba(0,0,0, .4);
+            user-select: none;
+            pointer-events: none;
+        }
+    }
+
+    &-item {
+        padding: 12px 28px 12px 24px;
+        background-color: #fff;
+        border-radius: 4px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        cursor: pointer;
+
+        &__icon {
+            color: $gl-color-grey--600;
+        }
+
+        &__name {
+            flex: 1;
+            overflow: hidden;
+            white-space: nowrap;
+            text-overflow: ellipsis;
+        }
+
+        &:not(:last-child) {
+            margin-bottom: 16px;
+        }
+    }
+
+    &-add {
+        width: 228px;
+        margin: 20px auto 0;
+    }
+
+    .o-dropdown__button {
+        .o-button {
+            background-color: transparent;
+        }
+    }
+}

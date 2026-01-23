@@ -1,0 +1,123 @@
+.c-flow-comparison-table {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    width: 100%;
+
+    &-row {
+        display: contents;
+
+        >.c-flow-comparison-table-cell {
+            padding: 5px 12px 7px;
+            font-size: 14px;
+        }
+    }
+
+    &-header {
+        >.c-flow-comparison-table-cell {
+            font-size: 12px;
+            color: $gl-color-grey--600;
+            padding: 19px 12px 21px;
+        }
+    }
+
+    &-cell {
+        border-bottom: 1px solid $gl-color-grey--450;
+        white-space: nowrap;
+
+        &--date {
+            span {
+                font-weight: 600;
+            }
+        }
+
+        &--name {
+            max-width: 182px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+    }
+
+    gl-publish-status {
+        display: inline-block;
+        margin-right: 8px;
+        padding: 0;
+        vertical-align: middle;
+    }
+}
+
+@media (min-width: 1240px) {
+    .c-flow-comparison-modal {
+        --bs-modal-width: 940px;
+    }
+
+    .c-flow-comparison-table-cell--name {
+        max-width: initial;
+    }
+}
+
+@media (max-width: 992px) {
+    .c-flow-comparison-modal {
+        --bs-modal-width: 800px;
+    }
+}
+
+@media (max-width: 768px) {
+    .c-flow-comparison-modal {
+        --bs-modal-width: 800px;
+        --bs-modal-margin: 0.5rem;
+    }
+
+    .c-flow-comparison-table {
+        display: block;
+
+        &-row {
+            display: grid;
+            grid-template-columns: 1fr;
+            overflow: hidden;
+            padding: 11px 0 19px;
+
+            &:not(:last-child) {
+                border-bottom: 1px solid $gl-color-grey--350;
+            }
+
+            >.c-flow-comparison-table-cell {
+                display: flex;
+                flex-wrap: wrap;
+                border-bottom: none;
+                padding: 0 0 10px;
+
+                &:last-child {
+                    padding: 0;
+                }
+
+                &:last-child {
+                    border-bottom: none;
+                }
+
+                &:before {
+                    content: attr(data-label);
+                    flex: 0 0 100%;
+                    width: 100%;
+                    margin-bottom: 2px;
+                    font-size: 12px;
+                    color: $gl-color-grey--600;
+                }
+            }
+        }
+
+        &-cell {
+            &--name {
+                max-width: 100%;
+                white-space: normal;
+            }
+
+            &--date {
+                gap: 4px;
+            }
+        }
+
+        &-header {
+            display: none;
+        }
+    }
+}

@@ -1,0 +1,35 @@
+.configuration-overlay {
+    position: fixed;
+    left: 0;
+    top: $gl-editor-header-height;
+    width: 100%;
+    height: calc(100vh - $gl-editor-header-height);
+    max-height: calc(100vh - $gl-editor-header-height);
+    background-color: #fff;
+    z-index: 100;
+    display: flex;
+    flex-direction: column;
+
+    &__body {
+        flex: 1;
+        overflow: auto;
+
+        &--footer {
+            padding: 15px 24px;
+        }
+
+        &--accordion {
+            padding: 16px 24px;
+        }
+    }
+
+    &__editor-area {
+        display: flex;
+        height: 100%;
+        width: 100%;
+        .o-field {
+            display: flex;
+            width: 100%;
+        }
+    }
+}

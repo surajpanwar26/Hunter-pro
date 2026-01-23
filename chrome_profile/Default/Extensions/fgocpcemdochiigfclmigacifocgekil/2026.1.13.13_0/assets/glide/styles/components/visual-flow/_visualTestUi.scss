@@ -1,0 +1,241 @@
+.c-visualTestUi {
+    &Host {
+        display: block;
+        position: absolute;
+        z-index: 1000;
+        bottom: 16px;
+        right: 16px;
+        height: calc(100% - 32px);
+        width: 420px;
+        overflow: hidden;
+        border-radius: 4px;
+        border: 1px solid #F0F0F0;
+        background-color: #FFFFFF;
+        opacity: 1;
+        transition: opacity 0.3s ease;
+
+        &.initializing {
+            opacity: 0;
+        }
+
+        &.minimized {
+            display: none;
+        }
+    }
+
+    &Wrap {
+        width: 100%;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+    }
+
+    &Header {
+        display: flex;
+        align-items: center;
+        padding: 12px 16px;
+
+        &__title {
+            flex-grow: 1;
+            font-size: 18px;
+        }
+
+        &__close {
+            cursor: pointer;
+            width: 24px;
+            height: 24px;
+
+            img {
+                display: block;
+                width: 100%;
+                height: 100%;
+            }
+        }
+    }
+
+    &Content {
+        position: relative;
+        flex-grow: 1;
+        display: flex;
+        flex-direction: column;
+    }
+
+    &Widget {
+        display: block;
+        width: 100%;
+        flex-grow: 1;
+
+        iframe {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+    }
+
+    &NodeSelect {
+        &__host {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #FFFFFF;
+        }
+
+        &__diagram {
+            &Wrap {
+                height: 100%;
+                display: flex;
+                flex-direction: column;
+            }
+
+            &Instance {
+                flex-grow: 1;
+                position: relative;
+                background-color: #F5F5F5;
+                overflow: auto;
+            }
+
+            &Canvas {
+                height: 100%;
+
+                & > div {
+                    @extend %extend-scrollbar;
+                }
+            }
+        }
+
+        &__bottom {
+            height: 64px;
+            display: flex;
+            align-items: center;
+            padding: 0 16px;
+            justify-content: right;
+            flex-shrink: 0;
+
+            &Actions {
+                .o-button--left-margin {
+                    margin-left: 16px;
+                }
+            }
+        }
+    }
+
+    &Subheader {
+        height: 52px;
+        padding: 0 16px;
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        border: 1px solid #F0F0F0;
+        border-left-width: 0;
+        border-right-width: 0;
+
+        &--active {
+            background-color: #F8F8FA;
+        }
+
+        &__selectedNode {
+            flex-grow: 1;
+
+            &Title {
+                font-weight: 600;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                white-space: nowrap;
+                max-width: 140px;
+            }
+
+            &Subtitle {
+                color: #97999B;
+            }
+        }
+
+        &__actions {
+            //
+        }
+
+        &__action {
+            display: flex;
+            align-items: center;
+            padding: 0 4px;
+            cursor: pointer;
+            user-select: none;
+
+            &Icon {
+                display: block;
+                width: 20px;
+                height: 20px;
+                margin-right: 4px;
+            }
+
+            &Text {
+                color: #00A3E0;
+                font-weight: 600;
+            }
+        }
+    }
+
+    &__loader {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: rgba(248, 248, 250, 0.6);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+
+        &Spinner {
+            @include mixin-spinner-size(40px);
+        }
+    }
+
+    &__runButton {
+        display: flex;
+        align-items: center;
+        height: 32px;
+        padding: 0 14px;
+        border-radius: 4px;
+        cursor: pointer;
+        user-select: none;
+
+        &--margin {
+            margin-right: 16px;
+        }
+
+        &.active {
+            background-color: #f3fcff;
+        }
+
+        &.disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        img {
+            display: block;
+            width: 20px;
+            height: 20px;
+            margin-right: 8px;
+        }
+
+        span {
+            color: #00A3E0;
+            font-weight: 600;
+        }
+
+        &--iconLoop {
+            @keyframes spin {
+                from {
+                    transform:rotate(0deg);
+                }
+                to {
+                    transform:rotate(360deg);
+                }
+            }
+            animation: 6s linear infinite spin;
+        }
+    }
+}

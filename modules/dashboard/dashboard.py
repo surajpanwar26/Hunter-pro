@@ -16,6 +16,7 @@ from modules.dashboard import log_handler, metrics
 from config.secrets import ai_provider
 from config.questions import user_information_all
 from modules.dashboard.resume_tailor_dialog import ResumeTailorDialog
+from modules.dashboard.enhanced_resume_tailor import open_enhanced_resume_tailor_dialog
 
 
 # Import for modern styling
@@ -61,28 +62,28 @@ class StatusCard(ttkb.Frame):
     """Modern stat card with icon and animated value"""
     def __init__(self, parent, title, icon, value="0", color="info", **kwargs):
         super().__init__(parent, **kwargs)
-        self.configure(padding=15)
-        
+        self.configure(padding=20, style='Card.TFrame', relief=tk.RIDGE, borderwidth=2)
+
         # Icon and title row
-        header = ttkb.Frame(self)
-        header.pack(fill=tk.X, pady=(0, 10))
-        
-        icon_label = ttkb.Label(header, text=icon, font=("Segoe UI Emoji", 24))
+        header = ttkb.Frame(self, style='Card.TFrame')
+        header.pack(fill=tk.X, pady=(0, 12))
+
+        icon_label = ttkb.Label(header, text=icon, font=("Segoe UI Emoji", 28), bootstyle=color)
         icon_label.pack(side=tk.LEFT)
-        
-        title_label = ttkb.Label(header, text=title, font=("Segoe UI", 11), 
-                                 foreground=COLORS['text_secondary'])
-        title_label.pack(side=tk.LEFT, padx=(10, 0))
-        
+
+        title_label = ttkb.Label(header, text=title, font=("Segoe UI", 13, "bold"), 
+                                 foreground=COLORS['text_secondary'], bootstyle="secondary")
+        title_label.pack(side=tk.LEFT, padx=(14, 0))
+
         # Value
-        self.value_label = ttkb.Label(self, text=value, font=("Segoe UI", 32, "bold"),
+        self.value_label = ttkb.Label(self, text=value, font=("Segoe UI", 36, "bold"),
                                       bootstyle=color)
-        self.value_label.pack(anchor=tk.W)
-        
+        self.value_label.pack(anchor=tk.W, pady=(0, 2))
+
         # Trend indicator (optional)
-        self.trend_label = ttkb.Label(self, text="", font=("Segoe UI", 10),
+        self.trend_label = ttkb.Label(self, text="", font=("Segoe UI", 11),
                                       foreground=COLORS['text_secondary'])
-        self.trend_label.pack(anchor=tk.W, pady=(5, 0))
+        self.trend_label.pack(anchor=tk.W, pady=(6, 0))
     
     def set_value(self, value, trend=None):
         self.value_label.config(text=str(value))
@@ -274,6 +275,66 @@ class QuickActions(ttkb.Frame):
 
 class BotDashboard(ttkb.Window):
     def __init__(self, controller):
+        # Keyboard shortcuts for sidebar navigation
+        super().__init__(themename="cyborg")
+        self.bind_all('<Alt-1>', lambda e: self.show_dashboard())
+        self.bind_all('<Alt-2>', lambda e: self.show_tailor())
+        self.bind_all('<Alt-3>', lambda e: self.show_history())
+        self.bind_all('<Alt-4>', lambda e: self.show_settings())
+        self.bind_all('<Alt-5>', lambda e: self.show_help())
+
+        # Set focus order for main actions (tab order)
+        # (main_panel is created later, so bind after creation)
+
+        # ...existing __init__ code from previous patch here...
+
+        # After main_panel is created:
+        self.main_panel.bind('<FocusIn>', self._set_tab_order)
+
+    def _set_tab_order(self, event=None):
+        # Set tab order for visible widgets in main_panel
+        widgets = [w for w in self.main_panel.winfo_children() if isinstance(w, (ttkb.Entry, ttkb.Button))]
+        for i, w in enumerate(widgets):
+            w.lift()
+            if i == 0:
+                w.focus_set()
+
+    def show_loading(self, message="Loading..."):
+        if hasattr(self, '_loading_overlay') and self._loading_overlay:
+            return
+        self._loading_overlay = tk.Toplevel(self)
+        self._loading_overlay.overrideredirect(True)
+        self._loading_overlay.attributes('-topmost', True)
+        self._loading_overlay.geometry(f"{self.winfo_width()}x{self.winfo_height()}+{self.winfo_rootx()}+{self.winfo_rooty()}")
+        spinner = ttkb.Label(self._loading_overlay, text="⏳", font=("Segoe UI Emoji", 48), bootstyle="info")
+        spinner.pack(expand=True)
+        msg = ttkb.Label(self._loading_overlay, text=message, font=("Segoe UI", 16), bootstyle="info")
+        msg.pack()
+
+    def hide_loading(self):
+        if hasattr(self, '_loading_overlay') and self._loading_overlay:
+            self._loading_overlay.destroy()
+            self._loading_overlay = None
+
+    def show_toast(self, message, level="info"):
+        toast = tk.Toplevel(self)
+        toast.overrideredirect(True)
+        toast.attributes('-topmost', True)
+        x = self.winfo_rootx() + self.winfo_width() - 320
+        y = self.winfo_rooty() + 60
+        toast.geometry(f"300x50+{x}+{y}")
+        colors = {
+            "success": COLORS['success'],
+            "error": COLORS['danger'],
+            "warning": COLORS['warning'],
+            "info": COLORS['info']
+        }
+        frame = ttkb.Frame(toast, style='Card.TFrame')
+        frame.pack(fill=tk.BOTH, expand=True)
+        label = ttkb.Label(frame, text=message, font=("Segoe UI", 11), foreground=colors.get(level, COLORS['info']))
+        label.pack(padx=10, pady=10)
+        toast.after(2500, toast.destroy)
+    def __init__(self, controller):
         # Use ttkbootstrap theme - cyborg for dark modern look
         super().__init__(themename="cyborg")
         self.title("🤖 AI Job Hunter Pro - Control Center")
@@ -285,43 +346,48 @@ class BotDashboard(ttkb.Window):
         self._app_style = ttkb.Style()
         self._app_style.configure('Card.TFrame', background=COLORS['card_bg'])
         
-        # Create main menu
-        self.create_menu()
-        
-        # Main container with gradient-like effect
+        # --- Modern Layout: Sidebar + Header + Main Content ---
         main_frame = ttkb.Frame(self)
         main_frame.pack(fill=tk.BOTH, expand=True)
-        
-        # ========== TOP BAR ==========
-        self.create_top_bar(main_frame)
-        
-        # ========== MAIN CONTENT ==========
-        content_frame = ttkb.Frame(main_frame)
-        content_frame.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
-        
-        # Create PanedWindow for resizable panels (using tkinter's PanedWindow)
-        self.paned_window = tk.PanedWindow(content_frame, orient=tk.HORIZONTAL, 
-                                            sashwidth=8, sashrelief=tk.RAISED,
-                                            bg='#2d3436')
-        self.paned_window.pack(fill=tk.BOTH, expand=True)
-        
-        # Left Panel (main content) - save reference for toggle
-        self.left_panel_frame = ttkb.Frame(self.paned_window)
-        self.paned_window.add(self.left_panel_frame, minsize=400, width=700)
-        
-        # Stat Cards Row
-        self.create_stat_cards(self.left_panel_frame)
-        
-        # Tabs Section
-        self.create_tabs_section(self.left_panel_frame)
-        
-        # Right Panel (resizable info panel) - save reference for toggle
-        self.right_panel_frame = ttkb.Frame(self.paned_window)
-        self.paned_window.add(self.right_panel_frame, minsize=300, width=450)
-        
-        self.create_right_panel(self.right_panel_frame)
-        
-        # Initialize stats BEFORE status bar (needed for _update_time)
+
+        # Sidebar Navigation
+        sidebar = ttkb.Frame(main_frame, width=70, style='Card.TFrame')
+        sidebar.pack(side=tk.LEFT, fill=tk.Y)
+        sidebar.pack_propagate(False)
+
+        # Sidebar Buttons (icons only, tooltips for clarity)
+        nav_items = [
+            ("🏠", "Dashboard", self.show_dashboard),
+            ("📝", "Tailor", self.show_tailor),
+            ("📜", "History", self.show_history),
+            ("⚙️", "Settings", self.show_settings),
+            ("❓", "Help", self.show_help)
+        ]
+        self.sidebar_btns = []
+        for icon, label, cmd in nav_items:
+            btn = AnimatedButton(sidebar, text=icon, width=3, command=cmd, bootstyle="secondary")
+            btn.pack(pady=10, padx=8)
+            btn.tooltip = label  # For future tooltip support
+            self.sidebar_btns.append(btn)
+
+        # Main Content Area (Header + Content)
+        content_wrapper = ttkb.Frame(main_frame)
+        content_wrapper.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        # Header Bar
+        header = ttkb.Frame(content_wrapper, style='Card.TFrame')
+        header.pack(fill=tk.X)
+        # App Title
+        ttkb.Label(header, text="🤖 AI Job Hunter Pro", font=("Segoe UI", 18, "bold"), bootstyle="info").pack(side=tk.LEFT, padx=20, pady=10)
+        # User/Settings/Notifications (right)
+        ttkb.Label(header, text="👤", font=("Segoe UI Emoji", 16)).pack(side=tk.RIGHT, padx=10)
+        ttkb.Label(header, text="🔔", font=("Segoe UI Emoji", 16)).pack(side=tk.RIGHT, padx=10)
+
+        # Main Panel (context-sensitive)
+        self.main_panel = ttkb.Frame(content_wrapper)
+        self.main_panel.pack(fill=tk.BOTH, expand=True)
+
+        # Initialize stats and state
         self.job_count = 0
         self.applied_count = 0
         self.failed_count = 0
@@ -330,22 +396,97 @@ class BotDashboard(ttkb.Window):
         self.start_time = None
         self.current_job_info = {}
         self.skip_reasons = []
-        
-        # ========== BOTTOM STATUS BAR ==========
+
+        # Status Bar
         self.create_status_bar(main_frame)
-        
+
+        # Activity Feed (initialize early for use in welcome messages)
+        self.activity_feed = ActivityFeed(self.main_panel)
+        # Optionally pack it somewhere if needed, or let dashboard sections handle packing
+
         # Setup background updates
         self.log_queue = log_handler.get_queue()
         log_handler.subscribe(self._on_new_log)
         self.after(500, self._refresh_metrics)
         self._log_buffer: list[str] = []
         self._last_metrics_snapshot: dict | None = None
-        
+
         self.protocol("WM_DELETE_WINDOW", self.on_close)
-        
+
         # Welcome message
         self.activity_feed.add_activity("Dashboard initialized", "success")
         self.activity_feed.add_activity("Ready to start job hunting!", "info")
+
+        # Show dashboard by default
+        self.show_dashboard()
+
+    def clear_main_panel(self):
+        for widget in self.main_panel.winfo_children():
+            widget.destroy()
+
+    def show_dashboard(self):
+        self.clear_main_panel()
+        # Stat Cards Row (modernized)
+        stat_row = ttkb.Frame(self.main_panel)
+        stat_row.pack(fill=tk.X, pady=24, padx=24)
+        self.create_stat_cards(stat_row)
+        # Tabs Section
+        tabs_frame = ttkb.Frame(self.main_panel)
+        tabs_frame.pack(fill=tk.BOTH, expand=True, padx=24, pady=(0, 24))
+        self.create_tabs_section(tabs_frame)
+
+    def show_tailor(self):
+        self.clear_main_panel()
+        # Resume Tailoring Center UI
+        section = ttkb.Frame(self.main_panel)
+        section.pack(fill=tk.BOTH, expand=True, padx=40, pady=30)
+        ttkb.Label(section, text="Resume Tailoring Center", font=("Segoe UI", 16, "bold"), bootstyle="info").pack(anchor=tk.W, pady=(0, 18))
+
+        # Resume input
+        resume_row = ttkb.Frame(section)
+        resume_row.pack(fill=tk.X, pady=8)
+        ttkb.Label(resume_row, text="Resume:", font=("Segoe UI", 11)).pack(side=tk.LEFT, padx=(0, 10))
+        resume_entry = ttkb.Entry(resume_row, width=50)
+        resume_entry.pack(side=tk.LEFT, padx=(0, 10))
+        ttkb.Button(resume_row, text="Browse", bootstyle="secondary-outline", command=lambda: self._browse_file(resume_entry)).pack(side=tk.LEFT)
+        # Drag-and-drop area (placeholder)
+        dnd_label = ttkb.Label(section, text="⬇️ Drag & drop your resume file here", font=("Segoe UI", 10), bootstyle="secondary")
+        dnd_label.pack(anchor=tk.W, pady=(2, 12))
+
+        # JD input
+        jd_row = ttkb.Frame(section)
+        jd_row.pack(fill=tk.X, pady=8)
+        ttkb.Label(jd_row, text="Job Description:", font=("Segoe UI", 11)).pack(side=tk.LEFT, padx=(0, 10))
+        jd_entry = ttkb.Entry(jd_row, width=50)
+        jd_entry.pack(side=tk.LEFT, padx=(0, 10))
+        ttkb.Button(jd_row, text="Browse", bootstyle="secondary-outline", command=lambda: self._browse_file(jd_entry)).pack(side=tk.LEFT)
+
+        # Tailor button
+        ttkb.Button(section, text="Tailor Resume", bootstyle="success", width=18).pack(pady=18)
+
+    def _browse_file(self, entry_widget):
+        path = filedialog.askopenfilename(title="Select File", filetypes=[("All Files", "*.*")])
+        if path:
+            entry_widget.delete(0, tk.END)
+            entry_widget.insert(0, path)
+
+    def show_history(self):
+        self.clear_main_panel()
+        section = ttkb.Frame(self.main_panel)
+        section.pack(fill=tk.BOTH, expand=True, padx=40, pady=30)
+        ttkb.Label(section, text="Application History & Export Center", font=("Segoe UI", 16, "bold"), bootstyle="info").pack(anchor=tk.W, pady=(0, 18))
+        # Placeholder for history/export widgets
+        ttkb.Label(section, text="(Your tailored resumes and export/download options will appear here.)", font=("Segoe UI", 11), bootstyle="secondary").pack(anchor=tk.W, pady=10)
+
+    def show_settings(self):
+        self.clear_main_panel()
+        ttkb.Label(self.main_panel, text="Settings & Preferences", font=("Segoe UI", 14, "bold"), bootstyle="info").pack(pady=30)
+        # Add settings widgets here
+
+    def show_help(self):
+        self.clear_main_panel()
+        ttkb.Label(self.main_panel, text="Help & Onboarding", font=("Segoe UI", 14, "bold"), bootstyle="info").pack(pady=30)
+        # Add help widgets here
     
     def create_top_bar(self, parent):
         """Create the top navigation bar"""
@@ -1823,7 +1964,9 @@ class BotDashboard(ttkb.Window):
         # Tools menu
         tools_menu = Menu(menubar, tearoff=0)
         menubar.add_cascade(label="🛠️ Tools", menu=tools_menu)
-        tools_menu.add_command(label="📝 Resume Tailor", command=self.open_resume_tailor_dialog)
+        tools_menu.add_command(label="✨ Resume Tailor (Enhanced)", command=self.open_resume_tailor_dialog)
+        tools_menu.add_command(label="📝 Resume Tailor (Classic)", command=self.open_classic_resume_tailor)
+        tools_menu.add_separator()
         tools_menu.add_command(label="⚙️ Configuration", command=self.open_config)
         
         # Help menu
@@ -2253,6 +2396,17 @@ class BotDashboard(ttkb.Window):
     # ========== Menu Actions ==========
     
     def open_resume_tailor_dialog(self):
+        """Open resume tailor dialog - now with enhanced version as default."""
+        try:
+            # Use the enhanced version with diff highlighting and skill suggestions
+            open_enhanced_resume_tailor_dialog(self, ai_provider, user_information_all)
+        except Exception as e:
+            # Fallback to original version if enhanced fails
+            print(f"Enhanced dialog failed, using standard version: {e}")
+            ResumeTailorDialog(self, ai_provider, user_information_all)
+    
+    def open_classic_resume_tailor(self):
+        """Open the classic resume tailor dialog."""
         ResumeTailorDialog(self, ai_provider, user_information_all)
     
     def export_logs(self):

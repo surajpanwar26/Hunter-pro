@@ -1,0 +1,384 @@
+.c-positionTools {
+    display: flex;
+    flex-wrap: wrap;
+    column-gap: 24px;
+
+    .c-ai-helper & {
+        margin-bottom: 12px;
+    }
+
+    &__item {
+        &--full {
+            width: 100%;
+        }
+    }
+}
+
+.c-positionOptions {
+    padding: 8px;
+    border-radius: $gl-border-radius-sm;
+    background-color: $gl-bg-light-grey;
+    overflow: hidden;
+    position: relative;
+    z-index: 0;
+
+    .c-ai-helper & {
+        padding: 8px 16px;
+    }
+
+    .c-smart-nudge &,
+    .c-positionTools-button--outer & {
+        padding: 11px;
+    }
+
+    .c-positionTools-button--inner & {
+        padding: 15px;
+    }
+
+    .c-menu-button-outside & {
+        padding: 0;
+        background-color: transparent;
+    }
+
+    &__underlay {
+        background-image: url(/assets/glide/images/bg-dot.png);
+        background-size: 20px;
+        position: absolute;
+        inset: 0;
+        opacity: .1;
+        z-index: -1;
+    }
+
+    &__grid {
+        display: grid;
+        grid-template-areas:
+                ". . tl . tr . ."
+                ". . . . . . ."
+                "lt . center center center . rt"
+                ". . center center center . ."
+                "lb . center center center . rb"
+                ". . . . . . ."
+                ". . bl . br . .";
+        grid-template-rows: 28px 6px 24px 8px 24px 6px 28px;
+        grid-template-columns: 28px 6px 24px 8px 24px 6px 28px;
+
+        .c-ai-helper & {
+            grid-template-rows: 24px 10px 24px 8px 24px 10px 24px;
+            grid-template-columns: 24px 6px 20px 8px 20px 6px 24px;
+        }
+
+        &--no-directions {
+            .c-positionPointer {
+                &::before {
+                    content: none;
+                }
+            }
+        }
+
+        &--short-list {
+            grid-template-areas:
+                "tl . . . . . tr"
+                ". . . . . . ."
+                "center center center center center center center"
+                "center center center center center center center"
+                "center center center center center center center"
+                ". . . . . . ."
+                "bl . . . . . br";
+        }
+
+        &--simple-list {
+            display: grid;
+            grid-template-areas:
+                ". . . t . . ."
+                ". . . . . . ."
+                ". . center center center . ."
+                "l . center center center . r"
+                ". . center center center . ."
+                ". . . . . . ."
+                ". . . b . . .";
+            grid-template-rows: 24px 11px 12px 24px 12px 11px 24px;
+            grid-template-columns: 24px 11px 12px 24px 12px 11px 24px;
+        }
+
+        &--around-target {
+            display: grid;
+            grid-template-areas:
+                "tl . . t . . tr"
+                ". . . . . . ."
+                ". . center center center . ."
+                "l . center center center . r"
+                ". . center center center . ."
+                ". . . . . . ."
+                "bl . . b . . br";
+            grid-template-rows: 24px 11px 12px 24px 12px 11px 24px;
+            grid-template-columns: 24px 11px 12px 24px 12px 11px 24px;
+        }
+
+        &--inside-target {
+            display: grid;
+            grid-template-areas:
+                "tl . t . tr"
+                ". . . . ."
+                "l . c . r"
+                ". . . . ."
+                "bl . b . br";
+            grid-template-rows: 24px 9px 24px 9px 24px;
+            grid-template-columns: 24px 9px 24px 9px 24px;
+            padding: 9px;
+            background-color: $gl-bg-light;
+            border: 2px solid $gl-border-color--green;
+            border-radius: 4px;
+            box-shadow: 0 0 2px 1px rgba($gl-color-black, .1);
+            margin: 3px;
+        }
+
+        &--around-target,
+        &--inside-target {
+            .c-positionPointer:nth-child(odd) {
+                left: 0;
+            }
+        }
+
+        &--outside-menu {
+            display: grid;
+            grid-template-areas:
+            "Top0 Top0 Top1 Top2 Top3 Top3"
+            "Left0 . . . . Right0"
+            "Left1 . . . . Right1"
+            "Left2 . . . . Right2"
+            "Left3 . . . . Right3"
+            "Bottom0 Bottom0 Bottom1 Bottom2 Bottom3 Bottom3";
+            grid-template-columns: 28px calc(25% - 28px) 25% 25% calc(25% - 28px) 28px;
+            grid-template-rows: 28px 42px 42px 42px 42px 28px;
+            justify-content: center;
+
+            @for $i from 0 through 3 {
+                .c-positionOptions__gridArea--Top#{$i} { grid-area: Top#{$i}; }
+                .c-positionOptions__gridArea--Bottom#{$i} { grid-area: Bottom#{$i}; }
+                .c-positionOptions__gridArea--Left#{$i} { grid-area: Left#{$i}; }
+                .c-positionOptions__gridArea--Right#{$i} { grid-area: Right#{$i}; }
+            }
+
+            .c-positionPointer {
+                width: 100%;
+                height: 100%;
+                border-radius: 2px;
+                border-width: 2px;
+
+                &__inner {
+                    border-width: 2px;
+                    border-radius: 2px;
+                }
+
+                &--selected {
+                    background-color: $gl-color-black;
+                }
+
+                &:hover {
+                    box-shadow: none;
+                }
+
+                &:before {
+                    content: none;
+                }
+                &:nth-child(odd) {
+                    left: 0;
+                    border-radius: 2px;
+                }
+
+                &:nth-child(even) {
+                    border-radius: 2px;
+                }
+            }
+        }
+
+        &Area {
+            &--Top {
+                grid-area: t;
+            }
+
+            &--Right {
+                grid-area: r;
+            }
+
+            &--Bottom {
+                grid-area: b;
+            }
+
+            &--Left {
+                grid-area: l;
+            }
+
+            &--TopLeft {
+                grid-area: tl;
+            }
+
+            &--TopRight {
+                grid-area: tr;
+            }
+
+            &--Center {
+                grid-area: c;
+            }
+
+            &--LeftTop {
+                grid-area: lt;
+                rotate: -90deg;
+            }
+
+            &--LeftBottom {
+                grid-area: lb;
+                rotate: -90deg;
+            }
+
+            &--RightTop {
+                grid-area: rt;
+                rotate: 90deg;
+            }
+
+            &--RightBottom {
+                grid-area: rb;
+                rotate: 90deg;
+            }
+
+            &--BottomLeft {
+                grid-area: bl;
+                rotate: 180deg;
+            }
+
+            &--BottomRight {
+                grid-area: br;
+                rotate: 180deg;
+            }
+
+            &--center {
+                grid-area: center;
+            }
+
+            &--BottomLeft,
+            &--BottomRight {
+                align-self: flex-end;
+            }
+
+            &--RightTop,
+            &--RightBottom {
+                justify-self: flex-end;
+            }
+        }
+    }
+
+    &__center {
+        border-radius: 2px;
+        background-color: $gl-bg-light;
+        box-shadow: 0 0 2px 1px rgba($sl-color-black, .1);
+        border-color: $gl-border-color-black;
+
+        &--top {
+            border-top: 2px solid;
+        }
+
+        &--right {
+            border-right: 2px solid;
+        }
+
+        &--left {
+            border-left: 2px solid;
+        }
+
+        &--bottom {
+            border-bottom: 2px solid;
+        }
+
+        &--default {
+            border: 2px solid $gl-color-green;
+        }
+    }
+}
+
+.c-positionPointer {
+    display: flex;
+    position: relative;
+    width: 24px;
+    height: 24px;
+    border: 1px solid $gl-border-color-black;
+    background-color: transparent;
+    cursor: pointer;
+
+    &::before {
+        content: "";
+        position: absolute;
+        width: 4px;
+        height: 4px;
+        bottom: -4.8px;
+    }
+
+    &:hover {
+        box-shadow: 0 0 2px 1px rgba($sl-color-black, .2);
+    }
+
+
+    .c-smart-nudge & {
+        .o-icon {
+            display: none;
+        }
+    }
+
+    &--selected {
+        .c-positionPointer__inner {
+            border-color: $gl-bg-green;;
+            background-color: $gl-bg-dark;
+            color: $gl-bg-light;
+        }
+
+        .c-smart-nudge & {
+            .o-icon {
+                display: block;
+            }
+        }
+    }
+
+    &:nth-child(even) {
+        border-radius: 1px 1px 0 1px;
+
+        &::before {
+            background: linear-gradient(to top left, transparent 0%, transparent 50%, #000 0%, #000 100%);
+            right: -0.8px;
+        }
+    }
+
+
+    &:nth-child(odd) {
+        border-radius: 1px 1px 1px 0;
+        left: -.8px;
+
+        &::before {
+            background: linear-gradient(to top right, transparent 0%, transparent 50%, #000 0%, #000 100%);
+            left: -0.8px;
+        }
+    }
+
+    &__inner {
+        flex: 1;
+        border-width: 1px;
+        border-style: solid;
+        border-color: $gl-border-color-white;
+        background-color: rgba($gl-color-lightgreen, .2);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+    }
+}
+
+.c-distanceOptions {
+    padding-top: 4px;
+
+    .o-field + .o-field {
+        margin-top: 12px;
+    }
+
+    .o-field__input {
+        &::placeholder {
+            color: $gl-text-black;
+        }
+    }
+}

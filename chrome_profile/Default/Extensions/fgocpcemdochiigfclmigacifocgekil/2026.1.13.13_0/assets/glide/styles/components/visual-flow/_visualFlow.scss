@@ -1,0 +1,1211 @@
+.c-vdFlow {
+    $node-side-gap: 127px;
+    $node-width: 14.6em;
+
+    $node-content-bg-color: #FFFFFF;
+    $node-content-bg-color-disabled: #F0F0F0;
+
+    $icon-size: 1.6em;
+    $action-size: 2.4em;
+
+    $text-color-secondary: #75787B;
+
+    $link-color: #767676;
+    $link-color-loop: #BBBCBC;
+    $link-stroke-width: 0.1em;
+    $link-node-offset-left-shift: 7.1em;
+
+    $branch-color: #ED8B00;
+
+    $conn-point-accent-color: #53565A;
+    $conn-point-accent-color-disabled: $link-color;
+    $conn-point-bg-color: transparent;
+    $conn-point-bg-color-disabled: $node-content-bg-color-disabled;
+    $conn-point-bg-hover-color: #f1fcff;
+    $conn-side-line-size: 6.2em;
+
+    $trigger-count-color: #F5F5F5;
+
+    $node-error-icon-color: #DA291C;
+    $node-select-mode-parent: #00A3E0;
+
+    $node-menu-btn-hover-color: #f0f0f0;
+
+    &__links {
+        position: absolute;
+        overflow: visible;
+        top: 0;
+        left: 0;
+
+        path {
+            stroke: $link-color;
+            stroke-width: $link-stroke-width;
+        }
+    }
+
+    &__host {
+        display: block;
+        min-width: 146px;
+    }
+
+    &__trigger {
+        padding: 8px 16px;
+        font-size: 14px;
+        color: $conn-point-accent-color;
+        background-color: #fff;
+        border-radius: 4px;
+        box-shadow: 0 2px 2px 0 #00000029;
+        display: flex;
+        margin-bottom: 12px;
+        align-items: center;
+        justify-content: space-between;
+        cursor: default;
+        max-width: 146px;
+
+        &-title {
+            line-height: 32px;
+        }
+
+        &-action {
+            position: relative;
+            cursor: pointer;
+            color: #000;
+            padding: 8px 16px;
+            display: flex;
+
+            .o-icon {
+                font-size: 14px;
+            }
+        }
+
+        &--present {
+            position: absolute;
+            top: -2px;
+            right: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 1em;
+            height: 1em;
+            background: $gl-color-green;
+            border-radius: 0.1em;
+
+            .o-icon {
+                font-size: 1em;
+                font-weight: 600;
+            }
+        }
+    }
+
+    &__node {
+        margin-bottom: 1.6em;
+        position: relative;
+
+        &--none {
+            display: none;
+        }
+
+
+        &Tile {
+            width: $node-width;
+            min-height: 7.2em;
+            position: relative;
+            display: flex;
+            border-radius: 0.4em;
+            justify-content: flex-end;
+            transition: all 0.2s linear;
+
+            &--error {
+                box-shadow: 0 0 0 1px $node-error-icon-color;
+
+                &:hover {
+                    box-shadow: 0 0.2em 0.2em 0 rgba(0, 0, 0, 0.16),
+                    0 0 0 1px $node-error-icon-color !important;
+                }
+            }
+
+            &--select-mode-parent {
+                box-shadow: 0 0 0 1px $node-select-mode-parent;
+                cursor: not-allowed;
+
+                &:hover {
+                    box-shadow: 0 0.2em 0.2em 0 rgba(0, 0, 0, 0.16),
+                    0 0 0 1px $node-select-mode-parent !important;
+                }
+            }
+
+            &--select-mode-child {
+                cursor: url('/assets/glide/images/cursor-add.svg') 10 10, auto;;
+            }
+
+            &--highlighted {
+                box-shadow: 0 0.2em 0.2em 0 rgba(0, 0, 0, 0.16),
+                0 0 0 1px $node-select-mode-parent !important;
+                background-color: $node-content-bg-color;
+                z-index: 2;
+            }
+
+            &--dimmed {
+                opacity: .4;
+            }
+
+            &:hover,
+            &.menu-active {
+                box-shadow: 0 0.2em 0.2em 0 rgba(0, 0, 0, 0.16);
+                background-color: $node-content-bg-color;
+                z-index: 2;
+
+                .c-vdFlow__nodeCondBlockBranch & {
+                    .c--link-to-node-icon,
+                    .c--link-from-node-text {
+                        display: none;
+                    }
+                }
+
+                .c-vdFlow__nodeMenu {
+                    display: block;
+                }
+
+                .c-vdFlow__nodeTile__title {
+                    text-decoration: dashed underline;
+                    text-underline-offset: 4px;
+                }
+            }
+
+            &--wait-for-time {
+                &:hover,
+                &.menu-active {
+                    .c-vdFlow__nodeTile__title {
+                        text-decoration: none;
+                    }
+                }
+            }
+
+            &Root {
+                display: flex;
+                position: relative;
+            }
+
+            &.not-selectable {
+                pointer-events: none;
+                user-select: none;
+            }
+
+            &.menu-active {
+                .c-vdFlow__nodeMenu {
+                    background: #fff;
+                    border: 1px solid $gl-color-grey--600;
+                }
+
+                &:hover {
+                    .c-vdFlow__nodeMenu {
+                        background-color: $node-menu-btn-hover-color;
+                        border: 1px solid transparent;
+                    }
+                }
+            }
+
+            &.content-idle {
+                .c-vdFlow__nodeTile__content {
+                    border-color: $node-content-bg-color !important;
+                }
+            }
+
+            &.content-disabled {
+
+                .c-vdFlow__nodeTile__content {
+                    transition: none;
+                    background-color: $node-content-bg-color-disabled;
+                    border-color: $node-content-bg-color-disabled !important;
+                }
+            }
+
+            &.tile-invisible {
+                display: none;
+            }
+
+            &.tile-connected-highlighted,
+            &.tile-connected:hover {
+                box-shadow: 0 0.2em 0.2em 0 rgba(0, 0, 0, 0.16),
+                0 0 0 1px $node-select-mode-parent !important;
+            }
+
+            &.tile-executed-highlighted {
+                outline: 2px solid $gl-color-grey--600;
+            }
+
+            &.tile-connected-highlighted,
+            &.tile-executed-highlighted {
+                background-color: $sl-color-white;
+            }
+
+            &__content {
+                width: 100%;
+                padding: 0.8em 0.8em 1.2em;
+                box-sizing: border-box;
+            }
+
+            &__header {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                min-height: 100%;
+            }
+
+            &__typeIcon {
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                border-radius: 50%;
+                width: $action-size;
+                height: $action-size;
+                margin-bottom: .4em;
+
+                &--square {
+                    border-radius: 0;
+                }
+
+                &--rhombus {
+                    border-radius: 4px;
+                    transform: rotate(45deg);
+
+                    & > * {
+                        transform: rotate(-45deg);
+                    }
+
+                    & .c-visualMenu__tileIconSvg {
+                        width: 22px;
+                        height: 22px;
+                    }
+
+                    .connection-icon-block {
+                        bottom: .3em;
+                        left: -2.3em;
+
+                        &__line {
+                            bottom: .5em;
+                        }
+                    }
+
+                }
+
+                &--small {
+                    width: 16px;
+                    height: 16px;
+                    margin-bottom: 0;
+                }
+            }
+
+            &__title {
+                text-align: center;
+                max-width: 100%;
+
+                span {
+                    font-size: 1.2em;
+                    line-height: 1.6em;
+                    user-select: none;
+                    display: -webkit-box;
+                    -webkit-box-orient: vertical;
+                    -webkit-line-clamp: 2;
+                    overflow: hidden;
+                    max-height: 3.2em;
+
+                    //.c-vdFlow__nodeCondBlockBranch & {
+                    //    height: 3.2em;
+                    //}
+                }
+            }
+
+            &__input {
+                position: relative;
+                width: 62px;
+
+                .o-field__input {
+                    padding: 2px 25px 2px 8px;
+                    font-size: 14px;
+                    line-height: 1;
+
+                    &::-webkit-inner-spin-button,
+                    &::-webkit-outer-spin-button {
+                        -webkit-appearance: none;
+                        -moz-appearance: none;
+                        appearance: none;
+                        margin: 0;
+                    }
+                }
+
+                .o-field__unit-end {
+                    position: absolute;
+                    bottom: 3px;
+                    right: 8px;
+                    color: $gl-color-grey--550;
+                    font-size: 12px;
+                }
+            }
+
+            &__rows {
+            }
+
+            &__row {
+                display: flex;
+                padding-top: 0.4em;
+                line-height: 1.6em;
+                user-select: none;
+
+                &Label {
+                    font-size: 1.3em;
+                    color: $text-color-secondary;
+                    font-weight: 500;
+                    white-space: nowrap;
+                    margin-right: 0.6em;
+                }
+
+                &Text {
+                    font-size: 1.3em;
+                    color: $text-color-secondary;
+                    word-break: break-word;
+                }
+            }
+        }
+
+        &Error {
+            width: $icon-size;
+            height: $icon-size;
+            fill: $node-error-icon-color;
+            margin-right: 0.2em;
+        }
+
+        &Menu {
+            display: none;
+            position: absolute;
+            right: .4em;
+            top: .4em;
+            width: $action-size;
+            height: $action-size;
+            border-radius: .4em;
+            fill: $gl-color-grey--600;
+            background-color: transparent;
+            transition: background-color 0.2s linear;
+            cursor: pointer;
+        }
+
+        &PlayIcon {
+            position: absolute;
+            right: .4em;
+            top: .4em;
+            width: $action-size;
+            height: $action-size;
+            border-radius: .4em;
+            fill: $gl-color-grey--600;
+            background-color: transparent;
+        }
+
+        &CondBlock {
+            position: relative;
+            display: inline-block;
+
+            &--loop-cycle {
+                padding-right: 4em;
+                padding-bottom: 5em;
+            }
+
+            &__split {
+                padding: 1.6em 0 0;
+                padding-left: $link-node-offset-left-shift;
+
+                span {
+                    display: block;
+                    width: $link-stroke-width;
+                    height: 0;
+                    background-color: $link-color;
+                }
+
+                &.c-vd--loop {
+                    padding-top: 5.4em;
+                }
+            }
+
+            &__spacer {
+                height: 2em;
+            }
+
+            &__merge {
+                padding: 0;
+                padding-left: $link-node-offset-left-shift;
+
+                span {
+                    display: block;
+                    width: $link-stroke-width;
+                    height: 0;
+                    background-color: $link-color;
+                }
+            }
+
+            &__items {
+                display: flex;
+            }
+
+            &-toggle {
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                align-self: flex-start;
+                background: $sl-color-white;
+                border: 1px solid $sl-border-color--gray-light;
+                border-radius: 4px;
+                color: $sl-tooltip-bg;
+                padding: 5px;
+                margin-left: 4px;
+                transition: border-color 0.2s ease;
+            }
+
+            &Branch {
+                margin-right: 4em;
+                position: relative;
+                display: flex;
+                flex-direction: column;
+
+                &.c-branch--last {
+                    margin-right: 0;
+                }
+
+                // Hide Plus button for migrated items from default branch to first one in Branching
+                &.c-branch--first {
+                    .c-vdFlow__node--last-in-row {
+                        .c-vdFlow__connPoint {
+                            pointer-events: none;
+
+                            &.hover {
+                                border-color: transparent;
+                            }
+                            &-icon {
+                                display: none;
+                            }
+                        }
+                    }
+                }
+
+                &__name {
+                    color: black;
+                    width: $node-width;
+                    text-align: center;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    margin-bottom: 2.7em;
+                    position: relative;
+                    user-select: none;
+
+                    &Title {
+                        text-align: center;
+                        text-underline-position: from-font;
+                        text-decoration-skip-ink: none;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                        height: 100%;
+
+                        span {
+                            font-weight: 600;
+                            font-size: 1.2em;
+                            line-height: 1.6em;
+                            color: $gl-color-grey--600;
+                        }
+
+                        &.c-vd--loop {
+                            display: none;
+                        }
+                    }
+                }
+
+                &__icon {
+
+                    &LoopRecycle {
+                        width: 2.1em;
+                        height: 2.1em;
+                        display: block;
+                        position: absolute;
+                        left: $link-node-offset-left-shift;
+                        background-color: grey;
+                        transform: translate(-50%, -50%);
+                        border-radius: 100%;
+                        padding: 0.24em;
+                        z-index: 1;
+
+                        &.c-icon--top {
+                            top: 4em;
+                        }
+
+                        &.c-icon--bottom {
+                            bottom: 3em;
+                        }
+
+                        svg {
+                            stroke: white;
+                            stroke-width: $link-stroke-width + 0.03em;
+                            stroke-linecap: round;
+                            fill: none;
+                        }
+                    }
+                }
+
+                .c-vdFlow__nodeCondBlockBranch__name {
+                    &:not(&.c-vdFlow__nodeCondBlockBranch__name--has-nodes) {
+                        .c-vdFlow__connPoint {
+                            background-color: $conn-point-bg-color;
+                            border-color: transparent;
+
+                            .o-icon {
+                                color: #000;
+                            }
+
+                            .c--link-nodes-linker {
+                                stroke: transparent;
+                            }
+
+                            &.hover {
+                                border-color: $conn-point-accent-color;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        &.c-vdFlow__node--branching {
+            > .c-vdFlow__connPoint {
+                background-color: $conn-point-bg-color;
+                border-color: transparent;
+
+                .o-icon {
+                    color: #000;
+                }
+
+                .c--link-nodes-linker {
+                    stroke: transparent;
+                }
+
+                &.hover {
+                    border-color: $conn-point-accent-color;
+                }
+            }
+
+            > .c--link-nodes-linker__connPoint {
+                stroke: $branch-color;
+            }
+
+            &:not(&.c-vdFlow__node--disconnected) {
+                > .c--link-nodes-linker__connPoint {
+                    stroke: transparent;
+                }
+            }
+        }
+
+        &.c-vdFlow__node--last-in-row {
+            > .c-vdFlow__connPoint {
+                background-color: $conn-point-bg-color;
+                border-color: transparent;
+
+                .o-icon {
+                    color: #000;
+                }
+
+                .c--link-nodes-linker {
+                    stroke: transparent;
+                }
+
+            }
+        }
+
+        &.c-vdFlow__node--main-branch {
+            &.c-vdFlow__node--last-visible > .c--link-nodes-linker,
+            &.c-vdFlow__node--last-in-row > .c--link-nodes-linker.c--link-nodes-linker__connPoint {
+                display: none;
+            }
+
+            > .c-vdFlow__nodeCondBlock > .c-vdFlow__nodeCondBlock__items {
+                > .c-branch--first,
+                > .c-branch--single {
+                    > .c--link-to-branch-top,
+                    > .c--link-to-merge,
+                    > .c-vdFlow__host .c--link-nodes-linker,
+                    > .c-vdFlow__host > .c--link-to-node-icon {
+                        stroke: $link-color-loop;
+                    }
+
+                    > .c-vdFlow__nodeCondBlockBranch__name {
+                        > .c--link-from-branch-top,
+                        > c-vdFlow__connPoint > .c--link-nodes-linker {
+                            stroke: $link-color-loop;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    &__pastePoint {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: absolute;
+        width: 146px;
+        height: 16px;
+        left: 0;
+        bottom: -16px;
+        z-index: 1;
+
+        &-icon {
+            width: 16px;
+            height: 16px;
+            display: flex;
+            background-image: url('/assets/glide/images/copy-plus.svg');
+            background-size: cover;
+            background-repeat: no-repeat;
+        }
+    }
+
+    &__connPoint {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        //opacity: 0;
+        width: 146px;
+        height: 16px;
+        font-size: 1.4em;
+        position: absolute;
+        left: 0;
+        bottom: -16px;
+        z-index: 1;
+        border-radius: 0.2em;
+        background-color: transparent;
+        border: $link-stroke-width solid;
+        border-color: transparent;
+        transition: border 0.2s linear;
+
+        &.connPoint--standalone {
+            height: 24px;
+            font-size: 1.6em;
+            border-radius: 0.4em;
+            position: relative;
+            border-color: transparent;
+            bottom: initial;
+            max-width: 146px;
+
+            .o-icon {
+                color: #000;
+            }
+
+            &.top {
+                margin-bottom: 20px;
+            }
+
+            &.bottom {
+                margin-top: 20px;
+                &.hover {
+                    .c--link-nodes-linker {
+                        display: block;
+                    }
+                }
+                .c--link-nodes-linker {
+                    left: 4.36em;
+                    bottom: calc(100% + 6px);
+                }
+            }
+
+            &:before,
+            &:after {
+                content: none;
+            }
+
+            &:hover,
+            &.hover {
+                border-color: $conn-point-accent-color;
+            }
+            &:not(&.bottom) {
+                .c--link-nodes-linker {
+                    display: none;
+                }
+            }
+        }
+
+        &:before,
+        &:after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            transform: translateY(-50%);
+            width: $conn-side-line-size;
+            height: $link-stroke-width;
+            background-color: transparent;
+        }
+
+        &:before {
+            left: -#{$conn-side-line-size};
+        }
+
+        &:after {
+            right: -#{$conn-side-line-size};
+        }
+
+        &-icon {
+            width: 16px;
+            height: 14px;
+            display: flex;
+        }
+
+        .o-icon {
+            color: transparent;
+            display: block;
+            transform: translateY(-1px);
+        }
+
+        &.hover {
+            background-color: $conn-point-bg-color;
+            border-color: $conn-point-accent-color;
+
+            .c-vdFlow__nodeCondBlockBranch & {
+                .c-vdFlow__connPoint-icon {
+                    background-color: #f6f6f6;
+                }
+
+                &.hover {
+                    border-color: $conn-point-accent-color;
+                }
+            }
+
+            .c-vdFlow__nodeCondBlockBranch__name--first > & {
+                border-color: transparent;
+            }
+
+            .c--link-nodes-linker {
+                display: none;
+
+                .c-vdFlow__nodeCondBlockBranch & {
+                    display: none;
+                }
+            }
+
+            + .c--link-nodes-linker__connPoint {
+                stroke: transparent;
+            }
+
+            &:before,
+            &:after {
+                background-color: $conn-point-accent-color;
+            }
+
+            .o-icon {
+                color: #000;
+            }
+        }
+
+        .c-vdFlow__nodeCondBlockBranch & {
+            &:before,
+            &:after {
+                content: none;
+            }
+
+            .c-vdFlow__connPoint-icon {
+                background-color: #f6f6f6;
+            }
+
+            .c--link-nodes-linker {
+                width: 0.2em;
+                left: 50%;
+                transform: translateX(-50%);
+            }
+        }
+
+        &.disabled {
+            transition: none;
+            border-color: $conn-point-accent-color-disabled;
+            background-color: $conn-point-bg-color-disabled;
+
+            svg {
+                stroke: $conn-point-accent-color-disabled;
+            }
+        }
+
+        svg {
+            stroke: $conn-point-accent-color;
+            stroke-width: $link-stroke-width;
+            stroke-linecap: round;
+        }
+    }
+
+    &__svg {
+
+        svg {
+            display: block;
+            width: 100%;
+            height: 100%;
+        }
+    }
+
+    &Link {
+
+        stroke: $link-color;
+        stroke-width: $link-stroke-width;
+
+        .c-vdFlow__nodeCondBlockBranch & {
+            stroke: $branch-color;
+        }
+
+        &.c--link {
+
+            &-next {
+                position: absolute;
+                left: $link-node-offset-left-shift - 0.15em;
+                bottom: -5.2em;
+                height: 5.2em;
+                width: 0.4em;
+
+                &.c--link-no-next {
+                    display: none;
+                }
+            }
+
+            &-to-split {
+                position: absolute;
+                top: 0;
+                left: $link-node-offset-left-shift - 0.15em;
+                width: 0.4em;
+                height: 1.6em;
+
+                &.c-vd--loop {
+                    height: 5.4em;
+                }
+            }
+
+            &-to-merge {
+                height: 1em;
+                bottom: 0;
+                flex: 1;
+                margin-left: $link-node-offset-left-shift;
+                margin-top: -1.6em;
+                width: 0.4em;
+                display: none;
+
+                .c-branch--first > & {
+                    display: block;
+                }
+            }
+
+            &-spacer-merge {
+                height: 2em;
+                width: 0.4em;
+                position: absolute;
+                left: $link-node-offset-left-shift;
+            }
+
+            &-branch-top-side-line {
+                position: absolute;
+                width: calc(100% + 4em);
+                height: 0.4em;
+                left: calc($node-width + 3em);
+                top: -3.2em;
+
+                &.c--link-pre-last {
+                    width: calc(100% - 7.1em);
+                    left: $node-width + 3em;
+                }
+
+                &.c--link-last {
+                    width: 0;
+                    display: none;
+                }
+            }
+
+            &-branch-top-node-line {
+                position: absolute;
+                width: 7em;
+                height: 0.4em;
+                left: 8.8em;
+                top: -5.4em;
+                stroke: $branch-color;
+
+                .c-vdFlow__node--heightExpanded > .c-vdFlow__nodeCondBlock > & {
+                    top: -6.8em;
+                }
+            }
+
+            &-branch-bottom-side-line {
+                position: absolute;
+                width: calc(100% + 4em);
+                height: 0.4em;
+                left: calc($link-node-offset-left-shift + 0.2em);
+                bottom: -0.15em;
+
+                &.c--link-pre-last {
+                    width: calc(100% + 2.1em);
+                }
+
+                &.c--link-last {
+                    width: 0;
+                    display: none;
+                }
+            }
+
+            &-to-branch-top {
+                position: absolute;
+                height: 3em;
+                top: -3em;
+                left: $link-node-offset-left-shift;
+                width: 0.4em;
+                z-index: 1;
+
+                &.c--link-last {
+                    height: 1.4em;
+                    top: -1.4em;
+                }
+            }
+
+            &-from-branch-top {
+                position: absolute;
+                bottom: -2.8em;
+                height: 2.8em;
+                left: $link-node-offset-left-shift;
+                width: 0.4em;
+                z-index: 1;
+
+                + .c-vdFlow__connPoint {
+                    bottom: -26px;
+                }
+            }
+
+            &-from-node-text {
+                display: none;
+                position: absolute;
+                bottom: 0;
+                height: 1.2em;
+                left: $link-node-offset-left-shift;
+                width: 0.4em;
+
+                .c-vdFlow__nodeCondBlockBranch & {
+                    display: block;
+                }
+            }
+
+            &-to-node-icon {
+                display: none;
+                position: absolute;
+                top: 0;
+                height: 0.8em;
+                left: $link-node-offset-left-shift;
+                width: 0.4em;
+
+                .c-vdFlow__nodeCondBlockBranch & {
+                    display: block;
+                }
+
+            }
+
+            &-nodes-linker {
+                height: 16px;
+                left: 5.05em;
+                stroke: $link-color-loop;
+                width: 0.2em;
+                position: absolute;
+
+                .c-vdFlow__nodeCondBlockBranch & {
+                    stroke: $branch-color;
+                }
+
+                &__connPoint {
+                    left: 7.1em;
+                    width: 0.4em;
+                    bottom: -1.6em;
+
+                    &:not(.c-vdFlow__nodeCondBlockBranch &) {
+
+                        .c-vdFlow__node--last-visible & {
+                            stroke: $link-color-loop;
+                        }
+                    }
+
+                    .c-vdFlow__nodeCondBlockBranch & {
+                        bottom: -16px;
+                    }
+
+                    .c-vdFlow__nodeCondBlockBranch__name & {
+                        display: none;
+                    }
+
+                    .c-vdFlow__nodeCondBlockBranch__name--disconnected & {
+                        display: none;
+
+                        .c-vdFlow__nodeCondBlockBranch & {
+                            display: none;
+                        }
+                    }
+                }
+            }
+
+            &-top-corner {
+                width: 3em;
+                height: 3em;
+                position: absolute;
+                left: 5.3em;
+                top: -4em;
+                fill: none;
+            }
+
+            &-top-first-corner {
+                width: 3em;
+                height: 3em;
+                position: absolute;
+                left: $node-width;
+                top: -6.2em;
+                fill: none;
+                stroke: $branch-color;
+
+                .c-vdFlow__node--heightExpanded > .c-vdFlow__nodeCondBlock > & {
+                    top: -7.6em;
+                }
+            }
+
+            &-top-first-corner-linker {
+                display: none;
+                position: absolute;
+                height: 3em;
+                top: -5.5em;
+                left: 16.4em;
+                width: 0.4em;
+                stroke: $branch-color;
+
+                .c-vdFlow__node--heightExpanded > .c-vdFlow__nodeCondBlock > & {
+                    display: block;
+                }
+            }
+
+            &-bottom-first-corner {
+                width: 3em;
+                height: 3em;
+                position: absolute;
+                left: calc($node-width + 1em);
+                top: -3.4em;
+                fill: none;
+                stroke: $branch-color;
+                transform: rotate(180deg);
+            }
+
+            &-bottom-corner {
+                width: 2.1em;
+                height: 2.1em;
+                fill: none;
+                margin-left: 5.3em;
+                margin-bottom: -0.85em;
+            }
+
+            &-loop-cycle {
+                position: absolute;
+                left: $link-node-offset-left-shift;
+                top: 4em;
+                z-index: -1;
+                width: calc(100% - #{$link-node-offset-left-shift});
+                height: calc(100% - 9em);
+                border: $link-stroke-width dashed;
+                border-left: 0;
+                border-color: $link-color-loop;
+                border-top-right-radius: 1em;
+                border-bottom-right-radius: 1em;
+            }
+
+            &-loop-bottom-tail {
+                position: absolute;
+                height: 5em;
+                bottom: 0;
+                z-index: -1;
+                left: $link-node-offset-left-shift - 0.15em;
+                width: 0.4em;
+            }
+        }
+    }
+
+    &__notePanel {
+        background-color: $sl-color-light-lemon;
+        font-style: normal;
+        font-weight: 400;
+        font-size: 11px;
+        line-height: 18px;
+        padding: 8px;
+        margin: 10px 0 4px 0;
+        border-radius: 4px;
+    }
+
+    &__flowItemToggle {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        align-self: flex-start;
+        background: $sl-color-white;
+        border: 1px solid $sl-border-color--gray-light;
+        border-radius: 4px;
+        color: $sl-color-white;
+        padding: 5px;
+        margin-left: 4px;
+        transition: border-color 0.2s ease;
+
+        &:nth-child(1) {
+            border-bottom-left-radius: 0;
+            border-bottom-right-radius: 0;
+        }
+
+        &:only-child {
+            border-radius: 4px;
+        }
+
+        &:nth-child(n + 2) {
+            border-top-left-radius: 0;
+            border-top-right-radius: 0;
+            position: relative;
+            top: -1px;
+        }
+
+        &-wrapper {
+            display: flex;
+            flex-direction: column;
+            position: absolute;
+            left: $node-width;
+        }
+
+        &--disabled {
+            transition: none;
+            background-color: $node-content-bg-color-disabled;
+            border-color: $node-content-bg-color-disabled !important;
+        }
+
+        .o-icon {
+            color: $sl-color-gray--600;
+            font-size: 25px;
+            transition: color 0.2s ease;
+        }
+
+        &:hover {
+            border: 1px solid $sl-color-gray--600;
+            position: relative;
+            z-index: 1;
+
+            .o-icon {
+                color: $sl-color-gray--600;
+            }
+        }
+
+        &--present {
+            border-color: $sl-color-blue;
+
+            .o-icon {
+                color: $sl-color-blue;
+            }
+
+            &:hover {
+                border-color: $sl-color-blue;
+
+                .o-icon {
+                    color: $sl-color-blue;
+                }
+            }
+        }
+    }
+}

@@ -1,0 +1,59 @@
+.c-visualOptionsMenu {
+
+    &Host {
+        position: fixed;
+        z-index: 9999;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        opacity: 1;
+        transition: opacity 0.2s ease;
+
+        &.initialization {
+            opacity: 0;
+        }
+    }
+
+    &Root {
+        display: block;
+        position: absolute;
+        z-index: 2;
+        background: white;
+        box-shadow: 0 0 10px 1px rgba(0, 0, 0, 0.05);
+        min-width: 120px;
+        border-radius: 4px;
+        border: 1px solid $gl-color-grey--450;
+    }
+
+    &__item {
+        padding: 10px 15px;
+        display: flex;
+        align-items: center;
+        transition: background 0.2s ease;
+
+        .o-icon {
+            font-size: 16px;
+            padding-right: 10px;
+        }
+
+        &:hover {
+            cursor: pointer;
+            background: rgba(0, 0, 0, .06);
+        }
+
+        &--alert {
+            color: $sl-color-dark-red;
+        }
+    }
+
+    &Backdrop {
+        position: absolute;
+        z-index: 1;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background-color: transparent;
+    }
+}

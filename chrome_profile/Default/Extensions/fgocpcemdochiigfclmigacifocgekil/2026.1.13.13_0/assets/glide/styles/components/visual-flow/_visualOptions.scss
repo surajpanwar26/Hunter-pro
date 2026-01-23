@@ -1,0 +1,92 @@
+.c-visualOptions {
+    &__title {
+        margin-bottom: 10px;
+
+        &--secondary {
+            color: $sl-color-gray--500;
+        }
+    }
+
+    &__item {
+        border-bottom: 1px solid #f6f6f6;
+        padding: 12px 0;
+
+        &Inner {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+        }
+
+        &--synonyms {
+            padding-top: 10px;
+        }
+
+        &--attribute {
+            display: block;
+        }
+    }
+
+    &__tile {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        height: auto;
+        padding: 12px;
+        background-color: $sl-color-tile-idle;
+        margin-bottom: 8px;
+
+        .visible-on-hover {
+            opacity: 0;
+        }
+
+        &:hover {
+            background-color: $sl-color-tile-hover;
+
+            .visible-on-hover {
+                opacity: 1;
+            }
+        }
+    }
+
+    &__actions {
+        display: flex;
+        align-items: center;
+
+        &--content-spacing {
+            margin-left: 10px;
+        }
+    }
+
+    &__name {
+        font-weight: 600;
+        font-size: 13px;
+        line-height: 20px;
+        padding: 2px 0;
+
+        &Property {
+            word-break: break-word;
+            margin-right: 4px;
+        }
+
+        &Label {
+            word-break: break-word;
+            color: $sl-color-gray--500;
+            font-weight: normal;
+            margin-right: 2px;
+        }
+
+        &Required {
+            top: -.1em;
+            font-weight: normal;
+            color: $sl-color-red--light;
+        }
+
+        &Secondary {
+            color: $sl-color-gray--500;
+        }
+
+        &Description {
+            padding-top: 6px;
+        }
+    }
+}

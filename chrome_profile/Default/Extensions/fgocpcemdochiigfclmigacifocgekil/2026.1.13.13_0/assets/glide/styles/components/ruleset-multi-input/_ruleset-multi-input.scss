@@ -1,0 +1,92 @@
+.c-ruleset-multi-input {
+    position: relative;
+    display: flex;
+    border: 1px solid $sl-color-gray--400;
+    border-radius: 4px;
+    padding: 3px 4px;
+    flex-flow: wrap;
+    gap: 4px;
+
+    &:focus-within {
+        border-color: darken($sl-color-gray--400, 10%);
+    }
+
+    &--single {
+        flex-wrap: nowrap;
+
+        .c-ruleset-multi-inputInput {
+            padding-right: 32px
+        }
+    }
+
+    &--error {
+        &,
+        &:focus-within {
+            border-color: $gl-color-red;
+        }
+
+    }
+
+    &--input-value-fw {
+
+        .c-ruleset-multi-input-item { flex: 1 }
+
+        .ruleset-multi-input-item {
+            height: auto;
+
+            .ruleset-multi-input-itemItem {
+                max-width: calc(100% - 35px);
+                min-width: min-content;
+
+                .o-button {
+                    height: auto;
+                }
+
+                .ruleset-multi-input-itemItemValue {
+                    max-width: max-content;
+                    white-space: normal;
+                    overflow: visible;
+                }
+            }
+        }
+
+        .c-ruleset-multi-inputInfo {
+            height: auto;
+        }
+    }
+
+    &Input {
+        min-width: 150px;
+        border: none;
+        flex: 1;
+        padding: 2px 0 4px 8px;
+        line-height: 18px;
+    }
+
+    &Info {
+        position: absolute;
+        right: -1px;
+        top: -1px;
+        bottom: -1px;
+        width: 36px;
+        height: 32px;
+        border-top-right-radius: 2px;
+        border-bottom-right-radius: 2px;
+        background-color: $gl-color-blue;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 16px;
+
+        .c-ruleset-multi-input--error & {
+            border: 1px solid #da291c;
+            border-left-width: 0;
+        }
+
+        &:hover {
+            .o-tooltip-css {
+                display: block;
+            }
+        }
+    }
+}

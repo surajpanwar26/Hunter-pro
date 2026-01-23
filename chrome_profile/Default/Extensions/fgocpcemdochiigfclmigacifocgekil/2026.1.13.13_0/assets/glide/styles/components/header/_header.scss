@@ -1,0 +1,45 @@
+.c-header {
+    padding: 8px 0 4px;
+    border-top: 4px solid $gl-status-color--Disconnected;
+    max-height: $gl-editor-header-height;
+
+    .c-connectionIndicator {
+        font-size: 12px;
+        line-height: 1.333;
+        color: $gl-text-grey;
+
+        span {
+            color: $gl-status-color--Disconnected;
+        }
+    }
+
+    &--connected {
+        border-top: 4px solid $gl-status-color--Connected;
+
+        .c-connectionIndicator {
+            span {
+                color: $gl-status-color--Connected;
+            }
+        }
+    }
+
+    .c-environmentIndicator,
+    .c-langIndicator {
+        font-size: 12px;
+    }
+
+    .c-environmentIndicator {
+        line-height: 1.333;
+        color: $gl-text-grey;
+
+        span {
+            color: $gl-status-color--Connected;
+        }
+    }
+
+    .c-langIndicator {
+        display: flex;
+        // flex-wrap: wrap;
+        gap: 4px;
+    }
+}

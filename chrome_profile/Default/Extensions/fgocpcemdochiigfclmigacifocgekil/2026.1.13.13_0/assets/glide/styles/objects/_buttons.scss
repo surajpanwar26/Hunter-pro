@@ -1,0 +1,39 @@
+.c-buttonSwitcher {
+    display: flex;
+
+    .o-button {
+
+        &:not(:last-child) {
+            border-top-right-radius: 0;
+            border-bottom-right-radius: 0;
+        }
+
+        &:not(:last-child) {
+            border-right: 0;
+        }
+
+        & + .o-button {
+            border-top-left-radius: 0;
+            border-bottom-left-radius: 0;
+        }
+
+        &.o-button--error {
+            border: 1px solid #D12510;
+        }
+    }
+
+    &--fluid {
+        display: flex;
+    }
+
+    &--grid {
+        .o-button {
+            min-width: 32px;
+            padding: 0;
+        }
+    }
+
+    &--bottom-margin {
+        margin-bottom: 24px;
+    }
+}

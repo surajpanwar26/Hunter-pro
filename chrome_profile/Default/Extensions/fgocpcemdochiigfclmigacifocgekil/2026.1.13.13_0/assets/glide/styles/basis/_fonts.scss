@@ -1,0 +1,13 @@
+$fontFamily: 'Open Sans';
+@include fontFace($fontFamily, 'Open Sans Regular', 'OpenSans-Regular', '../../fonts/OpenSans-Regular');
+
+@include fontFace($fontFamily, 'Open Sans Italic', 'OpenSans-Italic', '../../fonts/OpenSans-Italic', italic);
+
+@include fontFace($fontFamily, 'Open Sans SemiBold', 'OpenSans-SemiBold', '../../fonts/OpenSans-SemiBold', normal, 600);
+
+@include fontFace($fontFamily, 'Open Sans SemiBold Italic', 'OpenSans-SemiBoldItalicd', '../../fonts/OpenSans-SemiBoldItalic', italic, 600);
+
+@include fontFace($fontFamily, 'Open Sans Bold', 'OpenSans-Bold', '../../fonts/OpenSans-Bold', normal, bold);
+
+@include fontFace($fontFamily, 'Open Sans Bold Italic', 'OpenSans-BoldItalic', '../../fonts/OpenSans-BoldItalic', italic, bold);
+
