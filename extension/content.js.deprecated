@@ -1,0 +1,562 @@
+/**
+ * LinkedIn Job Auto-Fill Extension - Content Script
+ * Automatically detects and fills LinkedIn Easy Apply form fields
+ * 
+ * @author Suraj Panwar
+ * @version 1.0.0
+ */
+
+(function() {
+    'use strict';
+    
+    // ================================
+    // CONFIGURATION
+    // ================================
+    const CONFIG = {
+        DEBUG: false,
+        FILL_DELAY: 100,
+        DETECTION_INTERVAL: 1000,
+        MAX_RETRIES: 3,
+        STORAGE_KEY: 'linkedinAutoFillData'
+    };
+    
+    // ================================
+    // USER DATA STORAGE
+    // ================================
+    let userData = {
+        firstName: '',
+        lastName: '',
+        email: '',
+        phone: '',
+        currentCity: '',
+        currentCompany: '',
+        currentTitle: '',
+        yearsExperience: '',
+        expectedSalary: '',
+        noticePeriod: '',
+        linkedinUrl: '',
+        portfolioUrl: '',
+        githubUrl: '',
+        // Common question answers
+        workAuthorization: 'yes',
+        sponsorship: 'no',
+        remoteWork: 'yes',
+        willingToRelocate: 'yes',
+        education: {
+            degree: '',
+            major: '',
+            school: '',
+            graduationYear: ''
+        },
+        skills: [],
+        customAnswers: {}
+    };
+    
+    // ================================
+    // FIELD DETECTION PATTERNS
+    // ================================
+    const FIELD_PATTERNS = {
+        firstName: /first\s*name|fname|given\s*name/i,
+        lastName: /last\s*name|lname|surname|family\s*name/i,
+        fullName: /full\s*name|name/i,
+        email: /email|e-mail/i,
+        phone: /phone|mobile|cell|telephone|contact/i,
+        city: /city|location|current\s*location/i,
+        address: /address|street/i,
+        zip: /zip|postal|postcode/i,
+        company: /current\s*company|employer|organization/i,
+        title: /current\s*title|job\s*title|position|role/i,
+        experience: /experience|years?\s*(?:of\s*)?(?:experience|exp)/i,
+        salary: /salary|compensation|pay|ctc|expected\s*salary/i,
+        noticePeriod: /notice\s*period|availability|start\s*date/i,
+        linkedin: /linkedin|linked\s*in/i,
+        portfolio: /portfolio|website|personal\s*site/i,
+        github: /github|git/i,
+        education: /education|degree|school|university|college/i,
+        major: /major|field\s*of\s*study|specialization/i,
+        graduationYear: /graduation|grad\s*year|year\s*of\s*graduation/i,
+        workAuth: /work\s*(?:authorization|permit)|authorized|legally\s*work/i,
+        sponsorship: /sponsor|visa\s*sponsor/i,
+        remote: /remote|work\s*from\s*home|wfh/i,
+        relocate: /relocate|relocation|willing\s*to\s*move/i,
+        skills: /skill|technology|proficien/i
+    };
+    
+    // ================================
+    // UTILITY FUNCTIONS
+    // ================================
+    function log(message, ...args) {
+        if (CONFIG.DEBUG) {
+            console.log(`[LinkedIn AutoFill] ${message}`, ...args);
+        }
+    }
+    
+    function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+    
+    function getTextContent(element) {
+        if (!element) return '';
+        return (element.textContent || element.innerText || '').trim().toLowerCase();
+    }
+    
+    function findLabelForInput(input) {
+        // Try explicit label
+        if (input.id) {
+            const label = document.querySelector(`label[for="${input.id}"]`);
+            if (label) return getTextContent(label);
+        }
+        
+        // Try parent label
+        const parentLabel = input.closest('label');
+        if (parentLabel) return getTextContent(parentLabel);
+        
+        // Try aria-label
+        if (input.getAttribute('aria-label')) {
+            return input.getAttribute('aria-label').toLowerCase();
+        }
+        
+        // Try placeholder
+        if (input.placeholder) {
+            return input.placeholder.toLowerCase();
+        }
+        
+        // Try nearby label element
+        const container = input.closest('div[data-test-form-element], .fb-form-element, .form-component');
+        if (container) {
+            const label = container.querySelector('label, .fb-form-element-label, span[data-test-form-builder-radio-button-form-component__title]');
+            if (label) return getTextContent(label);
+        }
+        
+        // Try previous sibling
+        let prev = input.previousElementSibling;
+        while (prev) {
+            if (prev.tagName === 'LABEL' || prev.classList.contains('label')) {
+                return getTextContent(prev);
+            }
+            prev = prev.previousElementSibling;
+        }
+        
+        return '';
+    }
+    
+    function matchPattern(text, pattern) {
+        if (!text || !pattern) return false;
+        return pattern.test(text);
+    }
+    
+    function detectFieldType(label) {
+        for (const [fieldType, pattern] of Object.entries(FIELD_PATTERNS)) {
+            if (matchPattern(label, pattern)) {
+                return fieldType;
+            }
+        }
+        return null;
+    }
+    
+    // ================================
+    // FORM DETECTION
+    // ================================
+    function isEasyApplyModal() {
+        return document.querySelector('.jobs-easy-apply-modal, .jobs-easy-apply-content') !== null;
+    }
+    
+    function getFormElements() {
+        const modal = document.querySelector('.jobs-easy-apply-modal, .jobs-easy-apply-content');
+        if (!modal) return [];
+        
+        const elements = [];
+        
+        // Text inputs
+        modal.querySelectorAll('input[type="text"], input[type="email"], input[type="tel"], input[type="number"], input[type="url"]').forEach(input => {
+            if (!input.disabled && input.offsetParent !== null) {
+                elements.push({
+                    element: input,
+                    type: 'text',
+                    label: findLabelForInput(input),
+                    currentValue: input.value
+                });
+            }
+        });
+        
+        // Textareas
+        modal.querySelectorAll('textarea').forEach(textarea => {
+            if (!textarea.disabled && textarea.offsetParent !== null) {
+                elements.push({
+                    element: textarea,
+                    type: 'textarea',
+                    label: findLabelForInput(textarea),
+                    currentValue: textarea.value
+                });
+            }
+        });
+        
+        // Select dropdowns
+        modal.querySelectorAll('select').forEach(select => {
+            if (!select.disabled && select.offsetParent !== null) {
+                const options = Array.from(select.options).map(opt => opt.text);
+                elements.push({
+                    element: select,
+                    type: 'select',
+                    label: findLabelForInput(select),
+                    currentValue: select.value,
+                    options: options
+                });
+            }
+        });
+        
+        // Radio buttons
+        modal.querySelectorAll('fieldset[data-test-form-builder-radio-button-form-component]').forEach(fieldset => {
+            const legend = fieldset.querySelector('span[data-test-form-builder-radio-button-form-component__title], legend');
+            const radios = fieldset.querySelectorAll('input[type="radio"]');
+            if (radios.length > 0) {
+                elements.push({
+                    element: fieldset,
+                    type: 'radio',
+                    label: legend ? getTextContent(legend) : '',
+                    radios: Array.from(radios).map(r => ({
+                        element: r,
+                        value: r.value,
+                        label: findLabelForInput(r)
+                    }))
+                });
+            }
+        });
+        
+        // Checkboxes
+        modal.querySelectorAll('input[type="checkbox"]').forEach(checkbox => {
+            if (!checkbox.disabled && checkbox.offsetParent !== null) {
+                elements.push({
+                    element: checkbox,
+                    type: 'checkbox',
+                    label: findLabelForInput(checkbox),
+                    checked: checkbox.checked
+                });
+            }
+        });
+        
+        return elements;
+    }
+    
+    // ================================
+    // FORM FILLING
+    // ================================
+    async function fillTextInput(element, value) {
+        if (!value || element.value === value) return false;
+        
+        element.focus();
+        await sleep(50);
+        
+        // Clear existing value
+        element.value = '';
+        element.dispatchEvent(new Event('input', { bubbles: true }));
+        
+        // Type value character by character for more natural behavior
+        for (const char of value) {
+            element.value += char;
+            element.dispatchEvent(new Event('input', { bubbles: true }));
+            await sleep(10);
+        }
+        
+        element.dispatchEvent(new Event('change', { bubbles: true }));
+        element.blur();
+        
+        log(`Filled text input: ${value.substring(0, 20)}...`);
+        return true;
+    }
+    
+    async function selectDropdownOption(select, targetValue) {
+        // Try to find matching option
+        const options = Array.from(select.options);
+        
+        let matchedOption = options.find(opt => 
+            opt.value.toLowerCase() === targetValue.toLowerCase() ||
+            opt.text.toLowerCase() === targetValue.toLowerCase()
+        );
+        
+        // Fuzzy match if exact match not found
+        if (!matchedOption) {
+            matchedOption = options.find(opt => 
+                opt.text.toLowerCase().includes(targetValue.toLowerCase()) ||
+                targetValue.toLowerCase().includes(opt.text.toLowerCase())
+            );
+        }
+        
+        // Default to first non-empty option if still not found
+        if (!matchedOption) {
+            matchedOption = options.find(opt => opt.value && opt.value !== '' && opt.text !== 'Select an option');
+        }
+        
+        if (matchedOption) {
+            select.value = matchedOption.value;
+            select.dispatchEvent(new Event('change', { bubbles: true }));
+            log(`Selected dropdown: ${matchedOption.text}`);
+            return true;
+        }
+        
+        return false;
+    }
+    
+    async function selectRadioOption(fieldset, targetValue) {
+        const radios = fieldset.radios || [];
+        
+        // Try to find matching radio
+        let matchedRadio = radios.find(r => 
+            r.value.toLowerCase() === targetValue.toLowerCase() ||
+            r.label.includes(targetValue.toLowerCase())
+        );
+        
+        // Default to "Yes" or first option
+        if (!matchedRadio) {
+            matchedRadio = radios.find(r => 
+                r.label.includes('yes') || r.value.toLowerCase() === 'yes'
+            ) || radios[0];
+        }
+        
+        if (matchedRadio) {
+            matchedRadio.element.click();
+            log(`Selected radio: ${matchedRadio.label}`);
+            return true;
+        }
+        
+        return false;
+    }
+    
+    function getAnswerForField(fieldType, label) {
+        switch (fieldType) {
+            case 'firstName':
+                return userData.firstName;
+            case 'lastName':
+                return userData.lastName;
+            case 'fullName':
+                return `${userData.firstName} ${userData.lastName}`.trim();
+            case 'email':
+                return userData.email;
+            case 'phone':
+                return userData.phone;
+            case 'city':
+                return userData.currentCity;
+            case 'company':
+                return userData.currentCompany;
+            case 'title':
+                return userData.currentTitle;
+            case 'experience':
+                return userData.yearsExperience;
+            case 'salary':
+                return userData.expectedSalary;
+            case 'noticePeriod':
+                return userData.noticePeriod;
+            case 'linkedin':
+                return userData.linkedinUrl;
+            case 'portfolio':
+                return userData.portfolioUrl;
+            case 'github':
+                return userData.githubUrl;
+            case 'workAuth':
+                return userData.workAuthorization;
+            case 'sponsorship':
+                return userData.sponsorship;
+            case 'remote':
+                return userData.remoteWork;
+            case 'relocate':
+                return userData.willingToRelocate;
+            default:
+                // Check custom answers
+                return userData.customAnswers[label] || '';
+        }
+    }
+    
+    async function fillForm() {
+        if (!isEasyApplyModal()) {
+            log('No Easy Apply modal found');
+            return { filled: 0, total: 0 };
+        }
+        
+        const elements = getFormElements();
+        let filledCount = 0;
+        
+        log(`Found ${elements.length} form elements`);
+        
+        for (const element of elements) {
+            const fieldType = detectFieldType(element.label);
+            
+            if (!fieldType) {
+                log(`Unknown field: ${element.label}`);
+                continue;
+            }
+            
+            const answer = getAnswerForField(fieldType, element.label);
+            
+            if (!answer) {
+                log(`No answer for field: ${fieldType}`);
+                continue;
+            }
+            
+            try {
+                let filled = false;
+                
+                switch (element.type) {
+                    case 'text':
+                    case 'textarea':
+                        if (!element.currentValue) {
+                            filled = await fillTextInput(element.element, answer);
+                        }
+                        break;
+                    case 'select':
+                        filled = await selectDropdownOption(element.element, answer);
+                        break;
+                    case 'radio':
+                        filled = await selectRadioOption(element, answer);
+                        break;
+                    case 'checkbox':
+                        if (!element.checked && (answer === 'yes' || answer === true)) {
+                            element.element.click();
+                            filled = true;
+                        }
+                        break;
+                }
+                
+                if (filled) {
+                    filledCount++;
+                    await sleep(CONFIG.FILL_DELAY);
+                }
+            } catch (e) {
+                log(`Error filling field ${element.label}: ${e.message}`);
+            }
+        }
+        
+        return { filled: filledCount, total: elements.length };
+    }
+    
+    // ================================
+    // FIELD ANALYSIS
+    // ================================
+    function analyzeFields() {
+        const elements = getFormElements();
+        const analysis = {
+            detected: [],
+            undetected: [],
+            filled: [],
+            empty: []
+        };
+        
+        for (const element of elements) {
+            const fieldType = detectFieldType(element.label);
+            const info = {
+                label: element.label,
+                type: element.type,
+                fieldType: fieldType,
+                currentValue: element.currentValue || ''
+            };
+            
+            if (fieldType) {
+                analysis.detected.push(info);
+            } else {
+                analysis.undetected.push(info);
+            }
+            
+            if (element.currentValue) {
+                analysis.filled.push(info);
+            } else {
+                analysis.empty.push(info);
+            }
+        }
+        
+        return analysis;
+    }
+    
+    // ================================
+    // STORAGE MANAGEMENT
+    // ================================
+    async function loadUserData() {
+        try {
+            const result = await chrome.storage.sync.get(CONFIG.STORAGE_KEY);
+            if (result[CONFIG.STORAGE_KEY]) {
+                userData = { ...userData, ...result[CONFIG.STORAGE_KEY] };
+                log('User data loaded from storage');
+            }
+        } catch (e) {
+            log('Error loading user data:', e);
+        }
+    }
+    
+    async function saveUserData() {
+        try {
+            await chrome.storage.sync.set({ [CONFIG.STORAGE_KEY]: userData });
+            log('User data saved to storage');
+        } catch (e) {
+            log('Error saving user data:', e);
+        }
+    }
+    
+    // ================================
+    // MESSAGE HANDLING
+    // ================================
+    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+        log('Received message:', message);
+        
+        switch (message.action) {
+            case 'fillForm':
+                fillForm().then(result => {
+                    sendResponse({ success: true, ...result });
+                }).catch(e => {
+                    sendResponse({ success: false, error: e.message });
+                });
+                return true; // Async response
+                
+            case 'analyzeFields':
+                const analysis = analyzeFields();
+                sendResponse({ success: true, analysis });
+                break;
+                
+            case 'updateUserData':
+                userData = { ...userData, ...message.data };
+                saveUserData().then(() => {
+                    sendResponse({ success: true });
+                });
+                return true;
+                
+            case 'getUserData':
+                sendResponse({ success: true, data: userData });
+                break;
+                
+            case 'isEasyApply':
+                sendResponse({ success: true, isEasyApply: isEasyApplyModal() });
+                break;
+                
+            default:
+                sendResponse({ success: false, error: 'Unknown action' });
+        }
+    });
+    
+    // ================================
+    // INITIALIZATION
+    // ================================
+    async function init() {
+        log('Content script initializing...');
+        await loadUserData();
+        
+        // Watch for Easy Apply modal
+        const observer = new MutationObserver((mutations) => {
+            if (isEasyApplyModal()) {
+                log('Easy Apply modal detected');
+                // Notify popup that modal is open
+                chrome.runtime.sendMessage({ action: 'easyApplyDetected' }).catch(() => {});
+            }
+        });
+        
+        observer.observe(document.body, {
+            childList: true,
+            subtree: true
+        });
+        
+        log('Content script initialized');
+    }
+    
+    // Start
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', init);
+    } else {
+        init();
+    }
+})();

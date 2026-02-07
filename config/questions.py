@@ -10,32 +10,12 @@ GitHub:     https://github.com/surajpanwar26
 
 ###################################################### APPLICATION INPUTS ######################################################
 
-import os
-import glob
-from config.settings import master_resume_folder
-
 
 # >>>>>>>>>>> Easy Apply Questions & Inputs <<<<<<<<<<<
 
 # Give an relative path of your default resume to be uploaded. If file in not found, will continue using your previously uploaded resume in LinkedIn.
 default_resume_path = "all resumes/default/resume.pdf"      # (In Development)
 
-# Master resume used as reference for tailoring (docx/pdf recommended)
-# Auto-detect master resume from the master resume folder
-def _detect_master_resume():
-    """Auto-detect master resume file from master_resume_folder"""
-    folder = os.path.abspath(master_resume_folder)
-    if not os.path.exists(folder):
-        return ""
-    # Look for docx, pdf, or txt files in order of preference
-    for ext in ['*.docx', '*.pdf', '*.txt']:
-        files = glob.glob(os.path.join(folder, ext))
-        if files:
-            # Return the first file found (or most recently modified)
-            return max(files, key=os.path.getmtime)
-    return ""
-
-master_resume_path = _detect_master_resume() or os.path.join(master_resume_folder, "master resume.docx")
 # What do you want to answer for questions that ask about years of experience you have, this is different from current_experience? 
 years_of_experience = "3"          # A number in quotes Eg: "0","1","2","3","4", etc.
 
@@ -43,10 +23,10 @@ years_of_experience = "3"          # A number in quotes Eg: "0","1","2","3","4",
 require_visa = "Yes"               # "Yes" or "No"
 
 # What is the link to your portfolio website, leave it empty as "", if you want to leave this question unanswered
-website = ""                        # "www.example.bio" or "" and so on....
+website = "https://github.com/GodsScion"                        # "www.example.bio" or "" and so on....
 
 # Please provide the link to your LinkedIn profile.
-linkedIn = "https://www.linkedin.com/in/suraj-panwar-11b444308"       # "https://www.linkedin.com/in/example" or "" and so on...
+linkedIn = "https://www.linkedin.com/in/saivigneshgolla/"       # "https://www.linkedin.com/in/example" or "" and so on...
 
 # What is the status of your citizenship? # If left empty as "", tool will not answer the question. However, note that some companies make it compulsory to be answered
 # Valid options are: "U.S. Citizen/Permanent Resident", "Non-citizen allowed to work for any employer", "Non-citizen allowed to work for current employer", "Non-citizen seeking work authorization", "Canadian Citizen/Permanent Resident" or "Other"
@@ -84,7 +64,7 @@ then it will add '.' before last 5 digits and answer. Examples:
 # currency = "INR"                 # "USD", "INR", "EUR", etc.
 
 # What is your notice period in days?
-notice_period = 60                   # Any number >= 0 without quotes. Eg: 0, 7, 15, 30, 45, etc.
+notice_period = 30                   # Any number >= 0 without quotes. Eg: 0, 7, 15, 30, 45, etc.
 '''
 Note: If question has 'month' or 'week' in it (Example: What is your notice period in months), 
 then it will divide by 30 or 7 and answer respectively. Examples:
@@ -97,48 +77,36 @@ then it will divide by 30 or 7 and answer respectively. Examples:
 '''
 
 # Your LinkedIn headline in quotes Eg: "Software Engineer @ Google, Masters in Computer Science", "Recent Grad Student @ MIT, Computer Science"
-linkedin_headline = os.getenv(
-  "LINKEDIN_HEADLINE",
-  "Software/AI Engineer at Deloitte USI with 3+ years of experience in Python, React, Java, and Full Stack Development",
-)  # "Headline" or "" to leave this question unanswered
+linkedin_headline = "Full Stack Developer with Masters in Computer Science and 4+ years of experience" # "Headline" or "" to leave this question unanswered
 
 # Your summary in quotes, use \n to add line breaks if using single quotes "Summary".You can skip \n if using triple quotes """Summary"""
-linkedin_summary = os.getenv(
-  "LINKEDIN_SUMMARY",
-  """
-I'm a Software/AI Engineer at Deloitte United States (USI) with Bachelor of Science in Information Technology and 3+ years of experience in developing and maintaining Full Stack Web applications and AI solutions. 
-Specialized in Python, React, Java, Node.js, and Full Stack Development.
-""",
-)
+linkedin_summary = """
+I'm a Senior Software Engineer at Amazon with Masters in CS and 4+ years of experience in developing and maintaining Full Stack Web applications and cloud solutions. 
+Specialized in React, Node.js, and Python.
+"""
 
 '''
 Note: If left empty as "", the tool will not answer the question. However, note that some companies make it compulsory to be answered. Use \n to add line breaks.
 ''' 
 
 # Your cover letter in quotes, use \n to add line breaks if using single quotes "Cover Letter".You can skip \n if using triple quotes """Cover Letter""" (This question makes sense though)
-cover_letter = os.getenv(
-  "COVER_LETTER",
-  """
+cover_letter = """
 Cover Letter
-""",
-)
+"""
 ##> ------ Dheeraj Deshwal : dheeraj9811 Email:dheeraj20194@iiitd.ac.in/dheerajdeshwal9811@gmail.com - Feature ------
 
 # Your user_information_all letter in quotes, use \n to add line breaks if using single quotes "user_information_all".You can skip \n if using triple quotes """user_information_all""" (This question makes sense though)
 # We use this to pass to AI to generate answer from information , Assuing Information contians eg: resume  all the information like name, experience, skills, Country, any illness etc. 
-user_information_all = os.getenv(
-  "USER_INFORMATION_ALL",
-  """
+user_information_all ="""
 User Information
-""",
-)
+"""
 ##<
 '''
 Note: If left empty as "", the tool will not answer the question. However, note that some companies make it compulsory to be answered. Use \n to add line breaks.
 ''' 
 
 # Name of your most recent employer
-recent_employer = "Deloitte United States (USI)" # "", "Lala Company", "Google", "Snowflake", "Databricks"
+recent_employer = " Deloitte United States (USI)" # "", "Lala Company", "Google", "Snowflake", "Databricks"
 
 # Example question: "On a scale of 1-10 how much experience do you have building web or mobile applications? 1 being very little or only in school, 10 being that you have built and launched applications to real users"
 confidence_level = "8"             # Any number between "1" to "10" including 1 and 10, put it in quotes ""

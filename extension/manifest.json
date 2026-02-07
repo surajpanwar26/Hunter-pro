@@ -1,0 +1,126 @@
+{
+  "manifest_version": 3,
+  "name": "Universal Job Auto-Fill Pro",
+  "version": "3.0.0",
+  "description": "AI-powered auto-fill assistant for ALL job portals - LinkedIn, Indeed, Glassdoor, Workday, Greenhouse & more. Detects JDs, tailors resumes, and learns from your inputs.",
+  "permissions": [
+    "activeTab",
+    "storage",
+    "scripting",
+    "notifications",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "http://127.0.0.1:5001/*",
+    "http://localhost:5001/*",
+    "https://www.linkedin.com/*",
+    "https://linkedin.com/*",
+    "https://*.indeed.com/*",
+    "https://*.glassdoor.com/*",
+    "https://*.myworkday.com/*",
+    "https://*.workday.com/*",
+    "https://*.greenhouse.io/*",
+    "https://boards.greenhouse.io/*",
+    "https://*.lever.co/*",
+    "https://jobs.lever.co/*",
+    "https://*.smartrecruiters.com/*",
+    "https://*.bamboohr.com/*",
+    "https://*.icims.com/*",
+    "https://*.taleo.net/*",
+    "https://*.successfactors.com/*",
+    "https://*.jobvite.com/*",
+    "https://*.ashbyhq.com/*",
+    "https://*.breezy.hr/*",
+    "https://*.recruitee.com/*",
+    "https://*.jazz.co/*",
+    "https://*.wellfound.com/*",
+    "https://angel.co/*",
+    "https://*.monster.com/*",
+    "https://*.ziprecruiter.com/*",
+    "https://*.careerbuilder.com/*",
+    "https://*.dice.com/*",
+    "https://stackoverflow.com/jobs/*",
+    "https://*.remoteok.com/*",
+    "https://*.weworkremotely.com/*",
+    "https://*.flexjobs.com/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "commands": {
+    "fill-form": {
+      "suggested_key": {
+        "default": "Alt+Shift+F",
+        "mac": "Alt+Shift+F"
+      },
+      "description": "Auto-fill the current job application form"
+    },
+    "detect-jd": {
+      "suggested_key": {
+        "default": "Alt+Shift+D",
+        "mac": "Alt+Shift+D"
+      },
+      "description": "Detect and analyze job description"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.linkedin.com/*",
+        "https://linkedin.com/*",
+        "https://*.indeed.com/*",
+        "https://*.glassdoor.com/*",
+        "https://*.myworkday.com/*",
+        "https://*.workday.com/*",
+        "https://*.greenhouse.io/*",
+        "https://boards.greenhouse.io/*",
+        "https://*.lever.co/*",
+        "https://jobs.lever.co/*",
+        "https://*.smartrecruiters.com/*",
+        "https://*.bamboohr.com/*",
+        "https://*.icims.com/*",
+        "https://*.taleo.net/*",
+        "https://*.successfactors.com/*",
+        "https://*.jobvite.com/*",
+        "https://*.ashbyhq.com/*",
+        "https://*.breezy.hr/*",
+        "https://*.recruitee.com/*",
+        "https://*.jazz.co/*",
+        "https://*.wellfound.com/*",
+        "https://angel.co/*",
+        "https://*.monster.com/*",
+        "https://*.ziprecruiter.com/*",
+        "https://*.careerbuilder.com/*",
+        "https://*.dice.com/*",
+        "https://stackoverflow.com/jobs/*",
+        "https://*.remoteok.com/*",
+        "https://*.weworkremotely.com/*",
+        "https://*.flexjobs.com/*"
+      ],
+      "js": ["universal_content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/*"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

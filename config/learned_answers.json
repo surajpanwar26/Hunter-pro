@@ -1,8 +1,10 @@
 {
     "_description": "Auto-saved answers from user interventions. Edit manually if needed.",
-    "_last_updated": "",
+    "_last_updated": "2026-01-30 21:48:48",
     "text_answers": {},
-    "select_answers": {},
+    "select_answers": {
+        "Are you legally authorized to work in the United States? ": "3"
+    },
     "radio_answers": {},
     "textarea_answers": {},
     "checkbox_answers": {}

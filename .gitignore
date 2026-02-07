@@ -11,3 +11,7 @@ secrets.py
 config/personals.py
 .venv
 apikeys.py
+.env
+chrome_profile/
+chrome_profile_pilot/
+extension/user_config.json

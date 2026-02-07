@@ -4,10 +4,7 @@
 
 # LinkedIn Credentials
 # For security, you can also set these as environment variables:
-# import os
-# username = os.getenv('LINKEDIN_USERNAME', 'your_email@example.com')
 username = "your_email@example.com"  # Your LinkedIn login email
-# password = os.getenv('LINKEDIN_PASSWORD', 'your_password')
 password = "your_password_here"      # Your LinkedIn login password
 
 # AI Configuration
@@ -16,18 +13,15 @@ ai_provider = "ollama"                        # Options: "openai", "deepseek", "
 
 # OpenAI Configuration (if using OpenAI)
 llm_api_url = "https://api.openai.com/v1"     # OpenAI API URL
-# llm_api_key = os.getenv('OPENAI_API_KEY', 'your_openai_api_key_here')  # Secure way to load API key
 llm_api_key = "your_openai_api_key_here"      # Your OpenAI API key
 llm_model = "gpt-4o-mini"                     # Model to use (e.g., "gpt-4o-mini", "gpt-4")
 
 # DeepSeek Configuration (if using DeepSeek)
 deepseek_api_url = "https://api.deepseek.com/v1"  # DeepSeek API URL
-# deepseek_api_key = os.getenv('DEEPSEEK_API_KEY', 'your_deepseek_api_key_here')  # Secure way to load API key
 deepseek_api_key = "your_deepseek_api_key_here"   # Your DeepSeek API key
 deepseek_model = "deepseek-chat"                  # Model to use
 
 # Gemini Configuration (if using Gemini)
-# gemini_api_key = os.getenv('GEMINI_API_KEY', 'your_gemini_api_key_here')  # Secure way to load API key
 gemini_api_key = "your_gemini_api_key_here"       # Your Gemini API key
 gemini_model = "gemini-1.5-flash"                 # Model to use
 

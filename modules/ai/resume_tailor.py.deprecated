@@ -1,0 +1,927 @@
+"""
+AI Resume Tailor Module - Smart resume generation with agent review
+
+Features:
+- Analyzes job descriptions to extract key requirements
+- Generates tailored resumes without exaggeration
+- Multi-round agent review until quality passes
+- ATS scoring and job matching analysis
+- Generates both DOCX and PDF formats
+- Conservative approach: truthful, no inflated claims
+
+Author: Suraj Panwar
+"""
+
+import os
+import re
+import json
+from datetime import datetime
+from typing import Dict, Any
+
+# Document generation
+try:
+    from docx import Document
+    from docx.shared import Inches, Pt
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    DOCX_AVAILABLE = True
+except ImportError:
+    DOCX_AVAILABLE = False
+
+try:
+    from fpdf import FPDF
+    PDF_AVAILABLE = True
+except ImportError:
+    PDF_AVAILABLE = False
+
+# Import project modules
+from config.questions import user_information_all, default_resume_path
+from modules.helpers import print_lg, critical_error_log
+
+
+# ============================================
+# PROMPT TEMPLATES - Conservative Approach
+# ============================================
+
+TAILOR_PROMPT_NO_EXAGGERATION = """
+You are a TRUTHFUL resume tailoring assistant. Your job is to optimize a resume for ATS matching while being COMPLETELY HONEST.
+
+## ABSOLUTE RULES - VIOLATION = FAILURE
+
+### 1. NO EXAGGERATION POLICY 🚫
+- NEVER inflate numbers, metrics, or achievements
+- NEVER add skills the candidate doesn't have
+- NEVER upgrade job titles or responsibilities
+- NEVER claim expertise when there's only familiarity
+- NEVER invent new experiences or projects
+- If resume says "worked with" don't change to "led" or "managed"
+- If resume shows 2 years experience, don't imply 5 years
+
+### 2. WHAT YOU CAN DO ✅
+- Reorder existing skills to prioritize JD-matching ones
+- Rephrase bullet points using JD keywords (same meaning, different words)
+- Add synonyms from JD (e.g., "ML" → "Machine Learning/ML")
+- Expand existing acronyms if JD uses full forms
+- Improve action verbs while keeping same impact level
+- Clarify existing achievements (not inflate them)
+
+### 3. FORMAT PRESERVATION 📋
+- Keep EXACT section structure from original
+- Keep same number of bullet points
+- Keep all dates unchanged
+- Keep contact info unchanged
+- Keep company names and job titles unchanged
+
+## INPUTS
+
+===== ORIGINAL RESUME =====
+{resume_text}
+===== END RESUME =====
+
+===== TARGET JOB DESCRIPTION =====
+{job_description}
+===== END JOB DESCRIPTION =====
+
+## OUTPUT FORMAT
+Return ONLY the tailored resume text. Start with the candidate's name.
+No commentary, no markers, no tags. Just clean resume content.
+"""
+
+
+AGENT_REVIEW_PROMPT = """
+You are a strict resume quality reviewer. Analyze this tailored resume against these criteria:
+
+## REVIEW CHECKLIST
+
+### 1. HONESTY CHECK (Critical)
+- [ ] No exaggerated claims or inflated metrics
+- [ ] No added skills not in original resume
+- [ ] No upgraded job titles
+- [ ] No invented experiences
+- [ ] Same dates as original
+
+### 2. ATS OPTIMIZATION CHECK
+- [ ] Contains relevant keywords from JD
+- [ ] Uses industry-standard terminology
+- [ ] Has clear section headers
+- [ ] Uses bullet points effectively
+- [ ] Avoids graphics/tables/complex formatting
+
+### 3. FORMAT CHECK
+- [ ] Maintains original structure
+- [ ] Consistent formatting throughout
+- [ ] Proper spelling and grammar
+- [ ] Professional tone
+
+## INPUTS
+
+===== ORIGINAL RESUME =====
+{original_resume}
+===== END ORIGINAL =====
+
+===== TAILORED RESUME =====
+{tailored_resume}
+===== END TAILORED =====
+
+===== JOB DESCRIPTION =====
+{job_description}
+===== END JD =====
+
+## OUTPUT FORMAT (JSON)
+Return a JSON object with these fields:
+{{
+    "passed": true/false,
+    "overall_score": 0-100,
+    "ats_score": 0-100,
+    "honesty_score": 0-100,
+    "issues": ["list of specific issues found"],
+    "suggestions": ["list of improvement suggestions"],
+    "exaggerations_found": ["list any exaggerations detected"],
+    "keywords_matched": ["list of JD keywords found in resume"],
+    "keywords_missing": ["list of relevant JD keywords not in resume"]
+}}
+
+A resume PASSES only if:
+- honesty_score >= 90 (no exaggerations)
+- ats_score >= 70 (decent keyword coverage)
+- No critical issues
+"""
+
+
+ATS_SCORING_PROMPT = """
+You are an ATS (Applicant Tracking System) scoring engine. Calculate how well this resume matches the job description.
+
+## SCORING CRITERIA (100 points total)
+
+### 1. Keyword Match (40 points)
+- Technical skills mentioned in JD: 20 pts
+- Soft skills mentioned in JD: 10 pts
+- Industry terminology: 10 pts
+
+### 2. Experience Relevance (30 points)
+- Years of experience alignment: 15 pts
+- Role similarity: 15 pts
+
+### 3. Skills Coverage (20 points)
+- Required skills present: 15 pts
+- Nice-to-have skills present: 5 pts
+
+### 4. Format & Structure (10 points)
+- Clear section headers: 5 pts
+- ATS-friendly format: 5 pts
+
+## INPUTS
+
+===== RESUME =====
+{resume_text}
+===== END RESUME =====
+
+===== JOB DESCRIPTION =====
+{job_description}
+===== END JD =====
+
+## OUTPUT FORMAT (JSON)
+{{
+    "total_score": 0-100,
+    "keyword_match_score": 0-40,
+    "experience_relevance_score": 0-30,
+    "skills_coverage_score": 0-20,
+    "format_score": 0-10,
+    "matched_skills": ["skill1", "skill2"],
+    "missing_skills": ["skill1", "skill2"],
+    "match_level": "Excellent/Good/Fair/Poor",
+    "recommendation": "Brief hiring recommendation",
+    "improvement_tips": ["tip1", "tip2"]
+}}
+"""
+
+
+JOB_MATCH_ANALYSIS_PROMPT = """
+Analyze how well this candidate matches the job requirements. Be realistic and honest.
+
+## CANDIDATE RESUME
+{resume_text}
+
+## JOB DESCRIPTION
+{job_description}
+
+## OUTPUT FORMAT (JSON)
+{{
+    "overall_match_percentage": 0-100,
+    "strong_matches": ["areas where candidate is strong match"],
+    "partial_matches": ["areas where candidate partially matches"],
+    "gaps": ["areas where candidate doesn't meet requirements"],
+    "transferable_skills": ["skills that could transfer to this role"],
+    "growth_areas": ["skills candidate would need to develop"],
+    "honest_assessment": "2-3 sentence realistic assessment",
+    "interview_likelihood": "High/Medium/Low",
+    "salary_positioning": "Above/At/Below market based on experience"
+}}
+"""
+
+
+# ============================================
+# AI CLIENT HANDLING
+# ============================================
+
+def get_ai_client():
+    """Get the configured AI client."""
+    try:
+        from config.secrets import use_AI, ai_provider
+        if not use_AI:
+            return None, None
+        
+        if ai_provider == "openai":
+            from modules.ai.openaiConnections import ai_create_openai_client
+            client = ai_create_openai_client()
+            return client, "openai"
+        elif ai_provider == "deepseek":
+            from modules.ai.deepseekConnections import deepseek_create_client
+            client = deepseek_create_client()
+            return client, "deepseek"
+        elif ai_provider == "gemini":
+            from modules.ai.geminiConnections import gemini_create_client
+            client = gemini_create_client()
+            return client, "gemini"
+        elif ai_provider == "groq":
+            from modules.ai.groqConnections import groq_create_client
+            client = groq_create_client()
+            return client, "groq"
+        else:
+            print_lg(f"Unknown AI provider: {ai_provider}")
+            return None, None
+    except Exception as e:
+        print_lg(f"Error creating AI client: {e}")
+        return None, None
+
+
+def ai_call(client, provider: str, prompt: str, is_json: bool = False) -> str | dict:
+    """
+    Universal AI call function that works with any configured provider.
+    """
+    try:
+        if provider == "openai":
+            from modules.ai.openaiConnections import ai_completion
+            messages = [{"role": "user", "content": prompt}]
+            response_format = {"type": "json_object"} if is_json else None
+            return ai_completion(client, messages, response_format=response_format, stream=False)
+        
+        elif provider == "deepseek":
+            from modules.ai.deepseekConnections import deepseek_completion
+            messages = [{"role": "user", "content": prompt}]
+            response_format = {"type": "json_object"} if is_json else None
+            return deepseek_completion(client, messages, response_format=response_format, stream=False)
+        
+        elif provider == "gemini":
+            from modules.ai.geminiConnections import gemini_completion
+            return gemini_completion(client, prompt, is_json=is_json)
+        
+        elif provider == "groq":
+            from modules.ai.groqConnections import groq_completion
+            messages = [{"role": "user", "content": prompt}]
+            response_format = {"type": "json_object"} if is_json else None
+            return groq_completion(client, messages, response_format=response_format, stream=False)
+        
+        else:
+            raise ValueError(f"Unsupported provider: {provider}")
+            
+    except Exception as e:
+        print_lg(f"AI call failed: {e}")
+        raise
+
+
+# ============================================
+# RESUME TEXT EXTRACTION
+# ============================================
+
+def extract_resume_text(resume_path: str | None = None) -> str:
+    """
+    Extract text from the master resume file.
+    Supports: .txt, .pdf, .docx
+    """
+    if resume_path is None:
+        resume_path = default_resume_path
+    
+    if not os.path.exists(resume_path):
+        # Try to find in common locations
+        possible_paths = [
+            "all resumes/master resume/master_resume.txt",
+            "all resumes/default/resume.txt",
+            "all resumes/default/resume.pdf",
+            default_resume_path
+        ]
+        for path in possible_paths:
+            if os.path.exists(path):
+                resume_path = path
+                break
+        else:
+            # Return user_information_all as fallback
+            if user_information_all and user_information_all.strip():
+                print_lg("No resume file found, using user_information_all")
+                return user_information_all
+            raise FileNotFoundError(f"No resume found at {resume_path}")
+    
+    ext = os.path.splitext(resume_path)[1].lower()
+    
+    if ext == '.txt':
+        with open(resume_path, 'r', encoding='utf-8') as f:
+            return f.read()
+    
+    elif ext == '.pdf':
+        try:
+            import PyPDF2
+            with open(resume_path, 'rb') as f:
+                reader = PyPDF2.PdfReader(f)
+                text = ""
+                for page in reader.pages:
+                    text += page.extract_text() + "\n"
+                return text
+        except ImportError:
+            print_lg("PyPDF2 not installed, cannot read PDF resume")
+            return user_information_all if user_information_all else ""
+    
+    elif ext == '.docx':
+        try:
+            from docx import Document
+            doc = Document(resume_path)
+            text = ""
+            for para in doc.paragraphs:
+                text += para.text + "\n"
+            return text
+        except ImportError:
+            print_lg("python-docx not installed, cannot read DOCX resume")
+            return user_information_all if user_information_all else ""
+    
+    else:
+        # Try reading as text
+        try:
+            with open(resume_path, 'r', encoding='utf-8') as f:
+                return f.read()
+        except Exception:
+            return user_information_all if user_information_all else ""
+
+
+# ============================================
+# CORE TAILORING FUNCTIONS
+# ============================================
+
+def tailor_resume(
+    job_description: str,
+    original_resume: str | None = None,
+    max_review_rounds: int = 3,
+    min_ats_score: int = 70,
+    callback=None
+) -> Dict[str, Any]:
+    """
+    Main resume tailoring function with agent review loop.
+    
+    Args:
+        job_description: The target job posting text
+        original_resume: Optional custom resume text (uses default if None)
+        max_review_rounds: Maximum iterations for agent review (default 3)
+        min_ats_score: Minimum ATS score to pass (default 70)
+        callback: Optional callback for progress updates
+    
+    Returns:
+        Dict with tailored_resume, scores, review_history, and file_paths
+    """
+    print_lg("=== STARTING AI RESUME TAILORING ===")
+    
+    # Get AI client
+    client, provider = get_ai_client()
+    if not client:
+        raise ValueError("AI client not available. Please configure AI settings.")
+    
+    # Get original resume
+    if original_resume is None:
+        original_resume = extract_resume_text()
+    
+    if not original_resume or len(original_resume.strip()) < 100:
+        raise ValueError("Resume text is too short or empty")
+    
+    result = {
+        "success": False,
+        "tailored_resume": None,
+        "original_resume": original_resume,
+        "job_description": job_description,
+        "ats_score": 0,
+        "match_score": 0,
+        "honesty_score": 0,
+        "review_rounds": 0,
+        "review_history": [],
+        "files": {}
+    }
+    
+    # Initial tailoring
+    print_lg("Round 1: Initial AI tailoring...")
+    if callback:
+        callback("Tailoring resume to job description...")
+    
+    prompt = TAILOR_PROMPT_NO_EXAGGERATION.format(
+        resume_text=original_resume,
+        job_description=job_description
+    )
+    
+    try:
+        tailored_resume = ai_call(client, provider, prompt, is_json=False)
+        if isinstance(tailored_resume, dict):
+            tailored_resume = tailored_resume.get("resume", str(tailored_resume))
+        tailored_resume = str(tailored_resume).strip()
+    except Exception as e:
+        print_lg(f"Initial tailoring failed: {e}")
+        raise
+    
+    # Agent review loop
+    passed = False
+    for round_num in range(1, max_review_rounds + 1):
+        print_lg(f"Review Round {round_num}/{max_review_rounds}...")
+        if callback:
+            callback(f"Agent review round {round_num}...")
+        
+        # Run agent review
+        review_prompt = AGENT_REVIEW_PROMPT.format(
+            original_resume=original_resume,
+            tailored_resume=tailored_resume,
+            job_description=job_description
+        )
+        
+        try:
+            review_result = ai_call(client, provider, review_prompt, is_json=True)
+            if isinstance(review_result, str):
+                review_result = json.loads(review_result)
+        except Exception as e:
+            print_lg(f"Review parsing failed: {e}")
+            review_result = {"passed": False, "issues": [str(e)]}
+        
+        result["review_history"].append({
+            "round": round_num,
+            "review": review_result
+        })
+        result["review_rounds"] = round_num
+        
+        # Check if passed
+        passed = review_result.get("passed", False)
+        honesty_score = review_result.get("honesty_score", 0)
+        ats_score = review_result.get("ats_score", 0)
+        
+        result["honesty_score"] = honesty_score
+        
+        if passed and honesty_score >= 90 and ats_score >= min_ats_score:
+            print_lg(f"✓ Resume passed review in round {round_num}")
+            break
+        
+        # Check for exaggerations - critical failure
+        exaggerations = review_result.get("exaggerations_found", [])
+        if exaggerations:
+            print_lg(f"⚠ Exaggerations detected: {exaggerations}")
+            # Re-tailor with stricter prompt
+            stricter_prompt = f"""
+{TAILOR_PROMPT_NO_EXAGGERATION.format(resume_text=original_resume, job_description=job_description)}
+
+## ADDITIONAL CONSTRAINTS
+The previous attempt had these exaggerations that MUST be removed:
+{json.dumps(exaggerations, indent=2)}
+
+Be MORE CONSERVATIVE. If in doubt, keep original wording.
+"""
+            try:
+                tailored_resume = ai_call(client, provider, stricter_prompt, is_json=False)
+                if isinstance(tailored_resume, dict):
+                    tailored_resume = tailored_resume.get("resume", str(tailored_resume))
+                tailored_resume = str(tailored_resume).strip()
+            except Exception as e:
+                print_lg(f"Re-tailoring failed: {e}")
+        
+        elif round_num < max_review_rounds:
+            # Apply suggestions for improvement
+            suggestions = review_result.get("suggestions", [])
+            issues = review_result.get("issues", [])
+            
+            if suggestions or issues:
+                improve_prompt = f"""
+Improve this resume based on the review feedback.
+
+===== CURRENT RESUME =====
+{tailored_resume}
+===== END RESUME =====
+
+===== FEEDBACK =====
+Issues: {json.dumps(issues)}
+Suggestions: {json.dumps(suggestions)}
+===== END FEEDBACK =====
+
+===== JOB DESCRIPTION =====
+{job_description}
+===== END JD =====
+
+REMEMBER: NO EXAGGERATIONS. Keep all improvements truthful.
+Output only the improved resume text.
+"""
+                try:
+                    tailored_resume = ai_call(client, provider, improve_prompt, is_json=False)
+                    if isinstance(tailored_resume, dict):
+                        tailored_resume = tailored_resume.get("resume", str(tailored_resume))
+                    tailored_resume = str(tailored_resume).strip()
+                except Exception as e:
+                    print_lg(f"Improvement iteration failed: {e}")
+    
+    result["tailored_resume"] = tailored_resume
+    
+    # Calculate final ATS score
+    print_lg("Calculating ATS score...")
+    if callback:
+        callback("Calculating ATS compatibility score...")
+    
+    ats_result = calculate_ats_score(client, provider, tailored_resume, job_description)
+    result["ats_score"] = ats_result.get("total_score", 0)
+    result["ats_details"] = ats_result
+    
+    # Calculate job match score
+    print_lg("Calculating job match score...")
+    if callback:
+        callback("Analyzing job match compatibility...")
+    
+    match_result = calculate_job_match(client, provider, tailored_resume, job_description)
+    result["match_score"] = match_result.get("overall_match_percentage", 0)
+    result["match_details"] = match_result
+    
+    result["success"] = True
+    print_lg(f"=== TAILORING COMPLETE - ATS: {result['ats_score']}%, Match: {result['match_score']}% ===")
+    
+    return result
+
+
+def calculate_ats_score(client, provider: str, resume_text: str, job_description: str) -> Dict:
+    """Calculate ATS compatibility score."""
+    prompt = ATS_SCORING_PROMPT.format(
+        resume_text=resume_text,
+        job_description=job_description
+    )
+    
+    try:
+        result = ai_call(client, provider, prompt, is_json=True)
+        if isinstance(result, str):
+            result = json.loads(result)
+        return result
+    except Exception as e:
+        print_lg(f"ATS scoring failed: {e}")
+        return {"total_score": 0, "error": str(e)}
+
+
+def calculate_job_match(client, provider: str, resume_text: str, job_description: str) -> Dict:
+    """Calculate job match percentage."""
+    prompt = JOB_MATCH_ANALYSIS_PROMPT.format(
+        resume_text=resume_text,
+        job_description=job_description
+    )
+    
+    try:
+        result = ai_call(client, provider, prompt, is_json=True)
+        if isinstance(result, str):
+            result = json.loads(result)
+        return result
+    except Exception as e:
+        print_lg(f"Job match analysis failed: {e}")
+        return {"overall_match_percentage": 0, "error": str(e)}
+
+
+# ============================================
+# DOCUMENT GENERATION
+# ============================================
+
+def generate_resume_files(
+    tailored_resume: str,
+    job_title: str = "Job",
+    company_name: str = "Company",
+    output_dir: str = "all resumes/temp"
+) -> Dict[str, str]:
+    """
+    Generate DOCX and PDF files from tailored resume text.
+    
+    Args:
+        tailored_resume: The tailored resume text
+        job_title: Job title for filename
+        company_name: Company name for filename
+        output_dir: Directory to save files
+    
+    Returns:
+        Dict with paths to generated files
+    """
+    # Create output directory
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Clean filename
+    safe_title = re.sub(r'[^\w\s-]', '', job_title)[:30]
+    safe_company = re.sub(r'[^\w\s-]', '', company_name)[:20]
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    base_name = f"Resume_{safe_company}_{safe_title}_{timestamp}"
+    
+    files = {}
+    
+    # Generate TXT (always available)
+    txt_path = os.path.join(output_dir, f"{base_name}.txt")
+    with open(txt_path, 'w', encoding='utf-8') as f:
+        f.write(tailored_resume)
+    files["txt"] = txt_path
+    print_lg(f"Generated TXT: {txt_path}")
+    
+    # Generate DOCX
+    if DOCX_AVAILABLE:
+        try:
+            docx_path = os.path.join(output_dir, f"{base_name}.docx")
+            doc = create_docx_from_text(tailored_resume)
+            doc.save(docx_path)
+            files["docx"] = docx_path
+            print_lg(f"Generated DOCX: {docx_path}")
+        except Exception as e:
+            print_lg(f"DOCX generation failed: {e}")
+    else:
+        print_lg("python-docx not installed, skipping DOCX generation")
+    
+    # Generate PDF
+    if PDF_AVAILABLE:
+        try:
+            pdf_path = os.path.join(output_dir, f"{base_name}.pdf")
+            create_pdf_from_text(tailored_resume, pdf_path)
+            files["pdf"] = pdf_path
+            print_lg(f"Generated PDF: {pdf_path}")
+        except Exception as e:
+            print_lg(f"PDF generation failed: {e}")
+    else:
+        print_lg("fpdf not installed, skipping PDF generation")
+    
+    return files
+
+
+def create_docx_from_text(resume_text: str) -> 'Document':
+    """Create a professional DOCX document from resume text."""
+    doc = Document()
+    
+    # Set narrow margins
+    sections = doc.sections
+    for section in sections:
+        section.top_margin = Inches(0.5)
+        section.bottom_margin = Inches(0.5)
+        section.left_margin = Inches(0.6)
+        section.right_margin = Inches(0.6)
+    
+    lines = resume_text.split('\n')
+    
+    for i, line in enumerate(lines):
+        line = line.strip()
+        
+        if not line:
+            continue
+        
+        # Detect headers (ALL CAPS or known headers)
+        header_patterns = ['EXPERIENCE', 'EDUCATION', 'SKILLS', 'PROJECTS', 
+                         'CERTIFICATIONS', 'SUMMARY', 'OBJECTIVE', 'CONTACT',
+                         'TECHNICAL SKILLS', 'WORK EXPERIENCE', 'PROFESSIONAL EXPERIENCE']
+        
+        is_header = (line.isupper() and len(line) < 30) or any(h in line.upper() for h in header_patterns)
+        
+        # First line is usually the name
+        if i == 0:
+            p = doc.add_heading(line, level=0)
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        # Second line often contact info
+        elif i == 1 and any(c in line for c in ['@', '|', '•', '·']):
+            p = doc.add_paragraph(line)
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.runs[0].font.size = Pt(10)
+        # Section headers
+        elif is_header:
+            doc.add_heading(line.title() if line.isupper() else line, level=1)
+        # Bullet points
+        elif line.startswith(('•', '-', '*', '○', '▪')):
+            p = doc.add_paragraph(line[1:].strip(), style='List Bullet')
+            p.runs[0].font.size = Pt(11)
+        # Regular paragraph
+        else:
+            p = doc.add_paragraph(line)
+            p.runs[0].font.size = Pt(11)
+    
+    return doc
+
+
+def create_pdf_from_text(resume_text: str, output_path: str):
+    """Create a PDF from resume text."""
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    
+    # Set margins
+    pdf.set_margins(15, 15, 15)
+    
+    lines = resume_text.split('\n')
+    
+    header_patterns = ['EXPERIENCE', 'EDUCATION', 'SKILLS', 'PROJECTS', 
+                      'CERTIFICATIONS', 'SUMMARY', 'OBJECTIVE', 'CONTACT',
+                      'TECHNICAL SKILLS', 'WORK EXPERIENCE', 'PROFESSIONAL EXPERIENCE']
+    
+    for i, line in enumerate(lines):
+        line = line.strip()
+        
+        if not line:
+            pdf.ln(3)
+            continue
+        
+        is_header = (line.isupper() and len(line) < 30) or any(h in line.upper() for h in header_patterns)
+        
+        # First line = Name
+        if i == 0:
+            pdf.set_font('Arial', 'B', 16)
+            pdf.cell(0, 10, line.encode('latin-1', 'replace').decode('latin-1'), 0, 1, 'C')
+        # Second line = Contact
+        elif i == 1 and any(c in line for c in ['@', '|', '•', '·']):
+            pdf.set_font('Arial', '', 10)
+            pdf.cell(0, 6, line.encode('latin-1', 'replace').decode('latin-1'), 0, 1, 'C')
+        # Section headers
+        elif is_header:
+            pdf.set_font('Arial', 'B', 12)
+            pdf.ln(3)
+            pdf.cell(0, 8, line.encode('latin-1', 'replace').decode('latin-1'), 0, 1)
+        # Bullet points
+        elif line.startswith(('•', '-', '*', '○', '▪')):
+            pdf.set_font('Arial', '', 10)
+            pdf.cell(5)  # Indent
+            pdf.multi_cell(0, 5, "• " + line[1:].strip().encode('latin-1', 'replace').decode('latin-1'))
+        # Regular text
+        else:
+            pdf.set_font('Arial', '', 10)
+            pdf.multi_cell(0, 5, line.encode('latin-1', 'replace').decode('latin-1'))
+    
+    pdf.output(output_path)
+
+
+# ============================================
+# PREVIEW GENERATION
+# ============================================
+
+def generate_resume_preview(tailored_resume: str, ats_score: int, match_score: int) -> str:
+    """
+    Generate an HTML preview of the resume with scores.
+    """
+    # Score colors
+    def score_color(score):
+        if score >= 80:
+            return "#22c55e"  # Green
+        elif score >= 60:
+            return "#eab308"  # Yellow
+        else:
+            return "#ef4444"  # Red
+    
+    # Convert resume text to HTML
+    lines = tailored_resume.split('\n')
+    html_lines = []
+    
+    for line in lines:
+        line = line.strip()
+        if not line:
+            html_lines.append("<br>")
+        elif line.isupper() and len(line) < 30:
+            html_lines.append(f"<h2 style='color: #1e40af; border-bottom: 2px solid #1e40af; margin-top: 15px;'>{line}</h2>")
+        elif line.startswith(('•', '-', '*')):
+            html_lines.append(f"<li style='margin-left: 20px;'>{line[1:].strip()}</li>")
+        else:
+            html_lines.append(f"<p style='margin: 5px 0;'>{line}</p>")
+    
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <style>
+            body {{ font-family: Arial, sans-serif; max-width: 800px; margin: 20px auto; padding: 20px; }}
+            .scores {{ display: flex; gap: 20px; margin-bottom: 20px; padding: 15px; background: #f8fafc; border-radius: 8px; }}
+            .score-box {{ text-align: center; padding: 10px 20px; background: white; border-radius: 6px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }}
+            .score-value {{ font-size: 36px; font-weight: bold; }}
+            .score-label {{ font-size: 12px; color: #64748b; text-transform: uppercase; }}
+            .resume-content {{ background: white; padding: 30px; border: 1px solid #e2e8f0; border-radius: 8px; }}
+            h2 {{ font-size: 14px; margin-bottom: 8px; }}
+            li {{ margin-bottom: 5px; }}
+        </style>
+    </head>
+    <body>
+        <div class="scores">
+            <div class="score-box">
+                <div class="score-value" style="color: {score_color(ats_score)};">{ats_score}%</div>
+                <div class="score-label">ATS Score</div>
+            </div>
+            <div class="score-box">
+                <div class="score-value" style="color: {score_color(match_score)};">{match_score}%</div>
+                <div class="score-label">Job Match</div>
+            </div>
+        </div>
+        <div class="resume-content">
+            {''.join(html_lines)}
+        </div>
+    </body>
+    </html>
+    """
+    
+    return html
+
+
+# ============================================
+# MAIN ENTRY POINT FOR EXTENSION
+# ============================================
+
+def process_jd_and_generate_resume(
+    job_description: str,
+    job_title: str = "Position",
+    company_name: str = "Company",
+    callback=None
+) -> Dict[str, Any]:
+    """
+    Full pipeline: Tailor resume, review, score, and generate files.
+    
+    This is the main function called by the extension/popup.
+    
+    Args:
+        job_description: The job posting text
+        job_title: Job title for filename
+        company_name: Company name for filename
+        callback: Progress callback function
+    
+    Returns:
+        Complete result dict with resume, scores, and file paths
+    """
+    try:
+        # Step 1: Tailor the resume
+        result = tailor_resume(
+            job_description=job_description,
+            max_review_rounds=3,
+            min_ats_score=70,
+            callback=callback
+        )
+        
+        if not result["success"]:
+            return result
+        
+        # Step 2: Generate files
+        if callback:
+            callback("Generating DOCX and PDF files...")
+        
+        files = generate_resume_files(
+            tailored_resume=result["tailored_resume"],
+            job_title=job_title,
+            company_name=company_name
+        )
+        result["files"] = files
+        
+        # Step 3: Generate preview
+        if callback:
+            callback("Generating preview...")
+        
+        preview_html = generate_resume_preview(
+            tailored_resume=result["tailored_resume"],
+            ats_score=result["ats_score"],
+            match_score=result["match_score"]
+        )
+        result["preview_html"] = preview_html
+        
+        # Save preview
+        preview_path = os.path.join("all resumes/temp", "preview.html")
+        os.makedirs(os.path.dirname(preview_path), exist_ok=True)
+        with open(preview_path, 'w', encoding='utf-8') as f:
+            f.write(preview_html)
+        result["files"]["preview"] = preview_path
+        
+        return result
+        
+    except Exception as e:
+        print_lg(f"Resume generation failed: {e}")
+        critical_error_log(f"Resume tailor error: {e}")
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+
+# ============================================
+# TESTING
+# ============================================
+
+if __name__ == "__main__":
+    # Test with sample JD
+    test_jd = """
+    Software Engineer at TechCorp
+    
+    Requirements:
+    - 3+ years of Python experience
+    - Experience with Django or Flask
+    - Knowledge of PostgreSQL
+    - AWS experience preferred
+    - Strong communication skills
+    """
+    
+    print("Testing resume tailor...")
+    result = process_jd_and_generate_resume(
+        job_description=test_jd,
+        job_title="Software Engineer",
+        company_name="TechCorp"
+    )
+    
+    print(f"Success: {result.get('success')}")
+    print(f"ATS Score: {result.get('ats_score')}")
+    print(f"Match Score: {result.get('match_score')}")
+    print(f"Files: {result.get('files')}")

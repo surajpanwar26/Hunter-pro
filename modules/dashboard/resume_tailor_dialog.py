@@ -41,37 +41,58 @@ def _check_ollama_connection(model_name: str) -> tuple[bool, str]:
 def _check_api_connection(provider: str) -> tuple[bool, str]:
     """Check if API provider is configured."""
     try:
-        if provider == "groq":
-            from config.secrets import groq_api_key, groq_model
-            if groq_api_key and groq_api_key != "your_groq_api_key_here":
-                return True, f"Groq: {groq_model}"
-            return False, "Groq API key not set"
-        elif provider == "huggingface":
-            from config.secrets import huggingface_api_key, huggingface_model
-            if huggingface_api_key and huggingface_api_key != "your_huggingface_api_key_here":
-                # Shorten model name for display
-                short_model = huggingface_model.split("/")[-1] if "/" in huggingface_model else huggingface_model
-                return True, f"HF: {short_model}"
-            return False, "HuggingFace API key not set"
-        elif provider == "openai":
-            from config.secrets import llm_api_key, llm_model
-            if llm_api_key and llm_api_key != "your_openai_api_key_here":
-                return True, f"OpenAI: {llm_model}"
-            return False, "OpenAI API key not set"
-        elif provider == "deepseek":
-            from config.secrets import deepseek_api_key, deepseek_model
-            if deepseek_api_key and deepseek_api_key != "your_deepseek_api_key_here":
-                return True, f"DeepSeek: {deepseek_model}"
-            return False, "DeepSeek API key not set"
-        elif provider == "gemini":
-            from config.secrets import gemini_api_key, gemini_model
-            if gemini_api_key and gemini_api_key != "your_gemini_api_key_here":
-                return True, f"Gemini: {gemini_model}"
-            return False, "Gemini API key not set"
-        elif provider == "ollama":
+        if provider == "ollama":
             from config.secrets import ollama_model
             return _check_ollama_connection(ollama_model)
-        return False, "Unknown provider"
+
+        provider_map = {
+            "groq": {
+                "key": "groq_api_key",
+                "model": "groq_model",
+                "invalid": "your_groq_api_key_here",
+                "missing": "Groq API key not set",
+                "label": lambda m: f"Groq: {m}",
+            },
+            "huggingface": {
+                "key": "huggingface_api_key",
+                "model": "huggingface_model",
+                "invalid": "your_huggingface_api_key_here",
+                "missing": "HuggingFace API key not set",
+                "label": lambda m: f"HF: {m.split('/')[-1] if '/' in m else m}",
+            },
+            "openai": {
+                "key": "llm_api_key",
+                "model": "llm_model",
+                "invalid": "your_openai_api_key_here",
+                "missing": "OpenAI API key not set",
+                "label": lambda m: f"OpenAI: {m}",
+            },
+            "deepseek": {
+                "key": "deepseek_api_key",
+                "model": "deepseek_model",
+                "invalid": "your_deepseek_api_key_here",
+                "missing": "DeepSeek API key not set",
+                "label": lambda m: f"DeepSeek: {m}",
+            },
+            "gemini": {
+                "key": "gemini_api_key",
+                "model": "gemini_model",
+                "invalid": "your_gemini_api_key_here",
+                "missing": "Gemini API key not set",
+                "label": lambda m: f"Gemini: {m}",
+            },
+        }
+
+        config = provider_map.get(provider)
+        if not config:
+            return False, "Unknown provider"
+
+        from config import secrets
+        api_key = getattr(secrets, config["key"], "")
+        model = getattr(secrets, config["model"], "")
+        if api_key and api_key != config["invalid"]:
+            return True, config["label"](model)
+        return False, config["missing"]
     except Exception as e:
         return False, str(e)
 
@@ -87,6 +108,16 @@ COLORS = {
     'text_secondary': '#adb5bd',
     'border': '#333',
 }
+
+# UI constants
+UI_FONT = "Segoe UI"
+START_TAILORING_TEXT = "🚀 START TAILORING"
+JD_PLACEHOLDER_PREFIX = "Paste the job description"
+JD_PLACEHOLDER_TEXT = (
+    "Paste the job description here...\n\n"
+    "Include:\n- Job title\n- Requirements\n- Responsibilities\n- Skills needed"
+)
+MISSING_JD_TITLE = "Missing JD"
 
 
 class ResumeTailorDialog(tk.Toplevel):
@@ -134,6 +165,7 @@ class ResumeTailorDialog(tk.Toplevel):
         self.open_folder_btn: ttkb.Button | None = None
         self.copy_btn: ttkb.Button | None = None
         self.tailor_btn: ttkb.Button | None = None
+        self.view_diff_btn: ttkb.Button | None = None
         
         self._build_ui(default_resume_text or "")
         
@@ -164,7 +196,7 @@ class ResumeTailorDialog(tk.Toplevel):
         title_label = tk.Label(
             header_frame,
             text="🎯 AI Resume Tailor",
-            font=("Segoe UI", 18, "bold"),
+            font=(UI_FONT, 18, "bold"),
             fg=COLORS['accent'],
             bg=COLORS['bg']
         )
@@ -173,7 +205,7 @@ class ResumeTailorDialog(tk.Toplevel):
         subtitle = tk.Label(
             header_frame,
             text="Tailor your resume with AI  •  Ctrl+Enter: Tailor  •  F5: Refresh  •  Esc: Close",
-            font=("Segoe UI", 9),
+            font=(UI_FONT, 9),
             fg=COLORS['text_secondary'],
             bg=COLORS['bg']
         )
@@ -190,7 +222,7 @@ class ResumeTailorDialog(tk.Toplevel):
         left_actions.pack(side=tk.LEFT, padx=10)
         
         self.tailor_btn = ttkb.Button(
-            left_actions, text="🚀 START TAILORING", command=self._run_tailor,
+            left_actions, text=START_TAILORING_TEXT, command=self._run_tailor,
             bootstyle="success", width=20
         )
         self.tailor_btn.pack(side=tk.LEFT, padx=5)
@@ -218,7 +250,7 @@ class ResumeTailorDialog(tk.Toplevel):
         self.progress_label = tk.Label(
             progress_info,
             text="Ready to tailor",
-            font=("Segoe UI", 10, "bold"),
+            font=(UI_FONT, 10, "bold"),
             fg=COLORS['text'],
             bg='#0f3460'
         )
@@ -228,7 +260,7 @@ class ResumeTailorDialog(tk.Toplevel):
         self.elapsed_time_label = tk.Label(
             progress_info,
             text="",
-            font=("Segoe UI", 9),
+            font=(UI_FONT, 9),
             fg=COLORS['text_secondary'],
             bg='#0f3460'
         )
@@ -237,7 +269,7 @@ class ResumeTailorDialog(tk.Toplevel):
         self.progress_percent_label = tk.Label(
             progress_info,
             text="",
-            font=("Segoe UI", 10, "bold"),
+            font=(UI_FONT, 10, "bold"),
             fg=COLORS['success'],
             bg='#0f3460'
         )
@@ -350,7 +382,7 @@ class ResumeTailorDialog(tk.Toplevel):
         provider_row = tk.Frame(config_inner, bg=COLORS['bg'])
         provider_row.pack(fill=tk.X, pady=3)
         
-        tk.Label(provider_row, text="AI Provider:", font=("Segoe UI", 10, "bold"), 
+        tk.Label(provider_row, text="AI Provider:", font=(UI_FONT, 10, "bold"), 
                  fg=COLORS['text'], bg=COLORS['bg']).pack(side=tk.LEFT)
         
         provider_combo = ttkb.Combobox(
@@ -366,7 +398,7 @@ class ResumeTailorDialog(tk.Toplevel):
         self.connection_status_label = tk.Label(
             provider_row,
             text="●",
-            font=("Segoe UI", 12),
+            font=(UI_FONT, 12),
             fg=COLORS['text_secondary'],
             bg=COLORS['bg']
         )
@@ -376,7 +408,7 @@ class ResumeTailorDialog(tk.Toplevel):
         self.model_info_label = tk.Label(
             provider_row,
             text="Checking...",
-            font=("Segoe UI", 9, "italic"),
+            font=(UI_FONT, 9, "italic"),
             fg=COLORS['text_secondary'],
             bg=COLORS['bg']
         )
@@ -405,7 +437,7 @@ class ResumeTailorDialog(tk.Toplevel):
         title_row = tk.Frame(config_inner, bg=COLORS['bg'])
         title_row.pack(fill=tk.X, pady=5)
         
-        tk.Label(title_row, text="Job Title:", font=("Segoe UI", 10, "bold"), 
+        tk.Label(title_row, text="Job Title:", font=(UI_FONT, 10, "bold"), 
                  fg=COLORS['text'], bg=COLORS['bg']).pack(side=tk.LEFT)
         ttkb.Entry(title_row, textvariable=self.job_title_var, width=40, 
                    bootstyle="info").pack(side=tk.LEFT, padx=8)
@@ -433,7 +465,7 @@ class ResumeTailorDialog(tk.Toplevel):
         resume_hint = tk.Label(
             resume_frame, 
             text="Paste your complete resume text below:",
-            font=("Segoe UI", 9),
+            font=(UI_FONT, 9),
             fg=COLORS['text_secondary'],
             bg=COLORS['bg']
         )
@@ -460,7 +492,7 @@ class ResumeTailorDialog(tk.Toplevel):
         jd_hint = tk.Label(
             jd_frame,
             text="⬇️ PASTE THE COMPLETE JOB DESCRIPTION BELOW ⬇️",
-            font=("Segoe UI", 10, "bold"),
+            font=(UI_FONT, 10, "bold"),
             fg=COLORS['warning'],
             bg=COLORS['bg']
         )
@@ -477,13 +509,13 @@ class ResumeTailorDialog(tk.Toplevel):
             wrap=tk.WORD
         )
         self.jd_text.pack(fill=tk.X, padx=10, pady=10)
-        self.jd_text.insert(tk.END, "Paste the job description here...\n\nInclude:\n- Job title\n- Requirements\n- Responsibilities\n- Skills needed")
+        self.jd_text.insert(tk.END, JD_PLACEHOLDER_TEXT)
         
         # Word count label for JD
         self.jd_word_count_label = tk.Label(
             jd_frame,
             text="Words: 0",
-            font=("Segoe UI", 8),
+            font=(UI_FONT, 8),
             fg=COLORS['text_secondary'],
             bg=COLORS['bg']
         )
@@ -491,8 +523,10 @@ class ResumeTailorDialog(tk.Toplevel):
         
         # Update word count on key release
         def update_jd_word_count(event=None):
+            if not self.jd_text or not self.jd_word_count_label:
+                return
             text = self.jd_text.get("1.0", tk.END).strip()
-            if text.startswith("Paste the job description"):
+            if text.startswith(JD_PLACEHOLDER_PREFIX):
                 word_count = 0
             else:
                 word_count = len(text.split())
@@ -509,7 +543,9 @@ class ResumeTailorDialog(tk.Toplevel):
         
         # Clear placeholder on focus
         def clear_placeholder(event):
-            if self.jd_text.get("1.0", tk.END).strip().startswith("Paste the job description"):
+            if not self.jd_text:
+                return
+            if self.jd_text.get("1.0", tk.END).strip().startswith(JD_PLACEHOLDER_PREFIX):
                 self.jd_text.delete("1.0", tk.END)
                 update_jd_word_count()  # Update word count after clearing
         self.jd_text.bind("<FocusIn>", clear_placeholder)
@@ -546,7 +582,7 @@ class ResumeTailorDialog(tk.Toplevel):
         self.ats_score_label = tk.Label(
             score_row,
             text="ATS Score: --",
-            font=("Segoe UI", 16, "bold"),
+            font=(UI_FONT, 16, "bold"),
             fg=COLORS['text_secondary'],
             bg=COLORS['bg']
         )
@@ -555,7 +591,7 @@ class ResumeTailorDialog(tk.Toplevel):
         self.improvement_label = tk.Label(
             score_row,
             text="",
-            font=("Segoe UI", 12),
+            font=(UI_FONT, 12),
             fg=COLORS['success'],
             bg=COLORS['bg']
         )
@@ -581,7 +617,7 @@ class ResumeTailorDialog(tk.Toplevel):
         tk.Label(
             comparison_frame,
             text="📋 ORIGINAL RESUME",
-            font=("Segoe UI", 10, "bold"),
+            font=(UI_FONT, 10, "bold"),
             fg="#74c0fc",
             bg=COLORS['bg']
         ).grid(row=0, column=0, pady=5)
@@ -590,7 +626,7 @@ class ResumeTailorDialog(tk.Toplevel):
         tk.Label(
             comparison_frame,
             text="✨ TAILORED RESUME",
-            font=("Segoe UI", 10, "bold"),
+            font=(UI_FONT, 10, "bold"),
             fg="#69db7c",
             bg=COLORS['bg']
         ).grid(row=0, column=1, pady=5)
@@ -664,6 +700,13 @@ class ResumeTailorDialog(tk.Toplevel):
             bootstyle="warning-outline", state=tk.DISABLED, width=12
         )
         self.copy_btn.pack(side=tk.LEFT, padx=3)
+        
+        # View Diff button - opens HTML diff in browser
+        self.view_diff_btn = ttkb.Button(
+            actions_inner, text="🔍 View Diff", command=self._open_html_diff,
+            bootstyle="primary", state=tk.DISABLED, width=12
+        )
+        self.view_diff_btn.pack(side=tk.LEFT, padx=3)
     
     def _build_bottom_panel(self):
         """Build the bottom status panel."""
@@ -675,7 +718,7 @@ class ResumeTailorDialog(tk.Toplevel):
         self.status_label = tk.Label(
             bottom_frame,
             text="💡 Tip: Browse or paste your resume, then paste the job description and click START TAILORING",
-            font=("Segoe UI", 9),
+            font=(UI_FONT, 9),
             fg=COLORS['text_secondary'],
             bg=COLORS['card']
         )
@@ -735,19 +778,19 @@ class ResumeTailorDialog(tk.Toplevel):
         jd_content = self.jd_text.get("1.0", tk.END).strip() if self.jd_text else ""
         
         # Check for placeholder text
-        if jd_content.startswith("Paste the job description"):
-            messagebox.showwarning("Missing JD", "Please paste the job description first!")
+        if jd_content.startswith(JD_PLACEHOLDER_PREFIX):
+            messagebox.showwarning(MISSING_JD_TITLE, "Please paste the job description first!")
             return
         
         if not resume_content:
             messagebox.showwarning("Missing Resume", "Please provide resume content.")
             return
         if not jd_content:
-            messagebox.showwarning("Missing JD", "Please provide job description.")
+            messagebox.showwarning(MISSING_JD_TITLE, "Please provide job description.")
             return
         
         score_data = _score_match(resume_content, jd_content)
-        self._update_score_display(score_data, is_before=True)
+        self._update_score_display(score_data, before_score=None)
         self._update_status(f"📊 Current ATS Score: {score_data['ats']}%", "info")
     
     def _run_tailor(self):
@@ -763,8 +806,8 @@ class ResumeTailorDialog(tk.Toplevel):
         resume_path = self.resume_path_var.get().strip() or None
         
         # Validation
-        if jd_content.startswith("Paste the job description"):
-            messagebox.showerror("Missing JD", "Please paste the job description first!")
+        if jd_content.startswith(JD_PLACEHOLDER_PREFIX):
+            messagebox.showerror(MISSING_JD_TITLE, "Please paste the job description first!")
             return
         if not jd_content:
             messagebox.showerror("Missing Input", "Please paste the job description.")
@@ -812,7 +855,7 @@ class ResumeTailorDialog(tk.Toplevel):
             # Reset UI
             self.is_processing = False
             if self.tailor_btn:
-                self.tailor_btn.config(state=tk.NORMAL, text="🚀 START TAILORING")
+                self.tailor_btn.config(state=tk.NORMAL, text=START_TAILORING_TEXT)
             if self.cancel_btn:
                 self.cancel_btn.pack_forget()
             if self.elapsed_time_label:
@@ -823,9 +866,6 @@ class ResumeTailorDialog(tk.Toplevel):
     def _worker(self, resume_text: str, jd_text: str, instructions: str | None, 
                 provider: str, resume_path: str | None, job_title: str | None):
         """Background worker for tailoring with progress updates."""
-        import time
-        start_time = time.time()
-        
         try:
             # Step 1: Calculate before score
             self.after(0, lambda: self._update_progress("📊 Calculating initial ATS score...", 10))
@@ -895,10 +935,32 @@ class ResumeTailorDialog(tk.Toplevel):
         """Start animated progress with moving numbers."""
         self.animation_value = 0
         self._animate_progress()
+
+    def _update_elapsed_time_display(self):
+        if self.is_processing and self.animation_value % 25 == 0:
+            import time
+            elapsed = int(time.time() - self.process_start_time)
+            if self.elapsed_time_label:
+                self.elapsed_time_label.config(text=f"⏱️ {elapsed}s")
+
+    def _maybe_bump_progress(self, current: float):
+        if current < 70 and self.is_processing:
+            if self.animation_value % 15 == 0 and current < 68:
+                new_val = min(current + 0.5, 68)
+                if self.progress_bar:
+                    self.progress_bar['value'] = new_val
+                if hasattr(self, 'progress_percent_label') and self.progress_percent_label:
+                    self.progress_percent_label.config(text=f"{int(new_val)}%")
+
+    def _maybe_update_activity_text(self):
+        if self.progress_label and self.animation_value % 25 == 0:
+            dots = "." * ((self.animation_value // 25) % 4)
+            base_text = self.progress_label.cget("text").rstrip(".")
+            if "please wait" in base_text.lower() or "tailoring" in base_text.lower():
+                self.progress_label.config(text=f"{base_text}{dots}")
     
     def _animate_progress(self):
         """Animate progress bar to show activity with smooth increments."""
-        import time
         if not self.animation_running:
             return
         
@@ -908,28 +970,9 @@ class ResumeTailorDialog(tk.Toplevel):
         # Increment counter
         self.animation_value = (self.animation_value + 1) % 1000
         
-        # Update elapsed time display (every ~500ms = 25 ticks)
-        if self.is_processing and self.animation_value % 25 == 0:
-            elapsed = int(time.time() - self.process_start_time)
-            if self.elapsed_time_label:
-                self.elapsed_time_label.config(text=f"⏱️ {elapsed}s")
-        
-        # Add small increment while waiting (max 70% during animation)
-        if current < 70 and self.is_processing:
-            # Faster increment to show activity (every 300ms = ~15 ticks)
-            if self.animation_value % 15 == 0 and current < 68:
-                new_val = min(current + 0.5, 68)
-                if self.progress_bar:
-                    self.progress_bar['value'] = new_val
-                if hasattr(self, 'progress_percent_label') and self.progress_percent_label:
-                    self.progress_percent_label.config(text=f"{int(new_val)}%")
-            
-            # Update progress label with activity dots (shows we're not frozen)
-            if self.progress_label and self.animation_value % 25 == 0:
-                dots = "." * ((self.animation_value // 25) % 4)
-                base_text = self.progress_label.cget("text").rstrip(".")
-                if "please wait" in base_text.lower() or "tailoring" in base_text.lower():
-                    self.progress_label.config(text=f"{base_text}{dots}")
+        self._update_elapsed_time_display()
+        self._maybe_bump_progress(current)
+        self._maybe_update_activity_text()
         
         # Continue animation (faster refresh = smoother feel)
         if self.animation_running:
@@ -1018,37 +1061,48 @@ class ResumeTailorDialog(tk.Toplevel):
         if hasattr(self, 'progress_percent_label') and self.progress_percent_label:
             self.progress_percent_label.config(text="100%")
         if self.tailor_btn:
-            self.tailor_btn.config(state=tk.NORMAL, text="🚀 START TAILORING")
+            self.tailor_btn.config(state=tk.NORMAL, text=START_TAILORING_TEXT)
         # Hide cancel button
         if self.cancel_btn:
             self.cancel_btn.pack_forget()
         
         self.current_paths = paths
         self.tailored_resume_text = tailored_text
+        self._update_previews(self.master_resume_text, tailored_text)
+
+        # Update score display
+        self._update_score_display(after_score, before_score=before_score)
+
+        # Enable action buttons
+        self._set_action_buttons_state(paths)
         
-        # Update previews
+        # Update status
+        improvement = after_score['ats'] - before_score['ats']
+        status_text = f"✅ Done! ATS: {before_score['ats']}% → {after_score['ats']}%"
+        if improvement > 0:
+            status_text += f" (+{improvement}% 📈)"
+        self._update_status(status_text, "success")
+
+    def _update_previews(self, master_text: str, tailored_text: str):
         if self.master_preview:
             self.master_preview.config(state=tk.NORMAL)
             self.master_preview.delete("1.0", tk.END)
-            self.master_preview.insert(tk.END, self.master_resume_text)
+            self.master_preview.insert(tk.END, master_text)
             self.master_preview.config(state=tk.DISABLED)
-        
+
         if self.tailored_preview:
             self.tailored_preview.config(state=tk.NORMAL)
             self.tailored_preview.delete("1.0", tk.END)
             self.tailored_preview.insert(tk.END, tailored_text)
             self.tailored_preview.config(state=tk.DISABLED)
-        
+
         if self.tailored_full_preview:
             self.tailored_full_preview.config(state=tk.NORMAL)
             self.tailored_full_preview.delete("1.0", tk.END)
             self.tailored_full_preview.insert(tk.END, tailored_text)
             self.tailored_full_preview.config(state=tk.DISABLED)
-        
-        # Update score display
-        self._update_score_display(after_score, is_before=False, before_score=before_score)
-        
-        # Enable action buttons
+
+    def _set_action_buttons_state(self, paths: dict):
         if self.open_pdf_btn:
             self.open_pdf_btn.config(state=tk.NORMAL if paths.get("pdf") else tk.DISABLED)
         if self.open_docx_btn:
@@ -1057,13 +1111,8 @@ class ResumeTailorDialog(tk.Toplevel):
             self.open_folder_btn.config(state=tk.NORMAL)
         if self.copy_btn:
             self.copy_btn.config(state=tk.NORMAL)
-        
-        # Update status
-        improvement = after_score['ats'] - before_score['ats']
-        status_text = f"✅ Done! ATS: {before_score['ats']}% → {after_score['ats']}%"
-        if improvement > 0:
-            status_text += f" (+{improvement}% 📈)"
-        self._update_status(status_text, "success")
+        if self.view_diff_btn:
+            self.view_diff_btn.config(state=tk.NORMAL)
     
     def _on_error(self, error: Exception):
         """Handle tailoring error."""
@@ -1077,7 +1126,7 @@ class ResumeTailorDialog(tk.Toplevel):
         if self.progress_label:
             self.progress_label.config(text="❌ Failed")
         if self.tailor_btn:
-            self.tailor_btn.config(state=tk.NORMAL, text="🚀 START TAILORING")
+            self.tailor_btn.config(state=tk.NORMAL, text=START_TAILORING_TEXT)
         # Hide cancel button
         if self.cancel_btn:
             self.cancel_btn.pack_forget()
@@ -1096,23 +1145,20 @@ class ResumeTailorDialog(tk.Toplevel):
         self._update_status(f"❌ Error: {error_msg.split(chr(10))[0]}", "danger")
         messagebox.showerror("Tailoring Error", error_msg)
     
-    def _update_score_display(self, score_data: dict, is_before: bool = True, before_score: dict | None = None):
+    def _score_style(self, score: int) -> tuple[str, str]:
+        """Return (color, grade) for a given ATS score."""
+        if score >= 80:
+            return COLORS['success'], "Excellent"
+        if score >= 60:
+            return "#69db7c", "Good"
+        if score >= 40:
+            return COLORS['warning'], "Fair"
+        return COLORS['danger'], "Needs Work"
+
+    def _update_score_display(self, score_data: dict, before_score: dict | None = None):
         """Update the ATS score display."""
         score = score_data.get('ats', 0)
-        
-        # Color based on score
-        if score >= 80:
-            color = COLORS['success']
-            grade = "Excellent"
-        elif score >= 60:
-            color = "#69db7c"
-            grade = "Good"
-        elif score >= 40:
-            color = COLORS['warning']
-            grade = "Fair"
-        else:
-            color = COLORS['danger']
-            grade = "Needs Work"
+        color, grade = self._score_style(score)
         
         if self.ats_score_label:
             self.ats_score_label.config(text=f"ATS Score: {score}% ({grade})", fg=color)
@@ -1139,14 +1185,14 @@ class ResumeTailorDialog(tk.Toplevel):
                 tk.Label(
                     self.keywords_frame,
                     text=f"✅ Found: {', '.join(found)}",
-                    font=("Segoe UI", 8), fg=COLORS['success'], bg=COLORS['bg']
+                    font=(UI_FONT, 8), fg=COLORS['success'], bg=COLORS['bg']
                 ).pack(anchor=tk.W)
             
             if missing:
                 tk.Label(
                     self.keywords_frame,
                     text=f"⚠️ Missing: {', '.join(missing)}",
-                    font=("Segoe UI", 8), fg=COLORS['warning'], bg=COLORS['bg']
+                    font=(UI_FONT, 8), fg=COLORS['warning'], bg=COLORS['bg']
                 ).pack(anchor=tk.W)
     
     def _update_status(self, text: str, level: str = "info"):
@@ -1183,40 +1229,72 @@ class ResumeTailorDialog(tk.Toplevel):
             self.clipboard_append(self.tailored_resume_text)
             self._update_status("📋 Copied to clipboard!", "success")
     
+    def _open_html_diff(self):
+        """Open an HTML diff view in the browser showing original vs tailored."""
+        if not self.master_resume_text or not self.tailored_resume_text:
+            messagebox.showinfo("No Diff Available", "Complete a tailoring operation first.")
+            return
+        
+        try:
+            from modules.dashboard.html_diff_viewer import generate_html_diff
+            job_title = self.job_title_var.get().strip() or "Resume"
+            filepath = generate_html_diff(
+                master_text=self.master_resume_text,
+                tailored_text=self.tailored_resume_text,
+                job_title=job_title,
+                open_in_browser=True
+            )
+            self._update_status(f"🔍 Diff opened in browser: {os.path.basename(filepath)}", "success")
+        except Exception as e:
+            messagebox.showerror("Diff Error", f"Could not generate diff:\n{e}")
+    
     def _reset_form(self):
         """Reset the form."""
+        self._reset_text_inputs()
+        self._reset_scores()
+        self._reset_previews()
+        self._reset_action_buttons()
+        self._reset_progress_ui()
+        self._update_status(
+            "💡 Tip: Browse or paste your resume, then paste the job description and click START TAILORING",
+            "info",
+        )
+
+    def _reset_text_inputs(self):
         if self.resume_text:
             self.resume_text.delete("1.0", tk.END)
         if self.jd_text:
             self.jd_text.delete("1.0", tk.END)
-            self.jd_text.insert(tk.END, "Paste the job description here...")
+            self.jd_text.insert(tk.END, JD_PLACEHOLDER_TEXT)
         if self.instr_text:
             self.instr_text.delete("1.0", tk.END)
             self.instr_text.insert(tk.END, "Focus on technical skills. Keep it professional and ATS-friendly.")
-        
+
         self.job_title_var.set("")
         self.resume_path_var.set("")
-        
-        # Reset word count
+
         if self.jd_word_count_label:
             self.jd_word_count_label.config(text="Words: 0", fg=COLORS['text_secondary'])
-        
+
+    def _reset_scores(self):
+        if self.ats_score_label:
+            self.ats_score_label.config(text="ATS Score: --", fg=COLORS['text_secondary'])
+        if self.improvement_label:
+            self.improvement_label.config(text="")
+
+    def _reset_previews(self):
         for preview in [self.master_preview, self.tailored_preview, self.tailored_full_preview]:
             if preview:
                 preview.config(state=tk.NORMAL)
                 preview.delete("1.0", tk.END)
                 preview.config(state=tk.DISABLED)
-        
-        if self.ats_score_label:
-            self.ats_score_label.config(text="ATS Score: --", fg=COLORS['text_secondary'])
-        if self.improvement_label:
-            self.improvement_label.config(text="")
-        
-        for btn in [self.open_pdf_btn, self.open_docx_btn, self.open_folder_btn, self.copy_btn]:
+
+    def _reset_action_buttons(self):
+        for btn in [self.open_pdf_btn, self.open_docx_btn, self.open_folder_btn, self.copy_btn, self.view_diff_btn]:
             if btn:
                 btn.config(state=tk.DISABLED)
-        
-        # Reset progress
+
+    def _reset_progress_ui(self):
         self.animation_running = False
         self.is_processing = False
         self.cancel_requested = False
@@ -1230,5 +1308,3 @@ class ResumeTailorDialog(tk.Toplevel):
             self.progress_percent_label.config(text="")
         if self.elapsed_time_label:
             self.elapsed_time_label.config(text="")
-        
-        self._update_status("💡 Tip: Browse or paste your resume, then paste the job description and click START TAILORING", "info")

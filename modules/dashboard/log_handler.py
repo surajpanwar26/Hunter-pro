@@ -1,5 +1,6 @@
 import queue
-from typing import Callable, Optional
+import threading
+from typing import Callable, Optional, Any
 
 # Thread-safe queue for log messages
 _log_queue: "queue.Queue[str]" = queue.Queue()

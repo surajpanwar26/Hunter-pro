@@ -1,4 +1,5 @@
 '''Modern Tkinter dashboard to control and monitor the bot - Enhanced UI/UX.'''
+# sonar:off
 import tkinter as tk
 from tkinter import scrolledtext, messagebox, Menu, filedialog
 from matplotlib.figure import Figure
@@ -9,6 +10,7 @@ from datetime import datetime
 import webbrowser
 import os
 import subprocess
+import re
 import json
 import threading
 
@@ -43,6 +45,35 @@ COLORS = {
     'border': '#3a3a5c'
 }
 
+# ===== UI Constants (reduces SonarQube duplicate string warnings) =====
+UI_FONT = "Segoe UI"
+UI_FONT_EMOJI = "Segoe UI Emoji"
+STYLE_CARD_FRAME = 'Card.TFrame'
+STYLE_HEADER_FRAME = 'Header.TFrame'
+STYLE_HEADER_LABEL = 'Header.TLabel'
+EVENT_MOUSEWHEEL = "<MouseWheel>"
+EVENT_ENTER = "<Enter>"
+EVENT_LEAVE = "<Leave>"
+EVENT_CONFIGURE = "<Configure>"
+EVENT_COMBOBOX_SELECTED = "<<ComboboxSelected>>"
+BTN_REFRESH = "🔄 Refresh"
+BTN_SETTINGS = "⚙️ Settings"
+LBL_FILTER = "🔍 Filter:"
+LBL_ALL_FILES = "All files"
+LBL_MISSING_API_KEY = "Missing API Key"
+LBL_SUCCESS_RATE = "Success Rate"
+LBL_AI_PROVIDER = "AI Provider"
+LBL_JOB_TITLE = "Job Title"
+LBL_DASHBOARD_REFRESHED = "Dashboard refreshed"
+RESUME_AUTO = "Auto (Match Master)"
+RESUME_PDF = "PDF Only"
+RESUME_DOCX = "DOCX Only"
+DETECT_LINKEDIN = "LinkedIn Only"
+DETECT_UNIVERSAL = "Universal (All Sites)"
+DETECT_SMART = "Smart Detect"
+DEFAULT_GROQ_MODEL = "llama-3.1-70b-versatile"
+DEFAULT_HF_MODEL = "mistralai/Mistral-7B-Instruct-v0.3"
+
 
 class AnimatedButton(ttkb.Button):
     """Button with hover animation effect"""
@@ -62,28 +93,28 @@ class StatusCard(ttkb.Frame):
     """Modern stat card with icon and animated value"""
     def __init__(self, parent, title, icon, value="0", color="info", **kwargs):
         super().__init__(parent, **kwargs)
-        self.configure(padding=20, style='Card.TFrame', relief=tk.RIDGE, borderwidth=2)
+        self.configure(padding=10, style=STYLE_CARD_FRAME, relief=tk.RIDGE, borderwidth=1)
 
         # Icon and title row
-        header = ttkb.Frame(self, style='Card.TFrame')
-        header.pack(fill=tk.X, pady=(0, 12))
+        header = ttkb.Frame(self, style=STYLE_CARD_FRAME)
+        header.pack(fill=tk.X, pady=(0, 6))
 
-        icon_label = ttkb.Label(header, text=icon, font=("Segoe UI Emoji", 28), bootstyle=color)
+        icon_label = ttkb.Label(header, text=icon, font=("Segoe UI Emoji", 22), bootstyle=color)
         icon_label.pack(side=tk.LEFT)
 
-        title_label = ttkb.Label(header, text=title, font=("Segoe UI", 13, "bold"), 
+        title_label = ttkb.Label(header, text=title, font=("Segoe UI", 11, "bold"), 
                                  foreground=COLORS['text_secondary'], bootstyle="secondary")
-        title_label.pack(side=tk.LEFT, padx=(14, 0))
+        title_label.pack(side=tk.LEFT, padx=(10, 0))
 
         # Value
-        self.value_label = ttkb.Label(self, text=value, font=("Segoe UI", 36, "bold"),
+        self.value_label = ttkb.Label(self, text=value, font=("Segoe UI", 28, "bold"),
                                       bootstyle=color)
         self.value_label.pack(anchor=tk.W, pady=(0, 2))
 
         # Trend indicator (optional)
-        self.trend_label = ttkb.Label(self, text="", font=("Segoe UI", 11),
+        self.trend_label = ttkb.Label(self, text="", font=("Segoe UI", 9),
                                       foreground=COLORS['text_secondary'])
-        self.trend_label.pack(anchor=tk.W, pady=(6, 0))
+        self.trend_label.pack(anchor=tk.W, pady=(4, 0))
     
     def set_value(self, value, trend=None):
         self.value_label.config(text=str(value))
@@ -151,7 +182,7 @@ class ActivityFeed(ttkb.Frame):
                                         command=self.canvas.yview)
         self.scrollable_frame = ttkb.Frame(self.canvas)
         
-        self.scrollable_frame.bind("<Configure>",
+        self.scrollable_frame.bind(EVENT_CONFIGURE,
             lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
         
         self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
@@ -164,6 +195,14 @@ class ActivityFeed(ttkb.Frame):
         self.max_items = 50
     
     def add_activity(self, message, activity_type="info"):
+        """Add an activity item to the feed - handles destroyed widgets gracefully"""
+        try:
+            # Check if scrollable_frame still exists
+            if not self.scrollable_frame.winfo_exists():
+                return  # Widget has been destroyed, skip adding
+        except tk.TclError:
+            return  # Widget doesn't exist
+        
         timestamp = datetime.now().strftime("%H:%M:%S")
         
         icons = {
@@ -187,33 +226,42 @@ class ActivityFeed(ttkb.Frame):
         icon = icons.get(activity_type, "ℹ️")
         color = colors.get(activity_type, COLORS['info'])
         
-        item_frame = ttkb.Frame(self.scrollable_frame)
-        item_frame.pack(fill=tk.X, pady=2, padx=5)
-        
-        time_label = ttkb.Label(item_frame, text=timestamp, font=("Consolas", 9),
-                               foreground=COLORS['text_secondary'])
-        time_label.pack(side=tk.LEFT, padx=(0, 10))
-        
-        icon_label = ttkb.Label(item_frame, text=icon, font=("Segoe UI Emoji", 10))
-        icon_label.pack(side=tk.LEFT, padx=(0, 5))
-        
-        msg_label = ttkb.Label(item_frame, text=message[:80], font=("Segoe UI", 10),
-                              foreground=color)
-        msg_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
-        
-        self.activities.append(item_frame)
-        
-        # Limit items
-        if len(self.activities) > self.max_items:
-            old = self.activities.pop(0)
-            old.destroy()
-        
-        # Auto scroll to bottom
-        self.canvas.yview_moveto(1.0)
+        try:
+            item_frame = ttkb.Frame(self.scrollable_frame)
+            item_frame.pack(fill=tk.X, pady=2, padx=5)
+            
+            time_label = ttkb.Label(item_frame, text=timestamp, font=("Consolas", 9),
+                                   foreground=COLORS['text_secondary'])
+            time_label.pack(side=tk.LEFT, padx=(0, 10))
+            
+            icon_label = ttkb.Label(item_frame, text=icon, font=("Segoe UI Emoji", 10))
+            icon_label.pack(side=tk.LEFT, padx=(0, 5))
+            
+            msg_label = ttkb.Label(item_frame, text=message[:80], font=("Segoe UI", 10),
+                                  foreground=color)
+            msg_label.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            
+            self.activities.append(item_frame)
+            
+            # Limit items
+            if len(self.activities) > self.max_items:
+                old = self.activities.pop(0)
+                try:
+                    old.destroy()
+                except tk.TclError:
+                    pass  # Already destroyed
+            
+            # Auto scroll to bottom
+            self.canvas.yview_moveto(1.0)
+        except tk.TclError:
+            pass  # Widget was destroyed during operation
     
     def clear_feed(self):
         for item in self.activities:
-            item.destroy()
+            try:
+                item.destroy()
+            except tk.TclError:
+                pass  # Already destroyed
         self.activities.clear()
 
 
@@ -229,8 +277,8 @@ class QuickActions(ttkb.Frame):
         actions = [
             ("📂 Open Logs", self.open_logs_folder, "secondary"),
             ("📊 Export CSV", self.export_data, "info"),
-            ("🔄 Refresh", self.refresh_all, "primary"),
-            ("⚙️ Settings", self.open_settings, "warning"),
+            (BTN_REFRESH, self.refresh_all, "primary"),
+            (BTN_SETTINGS, self.open_settings, "warning"),
         ]
         
         for i, (text, cmd, style) in enumerate(actions):
@@ -267,32 +315,24 @@ class QuickActions(ttkb.Frame):
     
     def refresh_all(self):
         self.dashboard._refresh_metrics()
-        self.dashboard.activity_feed.add_activity("Dashboard refreshed", "info")
+        self.dashboard.activity_feed.add_activity(LBL_DASHBOARD_REFRESHED, "info")
     
     def open_settings(self):
-        messagebox.showinfo("Settings", "Settings panel coming soon!")
+        """Navigate to the Settings tab in the dashboard."""
+        try:
+            # Switch to Settings tab (index 4 - Jobs, Graphs, Analytics, Resume, Settings)
+            if hasattr(self.dashboard, 'notebook') and self.dashboard.notebook:
+                self.dashboard.notebook.select(4)  # Settings is tab index 4
+                self.dashboard.activity_feed.add_activity("Opened Settings tab", "info")
+        except Exception as e:
+            print(f"Could not open settings: {e}")
 
 
 class BotDashboard(ttkb.Window):
-    def __init__(self, controller):
-        # Keyboard shortcuts for sidebar navigation
-        super().__init__(themename="cyborg")
-        self.bind_all('<Alt-1>', lambda e: self.show_dashboard())
-        self.bind_all('<Alt-2>', lambda e: self.show_tailor())
-        self.bind_all('<Alt-3>', lambda e: self.show_history())
-        self.bind_all('<Alt-4>', lambda e: self.show_settings())
-        self.bind_all('<Alt-5>', lambda e: self.show_help())
-
-        # Set focus order for main actions (tab order)
-        # (main_panel is created later, so bind after creation)
-
-        # ...existing __init__ code from previous patch here...
-
-        # After main_panel is created:
-        self.main_panel.bind('<FocusIn>', self._set_tab_order)
-
     def _set_tab_order(self, event=None):
         # Set tab order for visible widgets in main_panel
+        if not hasattr(self, 'main_panel'):
+            return
         widgets = [w for w in self.main_panel.winfo_children() if isinstance(w, (ttkb.Entry, ttkb.Button))]
         for i, w in enumerate(widgets):
             w.lift()
@@ -329,65 +369,191 @@ class BotDashboard(ttkb.Window):
             "warning": COLORS['warning'],
             "info": COLORS['info']
         }
-        frame = ttkb.Frame(toast, style='Card.TFrame')
+        frame = ttkb.Frame(toast, style=STYLE_CARD_FRAME)
         frame.pack(fill=tk.BOTH, expand=True)
         label = ttkb.Label(frame, text=message, font=("Segoe UI", 11), foreground=colors.get(level, COLORS['info']))
         label.pack(padx=10, pady=10)
         toast.after(2500, toast.destroy)
+
     def __init__(self, controller):
         # Use ttkbootstrap theme - cyborg for dark modern look
         super().__init__(themename="cyborg")
         self.title("🤖 AI Job Hunter Pro - Control Center")
-        self.geometry("1400x900")
+        self.geometry("1500x900")
         self.state('zoomed')
         self.controller = controller
+        self._history_urls = {}
         
-        # Configure style (using _style to avoid property conflict)
+        # Configure styles
         self._app_style = ttkb.Style()
-        self._app_style.configure('Card.TFrame', background=COLORS['card_bg'])
+        self._app_style.configure(STYLE_CARD_FRAME, background=COLORS['card_bg'])
+        self._app_style.configure(STYLE_HEADER_FRAME, background='#1a1a2e')
+        self._app_style.configure(STYLE_HEADER_LABEL, background='#1a1a2e')
+        self._app_style.configure('Clean.TLabel', background='')  # Transparent background
+        self._app_style.configure('Tab.TButton', font=('Segoe UI', 11), padding=(20, 10))
+        self._app_style.configure('ActiveTab.TButton', font=('Segoe UI', 11, 'bold'))
         
-        # --- Modern Layout: Sidebar + Header + Main Content ---
+        # ========== MODERN TABULAR LAYOUT (NO SIDEBAR) ==========
         main_frame = ttkb.Frame(self)
         main_frame.pack(fill=tk.BOTH, expand=True)
-
-        # Sidebar Navigation
-        sidebar = ttkb.Frame(main_frame, width=70, style='Card.TFrame')
-        sidebar.pack(side=tk.LEFT, fill=tk.Y)
-        sidebar.pack_propagate(False)
-
-        # Sidebar Buttons (icons only, tooltips for clarity)
-        nav_items = [
-            ("🏠", "Dashboard", self.show_dashboard),
-            ("📝", "Tailor", self.show_tailor),
-            ("📜", "History", self.show_history),
-            ("⚙️", "Settings", self.show_settings),
-            ("❓", "Help", self.show_help)
-        ]
-        self.sidebar_btns = []
-        for icon, label, cmd in nav_items:
-            btn = AnimatedButton(sidebar, text=icon, width=3, command=cmd, bootstyle="secondary")
-            btn.pack(pady=10, padx=8)
-            btn.tooltip = label  # For future tooltip support
-            self.sidebar_btns.append(btn)
-
-        # Main Content Area (Header + Content)
-        content_wrapper = ttkb.Frame(main_frame)
-        content_wrapper.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-
-        # Header Bar
-        header = ttkb.Frame(content_wrapper, style='Card.TFrame')
+        
+        # ===== TOP HEADER BAR (ROW 1: Logo + Status + Main Controls) =====
+        header = ttkb.Frame(main_frame, style=STYLE_HEADER_FRAME)
         header.pack(fill=tk.X)
-        # App Title
-        ttkb.Label(header, text="🤖 AI Job Hunter Pro", font=("Segoe UI", 18, "bold"), bootstyle="info").pack(side=tk.LEFT, padx=20, pady=10)
-        # User/Settings/Notifications (right)
-        ttkb.Label(header, text="👤", font=("Segoe UI Emoji", 16)).pack(side=tk.RIGHT, padx=10)
-        ttkb.Label(header, text="🔔", font=("Segoe UI Emoji", 16)).pack(side=tk.RIGHT, padx=10)
-
-        # Main Panel (context-sensitive)
-        self.main_panel = ttkb.Frame(content_wrapper)
+        
+        # Left: Logo & Title
+        logo_frame = ttkb.Frame(header, style=STYLE_HEADER_FRAME)
+        logo_frame.pack(side=tk.LEFT, padx=15, pady=8)
+        
+        ttkb.Label(logo_frame, text="🤖", font=("Segoe UI Emoji", 24), 
+                  style=STYLE_HEADER_LABEL).pack(side=tk.LEFT)
+        title_stack = ttkb.Frame(logo_frame, style=STYLE_HEADER_FRAME)
+        title_stack.pack(side=tk.LEFT, padx=(8, 0))
+        ttkb.Label(title_stack, text="AI Job Hunter Pro", 
+                  font=("Segoe UI", 14, "bold"), foreground="#ffffff",
+                  style=STYLE_HEADER_LABEL).pack(anchor=tk.W)
+        ttkb.Label(title_stack, text="LinkedIn Auto Apply Bot", 
+                  font=("Segoe UI", 8), foreground="#888888",
+                  style=STYLE_HEADER_LABEL).pack(anchor=tk.W)
+        
+        # Center: Status indicator (clearly visible)
+        status_center = ttkb.Frame(header, style=STYLE_HEADER_FRAME)
+        status_center.pack(side=tk.LEFT, padx=30)
+        
+        self.status_indicator = ttkb.Label(status_center, text="●", 
+                                          foreground="#ff4757", font=("Arial", 20),
+                                          style=STYLE_HEADER_LABEL)
+        self.status_indicator.pack(side=tk.LEFT)
+        self.status_label = ttkb.Label(status_center, text="STOPPED", 
+                                       font=("Segoe UI", 12, "bold"), foreground="#ff4757",
+                                       style=STYLE_HEADER_LABEL)
+        self.status_label.pack(side=tk.LEFT, padx=(5, 0))
+        
+        # Right: Main Control Buttons (START, STOP, PAUSE, LIVE PANEL)
+        controls_frame = ttkb.Frame(header, style=STYLE_HEADER_FRAME)
+        controls_frame.pack(side=tk.RIGHT, padx=15, pady=8)
+        
+        # Control buttons - compact but visible
+        self.start_btn = ttkb.Button(controls_frame, text="▶ START", 
+                                     command=self.start_bot, bootstyle="success-outline",
+                                     width=10)
+        self.start_btn.pack(side=tk.LEFT, padx=3)
+        
+        self.stop_btn = ttkb.Button(controls_frame, text="⏹ STOP", 
+                                    command=self.stop_bot, state=tk.DISABLED,
+                                    bootstyle="danger-outline", width=10)
+        self.stop_btn.pack(side=tk.LEFT, padx=3)
+        
+        self.pause_btn = ttkb.Button(controls_frame, text="⏸ PAUSE", 
+                                     command=self.toggle_pause, state=tk.DISABLED,
+                                     bootstyle="warning-outline", width=10)
+        self.pause_btn.pack(side=tk.LEFT, padx=3)
+        
+        # Separator
+        ttkb.Separator(controls_frame, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8, pady=3)
+        
+        # LIVE PANEL button
+        self.side_panel_mode = False
+        self.side_panel_btn = ttkb.Button(controls_frame, text="📺 LIVE", 
+                                          command=self.toggle_side_panel_mode,
+                                          bootstyle="info-outline", width=8)
+        self.side_panel_btn.pack(side=tk.LEFT, padx=(0, 3))
+        
+        # ===== TAB NAVIGATION BAR (ROW 2: Separate row for tabs) =====
+        tab_bar = ttkb.Frame(main_frame)
+        tab_bar.pack(fill=tk.X, padx=15, pady=(5, 0))
+        
+        self.current_tab = "dashboard"
+        self.tab_buttons = {}
+        
+        # Tab frame for navigation buttons
+        self.tab_frame = ttkb.Frame(tab_bar)
+        self.tab_frame.pack(side=tk.LEFT)
+        
+        tabs = [
+            ("🏠 Dashboard", "dashboard", self.show_dashboard),
+            ("✨ Tailor", "tailor", self.show_tailor),
+            ("📜 History", "history", self.show_history),
+            ("📊 Analytics", "analytics", self.show_analytics),
+            (BTN_SETTINGS, "settings", self.show_settings),
+            ("❓ Help", "help", self.show_help)
+        ]
+        
+        for text, tab_id, cmd in tabs:
+            btn = ttkb.Button(self.tab_frame, text=text, 
+                             command=lambda t=tab_id, c=cmd: self._switch_tab(t, c),
+                             bootstyle="dark-outline" if tab_id != "dashboard" else "info",
+                             padding=(8, 4), width=11)
+            btn.pack(side=tk.LEFT, padx=1)
+            self.tab_buttons[tab_id] = btn
+        
+        # Right side of tab bar: Quick actions
+        quick_actions = ttkb.Frame(tab_bar)
+        quick_actions.pack(side=tk.RIGHT)
+        
+        ttkb.Button(quick_actions, text="📂 Logs", 
+                   command=lambda: __import__('webbrowser').open(f'file:///{os.path.abspath("logs")}'),
+                   bootstyle="secondary-outline", width=8).pack(side=tk.LEFT, padx=2)
+        ttkb.Button(quick_actions, text=BTN_REFRESH, 
+                   command=self._refresh_all if hasattr(self, '_refresh_all') else lambda: None,
+                   bootstyle="secondary-outline", width=8).pack(side=tk.LEFT, padx=2)
+        
+        # Add tooltip-like help text for Live Panel
+        self.side_panel_help = ttkb.Label(tab_bar, text="", font=("Segoe UI", 1))
+        self.side_panel_help.pack(side=tk.LEFT)  # Hidden placeholder
+        
+        # Status frame placeholder (for compatibility)
+        self.status_frame = status_center
+        
+        # ===== QUICK STATS BAR (Below Tabs) =====
+        stats_bar = ttkb.Frame(main_frame, style=STYLE_CARD_FRAME)
+        stats_bar.pack(fill=tk.X, padx=0, pady=0)
+        
+        stats_inner = ttkb.Frame(stats_bar)
+        stats_inner.pack(fill=tk.X, padx=10, pady=6)
+        
+        # Stats items in a row
+        self.quick_stat_labels = {}
+        quick_stats = [
+            ("🔍", "Jobs Found", "jobs", "#3498db"),
+            ("✅", "Applied", "applied", "#00d26a"),
+            ("❌", "Failed", "failed", "#ff4757"),
+            ("⏭️", "Skipped", "skipped", "#ffb302"),
+            ("📊", LBL_SUCCESS_RATE, "rate", "#9b59b6"),
+            ("⏱️", "Runtime", "runtime", "#17a2b8"),
+            ("🤖", LBL_AI_PROVIDER, "provider", "#e94560"),
+        ]
+        
+        for icon, label, key, color in quick_stats:
+            stat_frame = ttkb.Frame(stats_inner)
+            stat_frame.pack(side=tk.LEFT, padx=10, fill=tk.X, expand=True)
+            
+            ttkb.Label(stat_frame, text=icon, font=("Segoe UI Emoji", 12)).pack(side=tk.LEFT)
+            
+            val_frame = ttkb.Frame(stat_frame)
+            val_frame.pack(side=tk.LEFT, padx=(5, 0))
+            
+            if key == "provider":
+                val = ttkb.Label(val_frame, text=str(ai_provider).upper(), 
+                                font=("Segoe UI", 11, "bold"), foreground=color)
+            elif key == "runtime":
+                val = ttkb.Label(val_frame, text="00:00:00", 
+                                font=("Consolas", 11, "bold"), foreground=color)
+            else:
+                val = ttkb.Label(val_frame, text="0", 
+                                font=("Segoe UI", 12, "bold"), foreground=color)
+            val.pack(anchor=tk.W)
+            
+            ttkb.Label(val_frame, text=label, font=("Segoe UI", 7),
+                      foreground="#888888").pack(anchor=tk.W)
+            
+            self.quick_stat_labels[key] = val
+        
+        # ===== MAIN CONTENT AREA =====
+        self.main_panel = ttkb.Frame(main_frame)
         self.main_panel.pack(fill=tk.BOTH, expand=True)
-
-        # Initialize stats and state
+        
+        # Initialize state variables BEFORE status bar (needed by _update_time)
         self.job_count = 0
         self.applied_count = 0
         self.failed_count = 0
@@ -396,1321 +562,1328 @@ class BotDashboard(ttkb.Window):
         self.start_time = None
         self.current_job_info = {}
         self.skip_reasons = []
-
-        # Status Bar
+        self.application_history = []  # Store history for table view
+        
+        # ===== BOTTOM STATUS BAR =====
         self.create_status_bar(main_frame)
-
-        # Activity Feed (initialize early for use in welcome messages)
+        
+        # Activity Feed (initialize for logging)
         self.activity_feed = ActivityFeed(self.main_panel)
-        # Optionally pack it somewhere if needed, or let dashboard sections handle packing
-
+        
         # Setup background updates
         self.log_queue = log_handler.get_queue()
         log_handler.subscribe(self._on_new_log)
         self.after(500, self._refresh_metrics)
+        self.after(1000, self._update_runtime)  # Runtime timer
         self._log_buffer: list[str] = []
         self._last_metrics_snapshot: dict | None = None
-
+        
         self.protocol("WM_DELETE_WINDOW", self.on_close)
-
-        # Welcome message
+        
+        # Keyboard shortcuts
+        self.bind_all('<Alt-1>', lambda e: self._switch_tab("dashboard", self.show_dashboard))
+        self.bind_all('<Alt-2>', lambda e: self._switch_tab("tailor", self.show_tailor))
+        self.bind_all('<Alt-3>', lambda e: self._switch_tab("history", self.show_history))
+        self.bind_all('<Alt-4>', lambda e: self._switch_tab("analytics", self.show_analytics))
+        self.bind_all('<Alt-5>', lambda e: self._switch_tab("settings", self.show_settings))
+        self.bind_all('<Alt-6>', lambda e: self._switch_tab("help", self.show_help))
+        self.bind_all('<F5>', lambda e: self._refresh_all())
+        self.bind_all('<Control-s>', lambda e: self.start_bot())
+        self.bind_all('<Control-q>', lambda e: self.stop_bot())
+        self.bind_all('<F11>', lambda e: self.toggle_side_panel_mode())  # Side panel shortcut
+        self.bind_all('<F12>', lambda e: self.toggle_side_panel_mode())  # Alternative shortcut
+        
+        # Welcome messages
         self.activity_feed.add_activity("Dashboard initialized", "success")
         self.activity_feed.add_activity("Ready to start job hunting!", "info")
-
+        
         # Show dashboard by default
         self.show_dashboard()
+    
+    def _switch_tab(self, tab_id, cmd):
+        """Switch active tab with visual feedback"""
+        self.current_tab = tab_id
+        for tid, btn in self.tab_buttons.items():
+            if tid == tab_id:
+                btn.configure(bootstyle="info")
+            else:
+                btn.configure(bootstyle="dark-outline")
+        cmd()
+    
+    def _update_runtime(self):
+        """Update runtime display"""
+        if self.start_time and self.current_status == "Running":
+            elapsed = datetime.now() - self.start_time
+            hours, remainder = divmod(int(elapsed.total_seconds()), 3600)
+            minutes, seconds = divmod(remainder, 60)
+            runtime_str = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+            if 'runtime' in self.quick_stat_labels:
+                self.quick_stat_labels['runtime'].config(text=runtime_str)
+        self.after(1000, self._update_runtime)
+    
+    def _refresh_all(self):
+        """Refresh all dashboard data"""
+        self._refresh_metrics()
+        self.activity_feed.add_activity(LBL_DASHBOARD_REFRESHED, "info")
+        self.show_toast("Dashboard refreshed!", "success")
 
     def clear_main_panel(self):
         for widget in self.main_panel.winfo_children():
             widget.destroy()
 
     def show_dashboard(self):
+        """Show the main dashboard with Settings prominently displayed at top"""
         self.clear_main_panel()
-        # Stat Cards Row (modernized)
-        stat_row = ttkb.Frame(self.main_panel)
-        stat_row.pack(fill=tk.X, pady=24, padx=24)
-        self.create_stat_cards(stat_row)
-        # Tabs Section
-        tabs_frame = ttkb.Frame(self.main_panel)
-        tabs_frame.pack(fill=tk.BOTH, expand=True, padx=24, pady=(0, 24))
-        self.create_tabs_section(tabs_frame)
+        
+        # Configure main panel background
+        self.main_panel.configure(style=STYLE_CARD_FRAME)
+        
+        # ===== TOP SECTION: TITLE ONLY (Stats removed - already in global quick stats bar) =====
+        top_section = ttkb.Frame(self.main_panel)
+        top_section.pack(fill=tk.X, padx=10, pady=(4, 2))
+        
+        # Title row
+        title_row = ttkb.Frame(top_section)
+        title_row.pack(fill=tk.X, pady=(0, 4))
+        
+        ttkb.Label(title_row, text="🏠 Dashboard - Settings & Control", 
+                  font=("Segoe UI", 16, "bold")).pack(side=tk.LEFT)
+        
+        # Runtime display
+        runtime_frame = ttkb.Frame(title_row)
+        runtime_frame.pack(side=tk.RIGHT)
+        ttkb.Label(runtime_frame, text="⏱️ Runtime:", 
+                  font=("Segoe UI", 10), foreground="#888888").pack(side=tk.LEFT)
+        self.runtime_label = ttkb.Label(runtime_frame, text="00:00:00", 
+                                        font=("Consolas", 11, "bold"), foreground="#00d26a")
+        self.runtime_label.pack(side=tk.LEFT, padx=(5, 0))
+        
+        # NOTE: Duplicate stats row REMOVED - stats are already shown in the global quick stats bar above tabs
+        
+        # ===== MAIN CONTENT: TWO COLUMN LAYOUT =====
+        content_frame = ttkb.Frame(self.main_panel)
+        content_frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=2)
+        
+        # Use PanedWindow for resizable columns
+        content_paned = ttkb.Panedwindow(content_frame, orient=tk.HORIZONTAL)
+        content_paned.pack(fill=tk.BOTH, expand=True)
+        
+        # ===== LEFT COLUMN: ALL SETTINGS (PRIMARY FOCUS - 80% width for wider settings) =====
+        left_col = ttkb.Frame(content_paned, width=1000)
+        left_col.pack_propagate(False)  # Prevent children from shrinking the frame
+        content_paned.add(left_col, weight=8)
+        
+        # Initialize ALL setting variables with current config values
+        self._init_quick_settings_vars()
+        
+        # ============================================
+        # ALL SETTINGS PANEL (MAIN FOCUS - At Top)
+        # ============================================
+        settings_frame = ttkb.Labelframe(left_col, text="⚙️ All Settings (Change & Run)", bootstyle="info")
+        settings_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Restart warning banner
+        restart_banner = ttkb.Frame(settings_frame)
+        restart_banner.pack(fill=tk.X, padx=5, pady=(5, 0))
+        ttkb.Label(restart_banner, text="⚠️ Browser settings (🔒) require bot restart | Runtime settings (⚡) apply immediately",
+                  font=("Segoe UI", 8), foreground="#f59e0b").pack(anchor=tk.W)
+        
+        # Create scrollable canvas for settings
+        settings_canvas = tk.Canvas(settings_frame, bg=COLORS['card_bg'], highlightthickness=0)
+        settings_scrollbar = ttkb.Scrollbar(settings_frame, orient="vertical", command=settings_canvas.yview)
+        settings_scrollable = ttkb.Frame(settings_canvas)
+        
+        settings_scrollable.bind(EVENT_CONFIGURE, lambda e: settings_canvas.configure(scrollregion=settings_canvas.bbox("all")))
+        settings_canvas.create_window((0, 0), window=settings_scrollable, anchor="nw")
+        settings_canvas.configure(yscrollcommand=settings_scrollbar.set)
+        
+        # IMPROVED Mouse wheel scrolling - Bind to ALL child widgets recursively
+        def _on_settings_mousewheel(event):
+            settings_canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        
+        def _bind_mousewheel_recursive(widget):
+            """Recursively bind mousewheel to all child widgets for smooth scrolling."""
+            widget.bind(EVENT_MOUSEWHEEL, _on_settings_mousewheel)
+            widget.bind(EVENT_ENTER, lambda e: settings_canvas.bind_all(EVENT_MOUSEWHEEL, _on_settings_mousewheel))
+            widget.bind(EVENT_LEAVE, lambda e: settings_canvas.unbind_all(EVENT_MOUSEWHEEL))
+            for child in widget.winfo_children():
+                _bind_mousewheel_recursive(child)
+        
+        # Bind to canvas and scrollable frame initially
+        settings_canvas.bind(EVENT_MOUSEWHEEL, _on_settings_mousewheel)
+        settings_scrollable.bind(EVENT_MOUSEWHEEL, _on_settings_mousewheel)
+        # Store function for later use when adding new widgets
+        self._bind_settings_mousewheel = _bind_mousewheel_recursive
+        
+        settings_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=2, pady=2)
+        settings_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        
+        # ========== SECTION 0: PILOT MODE & SCHEDULING (TOP PRIORITY) ==========
+        self._create_pilot_scheduling_section(settings_scrollable)
+        
+        # ========== SECTION 1: Bot Behavior ==========
+        sec1 = ttkb.Labelframe(settings_scrollable, text="🤖 Bot Behavior", bootstyle="info")
+        sec1.pack(fill=tk.X, padx=5, pady=(5, 3))
+        
+        sec1_inner = ttkb.Frame(sec1)
+        sec1_inner.pack(fill=tk.X, padx=8, pady=5)
+        
+        # 2-column grid layout for wider spread
+        sec1_grid = ttkb.Frame(sec1_inner)
+        sec1_grid.pack(fill=tk.X, pady=2)
+        sec1_grid.columnconfigure(0, weight=1)
+        sec1_grid.columnconfigure(1, weight=1)
+        
+        ttkb.Checkbutton(sec1_grid, text="🔄 Run Non-Stop", variable=self.qs_run_non_stop,
+                        bootstyle="success-round-toggle", command=self._save_quick_settings).grid(row=0, column=0, sticky=tk.W, padx=5, pady=2)
+        ttkb.Checkbutton(sec1_grid, text="🔀 Alternate Sort", variable=self.qs_alternate_sortby,
+                        bootstyle="info-round-toggle", command=self._save_quick_settings).grid(row=0, column=1, sticky=tk.W, padx=5, pady=2)
+        ttkb.Checkbutton(sec1_grid, text="📅 Cycle Date Posted", variable=self.qs_cycle_date_posted,
+                        bootstyle="primary-round-toggle", command=self._save_quick_settings).grid(row=1, column=0, sticky=tk.W, padx=5, pady=2)
+        ttkb.Checkbutton(sec1_grid, text="⏱️ Stop at 24hr", variable=self.qs_stop_date_24hr,
+                        bootstyle="warning-round-toggle", command=self._save_quick_settings).grid(row=1, column=1, sticky=tk.W, padx=5, pady=2)
+        ttkb.Checkbutton(sec1_grid, text="📂 Close Tabs", variable=self.qs_close_tabs,
+                        bootstyle="secondary-round-toggle", command=self._save_quick_settings).grid(row=2, column=0, sticky=tk.W, padx=5, pady=2)
+        ttkb.Checkbutton(sec1_grid, text="👥 Follow Companies", variable=self.qs_follow_companies,
+                        bootstyle="info-round-toggle", command=self._save_quick_settings).grid(row=2, column=1, sticky=tk.W, padx=5, pady=2)
+        
+        # Spinboxes row - spread across full width
+        row1c = ttkb.Frame(sec1_inner)
+        row1c.pack(fill=tk.X, pady=(6, 2))
+        row1c.columnconfigure(1, weight=1)
+        row1c.columnconfigure(3, weight=1)
+        ttkb.Label(row1c, text="📊 Max Jobs (0=∞):", font=(UI_FONT, 9)).pack(side=tk.LEFT)
+        self.qs_max_jobs_spin = ttkb.Spinbox(row1c, from_=0, to=500, width=6, textvariable=self.qs_max_jobs,
+                                              command=self._save_quick_settings)
+        self.qs_max_jobs_spin.pack(side=tk.LEFT, padx=(5, 30))
+        ttkb.Label(row1c, text="⏱️ Click Gap (secs):", font=(UI_FONT, 9)).pack(side=tk.LEFT)
+        self.qs_click_gap_spin = ttkb.Spinbox(row1c, from_=1, to=60, width=5, textvariable=self.qs_click_gap,
+                                               command=self._save_quick_settings)
+        self.qs_click_gap_spin.pack(side=tk.LEFT, padx=(5, 0))
+        
+        # ========== SECTIONS 2 & 3: Form Filling + Resume Tailoring (side by side) ==========
+        sec2_3_row = ttkb.Frame(settings_scrollable)
+        sec2_3_row.pack(fill=tk.X, padx=5, pady=3)
+        sec2_3_row.columnconfigure(0, weight=1)
+        sec2_3_row.columnconfigure(1, weight=1)
+        
+        # -- Form Filling (left) --
+        sec2 = ttkb.Labelframe(sec2_3_row, text="📝 Form Filling", bootstyle="warning")
+        sec2.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+        
+        sec2_inner = ttkb.Frame(sec2)
+        sec2_inner.pack(fill=tk.X, padx=8, pady=5)
+        
+        ttkb.Checkbutton(sec2_inner, text="⚡ Fast Form Fill", variable=self.qs_fast_mode,
+                        bootstyle="primary-round-toggle", command=self._save_quick_settings).pack(anchor=tk.W, pady=2)
+        ttkb.Checkbutton(sec2_inner, text="🧠 Smart Form Filler V2", variable=self.qs_smart_form_filler,
+                        bootstyle="success-round-toggle", command=self._save_quick_settings).pack(anchor=tk.W, pady=2)
+        
+        delay_row = ttkb.Frame(sec2_inner)
+        delay_row.pack(fill=tk.X, pady=2)
+        ttkb.Label(delay_row, text="🐢 Delay Multiplier:", font=(UI_FONT, 9)).pack(side=tk.LEFT)
+        self.qs_delay_spin = ttkb.Spinbox(delay_row, from_=0.1, to=2.0, increment=0.1, width=5,
+                                          textvariable=self.qs_delay_multiplier, command=self._save_quick_settings)
+        self.qs_delay_spin.pack(side=tk.LEFT, padx=(5, 0))
+        
+        # -- Resume Tailoring (right) --
+        sec3 = ttkb.Labelframe(sec2_3_row, text="📄 Resume Tailoring", bootstyle="success")
+        sec3.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
+        
+        sec3_inner = ttkb.Frame(sec3)
+        sec3_inner.pack(fill=tk.X, padx=8, pady=5)
+        
+        ttkb.Checkbutton(sec3_inner, text="📝 Enable Resume Tailor", variable=self.qs_resume_tailor,
+                        bootstyle="success-round-toggle", command=self._save_quick_settings).pack(anchor=tk.W, pady=2)
+        ttkb.Checkbutton(sec3_inner, text="✅ Confirm After Filters", variable=self.qs_tailor_confirm_filters,
+                        bootstyle="info-round-toggle", command=self._save_quick_settings).pack(anchor=tk.W, pady=2)
+        ttkb.Checkbutton(sec3_inner, text="💬 Prompt Before JD", variable=self.qs_tailor_prompt_jd,
+                        bootstyle="warning-round-toggle", command=self._save_quick_settings).pack(anchor=tk.W, pady=2)
+        
+        # Resume Upload Format dropdown
+        fmt_row = ttkb.Frame(sec3_inner)
+        fmt_row.pack(fill=tk.X, pady=2)
+        ttkb.Label(fmt_row, text="📤 Format:", font=(UI_FONT, 9)).pack(side=tk.LEFT)
+        self.qs_resume_format_combo = ttkb.Combobox(fmt_row, 
+                                                    textvariable=self.qs_resume_upload_format,
+                                                    values=[RESUME_AUTO, RESUME_PDF, RESUME_DOCX],
+                                                    state="readonly", width=16)
+        self.qs_resume_format_combo.pack(side=tk.LEFT, padx=(5, 0))
+        self.qs_resume_format_combo.bind(EVENT_COMBOBOX_SELECTED, lambda e: self._save_quick_settings())
+        
+        # ========== SECTIONS 4 & 5: Browser & UI + Control (side by side) ==========
+        sec4_5_row = ttkb.Frame(settings_scrollable)
+        sec4_5_row.pack(fill=tk.X, padx=5, pady=3)
+        sec4_5_row.columnconfigure(0, weight=1)
+        sec4_5_row.columnconfigure(1, weight=1)
+        
+        # -- Browser & UI (left) --
+        sec4 = ttkb.Labelframe(sec4_5_row, text="🖥️ Browser & UI 🔒", bootstyle="primary")
+        sec4.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
+        
+        sec4_inner = ttkb.Frame(sec4)
+        sec4_inner.pack(fill=tk.X, padx=8, pady=5)
+        
+        ttkb.Label(sec4_inner, text="⚠️ Requires bot restart",
+                  font=(UI_FONT, 8), foreground="#ef4444").pack(anchor=tk.W, pady=(0, 5))
+        
+        ttkb.Checkbutton(sec4_inner, text="🖥️ Show Browser", variable=self.qs_show_browser,
+                        bootstyle="secondary-round-toggle", command=self._save_quick_settings).pack(anchor=tk.W, pady=2)
+        ttkb.Checkbutton(sec4_inner, text="🔌 Disable Extensions", variable=self.qs_disable_extensions,
+                        bootstyle="warning-round-toggle", command=self._save_quick_settings).pack(anchor=tk.W, pady=2)
+        ttkb.Checkbutton(sec4_inner, text="🛡️ Safe Mode", variable=self.qs_safe_mode,
+                        bootstyle="danger-round-toggle", command=self._save_quick_settings).pack(anchor=tk.W, pady=2)
+        ttkb.Checkbutton(sec4_inner, text="📜 Smooth Scroll", variable=self.qs_smooth_scroll,
+                        bootstyle="info-round-toggle", command=self._save_quick_settings).pack(anchor=tk.W, pady=2)
+        ttkb.Checkbutton(sec4_inner, text="🌙 Keep Awake", variable=self.qs_keep_awake,
+                        bootstyle="success-round-toggle", command=self._save_quick_settings).pack(anchor=tk.W, pady=2)
+        ttkb.Checkbutton(sec4_inner, text="🛡️ Stealth Mode", variable=self.qs_stealth_mode,
+                        bootstyle="dark-round-toggle", command=self._save_quick_settings).pack(anchor=tk.W, pady=2)
+        
+        # -- Control & Alerts (right) --
+        sec5 = ttkb.Labelframe(sec4_5_row, text="🎛️ Control & Alerts ⚡", bootstyle="danger")
+        sec5.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
+        
+        sec5_inner = ttkb.Frame(sec5)
+        sec5_inner.pack(fill=tk.X, padx=8, pady=5)
+        
+        ttkb.Checkbutton(sec5_inner, text="⏸️ Pause Before Submit", variable=self.qs_pause_submit,
+                        bootstyle="danger-round-toggle", command=self._save_quick_settings).pack(anchor=tk.W, pady=2)
+        ttkb.Checkbutton(sec5_inner, text="❓ Pause at Failed Q", variable=self.qs_pause_failed_q,
+                        bootstyle="warning-round-toggle", command=self._save_quick_settings).pack(anchor=tk.W, pady=2)
+        ttkb.Checkbutton(sec5_inner, text="⚠️ Show AI Errors", variable=self.qs_show_ai_errors,
+                        bootstyle="info-round-toggle", command=self._save_quick_settings).pack(anchor=tk.W, pady=2)
+        
+        # ========== SECTION 6: Chrome Extension & Universal Form Filler ⚡ ==========
+        sec6 = ttkb.Labelframe(settings_scrollable, text="🧩 Extension & Form Filler ⚡", bootstyle="success")
+        sec6.pack(fill=tk.X, padx=5, pady=3)
+        
+        sec6_inner = ttkb.Frame(sec6)
+        sec6_inner.pack(fill=tk.X, padx=8, pady=5)
+        
+        # Row 6a: Extension enabled and auto-sync
+        row6a = ttkb.Frame(sec6_inner)
+        row6a.pack(fill=tk.X, pady=2)
+        ttkb.Checkbutton(row6a, text="🧩 Enable Extension", variable=self.qs_extension_enabled,
+                        bootstyle="success-round-toggle", command=self._save_quick_settings).pack(side=tk.LEFT, padx=(0, 12))
+        ttkb.Checkbutton(row6a, text="🔄 Auto-sync Config", variable=self.qs_extension_auto_sync,
+                        bootstyle="info-round-toggle", command=self._save_quick_settings).pack(side=tk.LEFT, padx=(0, 12))
+        ttkb.Checkbutton(row6a, text="📚 AI Learning", variable=self.qs_extension_ai_learning,
+                        bootstyle="primary-round-toggle", command=self._save_quick_settings).pack(side=tk.LEFT)
+        
+        # Row 6b: Universal form detection mode
+        row6b = ttkb.Frame(sec6_inner)
+        row6b.pack(fill=tk.X, pady=2)
+        ttkb.Label(row6b, text="🌐 Detection Mode:", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        self.qs_extension_mode_combo = ttkb.Combobox(row6b, 
+                                                    textvariable=self.qs_extension_detection_mode,
+                                                    values=[DETECT_LINKEDIN, DETECT_UNIVERSAL, DETECT_SMART],
+                                                    state="readonly", width=18)
+        self.qs_extension_mode_combo.pack(side=tk.LEFT, padx=(5, 15))
+        self.qs_extension_mode_combo.bind(EVENT_COMBOBOX_SELECTED, lambda e: self._save_quick_settings())
+        
+        ttkb.Button(row6b, text="📤 Export Config", 
+                   command=self._export_extension_config,
+                   bootstyle="success-outline", width=14).pack(side=tk.LEFT, padx=(0, 5))
+        ttkb.Button(row6b, text="🔄 Reload Ext", 
+                   command=self._reload_extension_manifest,
+                   bootstyle="info-outline", width=12).pack(side=tk.LEFT)
+        
+        # ========== SAVE BUTTON ROW ==========
+        save_row = ttkb.Frame(settings_scrollable)
+        save_row.pack(fill=tk.X, padx=5, pady=(5, 10))
+        
+        ttkb.Button(save_row, text="💾 Save All Settings", 
+                   command=self._apply_quick_settings,
+                   bootstyle="success", width=20).pack(side=tk.LEFT)
+        ttkb.Button(save_row, text="🔄 Reset Defaults", 
+                   command=self._reset_settings_to_defaults,
+                   bootstyle="secondary-outline", width=15).pack(side=tk.LEFT, padx=(10, 0))
+        ttkb.Button(save_row, text="📂 Open Logs", 
+                   command=lambda: webbrowser.open(f'file:///{os.path.abspath("logs")}'),
+                   bootstyle="info-outline", width=12).pack(side=tk.RIGHT)
+        
+        # ===== RIGHT COLUMN: Current Job + AI Processing + Logs (20% width) =====
+        right_col = ttkb.Frame(content_paned)
+        content_paned.add(right_col, weight=2)
+        
+        # Force 80/20 sash position after layout is computed (more room for settings)
+        def _set_sash_80_20():
+            try:
+                content_paned.update_idletasks()
+                total_w = content_paned.winfo_width()
+                if total_w > 100:  # Window has rendered
+                    content_paned.sashpos(0, int(total_w * 0.80))
+                else:
+                    # Window not ready yet, retry
+                    content_paned.after(100, _set_sash_80_20)
+            except Exception:
+                pass
+        content_paned.after(200, _set_sash_80_20)
+        
+        # Current Job Card (compact)
+        job_frame = ttkb.Labelframe(right_col, text="💼 Current Job", bootstyle="info")
+        job_frame.pack(fill=tk.X, pady=(0, 4))
+        
+        job_inner = ttkb.Frame(job_frame)
+        job_inner.pack(fill=tk.X, padx=8, pady=6)
+        
+        self.dash_job_title = ttkb.Label(job_inner, text="Waiting for job...", 
+                                         font=("Segoe UI", 11, "bold"), wraplength=350)
+        self.dash_job_title.pack(anchor=tk.W)
+        
+        self.dash_job_company = ttkb.Label(job_inner, text="", font=("Segoe UI", 9), foreground="#aaaaaa")
+        self.dash_job_company.pack(anchor=tk.W, pady=(2, 0))
+        
+        self.dash_job_status = ttkb.Label(job_inner, text="⏳ Idle", font=("Segoe UI", 9), foreground="#ffd93d")
+        self.dash_job_status.pack(anchor=tk.W, pady=(4, 0))
+        
+        # AI Processing Card (compact)
+        ai_frame = ttkb.Labelframe(right_col, text="🤖 AI Processing", bootstyle="primary")
+        ai_frame.pack(fill=tk.X, pady=(0, 4))
+        
+        ai_inner = ttkb.Frame(ai_frame)
+        ai_inner.pack(fill=tk.X, padx=8, pady=6)
+        
+        # JD Analysis
+        jd_header = ttkb.Frame(ai_inner)
+        jd_header.pack(fill=tk.X)
+        ttkb.Label(jd_header, text="📋 JD Analysis", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        self.dash_jd_status = ttkb.Label(jd_header, text="Idle", font=("Segoe UI", 8), foreground="#888888")
+        self.dash_jd_status.pack(side=tk.RIGHT)
+        
+        self.dash_jd_progress = ttkb.Progressbar(ai_inner, mode='determinate', bootstyle="info-striped")
+        self.dash_jd_progress.pack(fill=tk.X, pady=(3, 8))
+        
+        # Resume Tailoring
+        resume_header = ttkb.Frame(ai_inner)
+        resume_header.pack(fill=tk.X)
+        ttkb.Label(resume_header, text="📝 Resume Tailor", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        self.dash_resume_status = ttkb.Label(resume_header, text="Idle", font=("Segoe UI", 8), foreground="#888888")
+        self.dash_resume_status.pack(side=tk.RIGHT)
+        
+        self.dash_resume_progress = ttkb.Progressbar(ai_inner, mode='determinate', bootstyle="warning-striped")
+        self.dash_resume_progress.pack(fill=tk.X, pady=(3, 0))
+        
+        # Live Log Card (matching side panel style)
+        log_frame = ttkb.Labelframe(right_col, text="📋 Live Activity Log", bootstyle="secondary")
+        log_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Log toolbar
+        log_toolbar = ttkb.Frame(log_frame)
+        log_toolbar.pack(fill=tk.X, padx=6, pady=(4, 2))
+        
+        ttkb.Label(log_toolbar, text=LBL_FILTER, font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        
+        self.log_filter = ttkb.Combobox(log_toolbar, 
+                                        values=["All", "Info", "Success", "Warning", "Error"],
+                                        state="readonly", width=10)
+        self.log_filter.set("All")
+        self.log_filter.pack(side=tk.LEFT, padx=(5, 10))
+        
+        ttkb.Button(log_toolbar, text="🗑️ Clear", bootstyle="secondary-outline",
+                   command=self.clear_logs, width=8).pack(side=tk.RIGHT, padx=2)
+        ttkb.Button(log_toolbar, text="📥 Export", bootstyle="info-outline",
+                   command=self.export_logs, width=8).pack(side=tk.RIGHT, padx=2)
+        
+        # Log text area (dark theme matching side panel)
+        self.log_text = scrolledtext.ScrolledText(
+            log_frame, wrap=tk.WORD, font=("Consolas", 9),
+            bg='#0f0f23', fg='#00ff88', height=20,
+            insertbackground='white', relief=tk.FLAT,
+            selectbackground='#388bfd', selectforeground='#ffffff'
+        )
+        self.log_text.pack(fill=tk.BOTH, expand=True, padx=6, pady=(0, 4))
+        
+        # Configure log tags for colors
+        self.log_text.tag_configure("error", foreground="#ff6b6b")
+        self.log_text.tag_configure("success", foreground="#4ade80")
+        self.log_text.tag_configure("warning", foreground="#fbbf24")
+        self.log_text.tag_configure("info", foreground="#60a5fa")
+        self.log_text.tag_configure("timestamp", foreground="#6b7280")
+        
+        # Initial values
+        self._update_dashboard_stats()
+    
+    def _create_dashboard_stat(self, parent, col, icon, label, attr_name, color):
+        """Create a stat card for the main dashboard matching side panel style"""
+        frame = ttkb.Frame(parent)
+        frame.grid(row=0, column=col, padx=4, pady=3, sticky="nsew")
+        
+        # Card inner with subtle border
+        inner = ttkb.Frame(frame, padding=8)
+        inner.pack(fill=tk.BOTH, expand=True)
+        
+        # Icon and value row
+        top_row = ttkb.Frame(inner)
+        top_row.pack(fill=tk.X)
+        
+        ttkb.Label(top_row, text=icon, font=("Segoe UI Emoji", 16)).pack(side=tk.LEFT)
+        
+        val_label = ttkb.Label(top_row, text="0", 
+                               font=("Segoe UI", 18, "bold"),
+                               foreground=color)
+        val_label.pack(side=tk.RIGHT)
+        
+        # Label
+        ttkb.Label(inner, text=label, font=("Segoe UI", 8),
+                  foreground="#888888").pack(anchor=tk.W, pady=(3, 0))
+        
+        # Store reference
+        setattr(self, attr_name, val_label)
+    
+    def _update_dashboard_stats(self):
+        """Update all dashboard statistics including quick stats bar"""
+        # Update main dashboard stats - wrap in try/except to handle destroyed widgets
+        try:
+            if hasattr(self, 'dash_jobs_val') and self.dash_jobs_val.winfo_exists():
+                self.dash_jobs_val.config(text=str(self.job_count))
+            if hasattr(self, 'dash_applied_val') and self.dash_applied_val.winfo_exists():
+                self.dash_applied_val.config(text=str(self.applied_count))
+            if hasattr(self, 'dash_failed_val') and self.dash_failed_val.winfo_exists():
+                self.dash_failed_val.config(text=str(self.failed_count))
+            if hasattr(self, 'dash_skipped_val') and self.dash_skipped_val.winfo_exists():
+                self.dash_skipped_val.config(text=str(self.skipped_count))
+            if hasattr(self, 'dash_rate_val') and self.dash_rate_val.winfo_exists():
+                total = self.applied_count + self.failed_count
+                rate = (self.applied_count / total * 100) if total > 0 else 0
+                self.dash_rate_val.config(text=f"{rate:.0f}%")
+        except tk.TclError:
+            pass  # Widget was destroyed
+        
+        # Update quick stats bar (top bar) - always exists
+        if hasattr(self, 'quick_stat_labels'):
+            try:
+                if 'jobs' in self.quick_stat_labels:
+                    self.quick_stat_labels['jobs'].config(text=str(self.job_count))
+                if 'applied' in self.quick_stat_labels:
+                    self.quick_stat_labels['applied'].config(text=str(self.applied_count))
+                if 'failed' in self.quick_stat_labels:
+                    self.quick_stat_labels['failed'].config(text=str(self.failed_count))
+                if 'skipped' in self.quick_stat_labels:
+                    self.quick_stat_labels['skipped'].config(text=str(self.skipped_count))
+                if 'rate' in self.quick_stat_labels:
+                    total = self.applied_count + self.failed_count
+                    rate = (self.applied_count / total * 100) if total > 0 else 0
+                    self.quick_stat_labels['rate'].config(text=f"{rate:.0f}%")
+            except tk.TclError:
+                pass  # Widget might be destroyed
 
     def show_tailor(self):
+        """Show the Resume Tailoring Center with modern UI"""
         self.clear_main_panel()
-        # Resume Tailoring Center UI
-        section = ttkb.Frame(self.main_panel)
-        section.pack(fill=tk.BOTH, expand=True, padx=40, pady=30)
-        ttkb.Label(section, text="Resume Tailoring Center", font=("Segoe UI", 16, "bold"), bootstyle="info").pack(anchor=tk.W, pady=(0, 18))
-
-        # Resume input
-        resume_row = ttkb.Frame(section)
-        resume_row.pack(fill=tk.X, pady=8)
-        ttkb.Label(resume_row, text="Resume:", font=("Segoe UI", 11)).pack(side=tk.LEFT, padx=(0, 10))
-        resume_entry = ttkb.Entry(resume_row, width=50)
-        resume_entry.pack(side=tk.LEFT, padx=(0, 10))
-        ttkb.Button(resume_row, text="Browse", bootstyle="secondary-outline", command=lambda: self._browse_file(resume_entry)).pack(side=tk.LEFT)
-        # Drag-and-drop area (placeholder)
-        dnd_label = ttkb.Label(section, text="⬇️ Drag & drop your resume file here", font=("Segoe UI", 10), bootstyle="secondary")
-        dnd_label.pack(anchor=tk.W, pady=(2, 12))
-
-        # JD input
-        jd_row = ttkb.Frame(section)
-        jd_row.pack(fill=tk.X, pady=8)
-        ttkb.Label(jd_row, text="Job Description:", font=("Segoe UI", 11)).pack(side=tk.LEFT, padx=(0, 10))
-        jd_entry = ttkb.Entry(jd_row, width=50)
-        jd_entry.pack(side=tk.LEFT, padx=(0, 10))
-        ttkb.Button(jd_row, text="Browse", bootstyle="secondary-outline", command=lambda: self._browse_file(jd_entry)).pack(side=tk.LEFT)
-
-        # Tailor button
-        ttkb.Button(section, text="Tailor Resume", bootstyle="success", width=18).pack(pady=18)
+        
+        # Main container
+        main_container = ttkb.Frame(self.main_panel)
+        main_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
+        
+        # Header
+        header = ttkb.Frame(main_container)
+        header.pack(fill=tk.X, pady=(0, 12))
+        
+        ttkb.Label(header, text="✨ Resume Tailoring Center", 
+                  font=("Segoe UI", 16, "bold")).pack(side=tk.LEFT)
+        
+        ttkb.Button(header, text="📖 Guide", bootstyle="info-outline",
+                   command=lambda: webbrowser.open("ENHANCED_RESUME_QUICK_START.md")).pack(side=tk.RIGHT)
+        
+        # Two column layout
+        content = ttkb.Frame(main_container)
+        content.pack(fill=tk.BOTH, expand=True)
+        content.columnconfigure(0, weight=1)
+        content.columnconfigure(1, weight=1)
+        content.rowconfigure(0, weight=1)
+        
+        # LEFT: Input section
+        left_frame = ttkb.Labelframe(content, text="📄 Input", bootstyle="info")
+        left_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
+        
+        input_inner = ttkb.Frame(left_frame)
+        input_inner.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        
+        # Resume file input
+        ttkb.Label(input_inner, text="📎 Resume File:", font=("Segoe UI", 10, "bold")).pack(anchor=tk.W)
+        
+        resume_row = ttkb.Frame(input_inner)
+        resume_row.pack(fill=tk.X, pady=(5, 15))
+        
+        self.tailor_resume_entry = ttkb.Entry(resume_row, width=40)
+        self.tailor_resume_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 8))
+        
+        ttkb.Button(resume_row, text="📂 Browse", bootstyle="secondary-outline",
+                   command=lambda: self._browse_file(self.tailor_resume_entry)).pack(side=tk.LEFT)
+        
+        # Job description input
+        ttkb.Label(input_inner, text="📋 Job Description:", font=("Segoe UI", 10, "bold")).pack(anchor=tk.W)
+        
+        self.tailor_jd_text = scrolledtext.ScrolledText(
+            input_inner, height=12, wrap=tk.WORD,
+            font=("Consolas", 9), bg='#1e1e2e', fg='#e8e8e8',
+            insertbackground='white'
+        )
+        self.tailor_jd_text.pack(fill=tk.BOTH, expand=True, pady=(5, 15))
+        self.tailor_jd_text.insert("1.0", "Paste the job description here...")
+        
+        # Custom instructions
+        ttkb.Label(input_inner, text="📝 Custom Instructions (optional):", font=("Segoe UI", 10)).pack(anchor=tk.W)
+        
+        self.tailor_instr_entry = ttkb.Entry(input_inner)
+        self.tailor_instr_entry.pack(fill=tk.X, pady=(5, 0))
+        self.tailor_instr_entry.insert(0, "Focus on technical skills and achievements")
+        
+        # RIGHT: Actions & Preview
+        right_frame = ttkb.Labelframe(content, text="🚀 Actions", bootstyle="success")
+        right_frame.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
+        
+        right_inner = ttkb.Frame(right_frame)
+        right_inner.pack(fill=tk.BOTH, expand=True, padx=15, pady=15)
+        
+        # AI Provider selection
+        provider_frame = ttkb.Frame(right_inner)
+        provider_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        ttkb.Label(provider_frame, text="🤖 AI Provider:", font=("Segoe UI", 10)).pack(side=tk.LEFT)
+        
+        self.tailor_provider = ttkb.Combobox(
+            provider_frame, 
+            values=["ollama", "groq", "openai", "deepseek", "gemini"],
+            state="readonly", width=15
+        )
+        self.tailor_provider.set("ollama")
+        self.tailor_provider.pack(side=tk.LEFT, padx=(10, 0))
+        
+        # Action buttons
+        btn_frame = ttkb.Frame(right_inner)
+        btn_frame.pack(fill=tk.X, pady=15)
+        
+        ttkb.Button(btn_frame, text="✨ Open Enhanced Tailor", 
+                   command=self.open_resume_tailor_dialog,
+                   bootstyle="success", width=22).pack(fill=tk.X, pady=3)
+        
+        ttkb.Button(btn_frame, text="📝 Quick Tailor (Classic)", 
+                   command=self.open_classic_resume_tailor,
+                   bootstyle="info-outline", width=22).pack(fill=tk.X, pady=3)
+        
+        # Tips section
+        tips_frame = ttkb.Labelframe(right_inner, text="💡 Tips", bootstyle="warning")
+        tips_frame.pack(fill=tk.X, pady=(15, 0))
+        
+        tips_inner = ttkb.Frame(tips_frame)
+        tips_inner.pack(fill=tk.X, padx=10, pady=10)
+        
+        tips = [
+            "• Use specific job descriptions for best results",
+            "• The AI preserves your resume format",
+            "• Keywords are automatically optimized for ATS",
+            "• Review before submitting to employers"
+        ]
+        for tip in tips:
+            ttkb.Label(tips_inner, text=tip, font=("Segoe UI", 9),
+                      foreground="#aaaaaa").pack(anchor=tk.W, pady=1)
 
     def _browse_file(self, entry_widget):
-        path = filedialog.askopenfilename(title="Select File", filetypes=[("All Files", "*.*")])
+        path = filedialog.askopenfilename(
+            title="Select File", 
+            filetypes=[("Resume Files", "*.pdf *.docx *.txt"), ("All Files", "*.*")]
+        )
         if path:
             entry_widget.delete(0, tk.END)
             entry_widget.insert(0, path)
 
     def show_history(self):
+        """Show Application History with modern tabular UI and real data"""
         self.clear_main_panel()
-        section = ttkb.Frame(self.main_panel)
-        section.pack(fill=tk.BOTH, expand=True, padx=40, pady=30)
-        ttkb.Label(section, text="Application History & Export Center", font=("Segoe UI", 16, "bold"), bootstyle="info").pack(anchor=tk.W, pady=(0, 18))
-        # Placeholder for history/export widgets
-        ttkb.Label(section, text="(Your tailored resumes and export/download options will appear here.)", font=("Segoe UI", 11), bootstyle="secondary").pack(anchor=tk.W, pady=10)
-
-    def show_settings(self):
-        self.clear_main_panel()
-        ttkb.Label(self.main_panel, text="Settings & Preferences", font=("Segoe UI", 14, "bold"), bootstyle="info").pack(pady=30)
-        # Add settings widgets here
-
-    def show_help(self):
-        self.clear_main_panel()
-        ttkb.Label(self.main_panel, text="Help & Onboarding", font=("Segoe UI", 14, "bold"), bootstyle="info").pack(pady=30)
-        # Add help widgets here
-    
-    def create_top_bar(self, parent):
-        """Create the top navigation bar"""
-        top_bar = ttkb.Frame(parent)
-        top_bar.pack(fill=tk.X, pady=(0, 10))
         
-        # Left side - Logo and title
-        left_section = ttkb.Frame(top_bar)
-        left_section.pack(side=tk.LEFT, padx=15, pady=10)
+        main_container = ttkb.Frame(self.main_panel)
+        main_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
         
-        logo_frame = ttkb.Frame(left_section)
-        logo_frame.pack(side=tk.LEFT)
+        # Header with actions
+        header = ttkb.Frame(main_container)
+        header.pack(fill=tk.X, pady=(0, 10))
         
-        # Animated logo effect
-        self.logo_label = ttkb.Label(logo_frame, text="🤖", font=("Segoe UI Emoji", 32))
-        self.logo_label.pack(side=tk.LEFT)
+        ttkb.Label(header, text="📜 Application History", 
+                  font=("Segoe UI", 16, "bold")).pack(side=tk.LEFT)
         
-        title_frame = ttkb.Frame(left_section)
-        title_frame.pack(side=tk.LEFT, padx=(15, 0))
+        # Action buttons
+        btn_frame = ttkb.Frame(header)
+        btn_frame.pack(side=tk.RIGHT)
         
-        ttkb.Label(title_frame, text="AI Job Hunter Pro", 
-                  font=("Segoe UI", 20, "bold")).pack(anchor=tk.W)
-        ttkb.Label(title_frame, text="Automated LinkedIn Job Application System",
-                  font=("Segoe UI", 10), foreground=COLORS['text_secondary']).pack(anchor=tk.W)
+        ttkb.Button(btn_frame, text="📥 Export CSV", bootstyle="success-outline",
+                   command=self.export_history, width=12).pack(side=tk.LEFT, padx=3)
+        ttkb.Button(btn_frame, text="📥 Export PDF", bootstyle="info-outline",
+                   command=self._export_history_pdf, width=12).pack(side=tk.LEFT, padx=3)
+        ttkb.Button(btn_frame, text="🗑️ Clear All", bootstyle="danger-outline",
+                   command=self._clear_history, width=10).pack(side=tk.LEFT, padx=3)
+        ttkb.Button(btn_frame, text=BTN_REFRESH, bootstyle="secondary-outline",
+                   command=self.show_history, width=10).pack(side=tk.LEFT, padx=3)
         
-        # Center - Control Buttons
-        controls_frame = ttkb.Frame(top_bar)
-        controls_frame.pack(side=tk.LEFT, expand=True, padx=20)
+        # Stats summary cards
+        stats_frame = ttkb.Frame(main_container)
+        stats_frame.pack(fill=tk.X, pady=(0, 15))
         
-        btn_frame = ttkb.Frame(controls_frame)
-        btn_frame.pack()
-        
-        # Row 1: Main control buttons
-        self.start_btn = AnimatedButton(btn_frame, text="▶ Start", 
-                                        command=self.start_bot, bootstyle="success",
-                                        width=10, padding=(10, 8))
-        self.start_btn.pack(side=tk.LEFT, padx=3)
-        
-        self.stop_btn = AnimatedButton(btn_frame, text="⏹ Stop", 
-                                       command=self.stop_bot, state=tk.DISABLED,
-                                       bootstyle="danger", width=10, padding=(10, 8))
-        self.stop_btn.pack(side=tk.LEFT, padx=3)
-        
-        self.pause_btn = AnimatedButton(btn_frame, text="⏸ Pause", 
-                                        command=self.toggle_pause, state=tk.DISABLED,
-                                        bootstyle="warning", width=10, padding=(10, 8))
-        self.pause_btn.pack(side=tk.LEFT, padx=3)
-        
-        # Separator
-        ttkb.Separator(btn_frame, orient=tk.VERTICAL).pack(side=tk.LEFT, padx=8, fill=tk.Y, pady=5)
-        
-        # Side Panel Mode Button - PROMINENT
-        self.side_panel_mode = False
-        self.side_panel_btn = AnimatedButton(btn_frame, text="📌 Side Mode", 
-                                             command=self.toggle_side_panel_mode,
-                                             bootstyle="primary", width=12, padding=(10, 8))
-        self.side_panel_btn.pack(side=tk.LEFT, padx=3)
-        
-        # Toggle Right Panel Button
-        self.panel_visible = True
-        self.toggle_panel_btn = AnimatedButton(btn_frame, text="◀ Panel", 
-                                               command=self.toggle_right_panel,
-                                               bootstyle="secondary-outline", width=10, padding=(10, 8))
-        self.toggle_panel_btn.pack(side=tk.LEFT, padx=3)
-        
-        # Right side - Status
-        right_section = ttkb.Frame(top_bar)
-        right_section.pack(side=tk.RIGHT, padx=15, pady=10)
-        
-        status_card = ttkb.Frame(right_section, padding=10)
-        status_card.pack()
-        
-        status_row = ttkb.Frame(status_card)
-        status_row.pack()
-        
-        self.status_indicator = ttkb.Label(status_row, text="●", 
-                                          foreground=COLORS['danger'], 
-                                          font=("Arial", 20))
-        self.status_indicator.pack(side=tk.LEFT)
-        
-        self.status_label = ttkb.Label(status_row, text="STOPPED", 
-                                       font=("Segoe UI", 14, "bold"))
-        self.status_label.pack(side=tk.LEFT, padx=(10, 0))
-        
-        # Runtime timer
-        self.runtime_label = ttkb.Label(status_card, text="Runtime: 00:00:00",
-                                        font=("Consolas", 10),
-                                        foreground=COLORS['text_secondary'])
-        self.runtime_label.pack(pady=(5, 0))
-    
-    def create_stat_cards(self, parent):
-        """Create the statistics cards row"""
-        cards_frame = ttkb.Frame(parent)
-        cards_frame.pack(fill=tk.X, pady=(0, 15))
-        
-        # Configure grid
         for i in range(5):
-            cards_frame.columnconfigure(i, weight=1)
+            stats_frame.columnconfigure(i, weight=1)
         
-        # Jobs Found Card
-        self.jobs_card = StatusCard(cards_frame, "Jobs Found", "🔍", "0", "info")
-        self.jobs_card.grid(row=0, column=0, padx=5, sticky="nsew")
+        self._create_history_stat(stats_frame, 0, "📊", "Total Jobs", str(self.job_count), "#3498db")
+        self._create_history_stat(stats_frame, 1, "✅", "Applied", str(self.applied_count), "#00d26a")
+        self._create_history_stat(stats_frame, 2, "❌", "Failed", str(self.failed_count), "#ff4757")
+        self._create_history_stat(stats_frame, 3, "⏭️", "Skipped", str(self.skipped_count), "#ffb302")
+        total = self.applied_count + self.failed_count
+        rate = (self.applied_count / total * 100) if total > 0 else 0
+        self._create_history_stat(stats_frame, 4, "📈", LBL_SUCCESS_RATE, f"{rate:.1f}%", "#9b59b6")
         
-        # Applied Card
-        self.applied_card = StatusCard(cards_frame, "Applied", "✅", "0", "success")
-        self.applied_card.grid(row=0, column=1, padx=5, sticky="nsew")
+        # Filter bar
+        filter_frame = ttkb.Frame(main_container)
+        filter_frame.pack(fill=tk.X, pady=(0, 10))
         
-        # Failed Card
-        self.failed_card = StatusCard(cards_frame, "Failed", "❌", "0", "danger")
-        self.failed_card.grid(row=0, column=2, padx=5, sticky="nsew")
+        ttkb.Label(filter_frame, text=LBL_FILTER, font=("Segoe UI", 10)).pack(side=tk.LEFT)
         
-        # Skipped Card
-        self.skipped_card = StatusCard(cards_frame, "Skipped", "⏭️", "0", "warning")
-        self.skipped_card.grid(row=0, column=3, padx=5, sticky="nsew")
+        self.history_filter = ttkb.Combobox(filter_frame, 
+                                            values=["All", "Applied", "Failed", "Skipped", "Today", "This Week"],
+                                            state="readonly", width=12)
+        self.history_filter.set("All")
+        self.history_filter.pack(side=tk.LEFT, padx=(8, 15))
+        self.history_filter.bind('<<ComboboxSelected>>', lambda e: self._filter_history())
         
-        # Success Rate Card
-        self.rate_card = StatusCard(cards_frame, "Success Rate", "📊", "0%", "primary")
-        self.rate_card.grid(row=0, column=4, padx=5, sticky="nsew")
+        ttkb.Label(filter_frame, text="🔎 Search:", font=("Segoe UI", 10)).pack(side=tk.LEFT)
+        self.history_search = ttkb.Entry(filter_frame, width=25)
+        self.history_search.pack(side=tk.LEFT, padx=(8, 0))
+        self.history_search.bind('<KeyRelease>', lambda e: self._filter_history())
+        
+        # Table Frame with Treeview
+        table_frame = ttkb.Labelframe(main_container, text="📋 Application Records", bootstyle="info")
+        table_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # Create Treeview table
+        columns = ("timestamp", "job_title", "company", "location", "status", "ai_score", "action")
+        self.history_tree = ttkb.Treeview(table_frame, columns=columns, show="headings", 
+                                          bootstyle="dark", height=15)
+        
+        # Define columns
+        self.history_tree.heading("timestamp", text="⏰ Time", anchor=tk.W)
+        self.history_tree.heading("job_title", text="💼 Job Title", anchor=tk.W)
+        self.history_tree.heading("company", text="🏢 Company", anchor=tk.W)
+        self.history_tree.heading("location", text="📍 Location", anchor=tk.W)
+        self.history_tree.heading("status", text="📊 Status", anchor=tk.CENTER)
+        self.history_tree.heading("ai_score", text="🤖 AI Score", anchor=tk.CENTER)
+        self.history_tree.heading("action", text="⚡ Action", anchor=tk.CENTER)
+        
+        # Column widths
+        self.history_tree.column("timestamp", width=100, minwidth=80)
+        self.history_tree.column("job_title", width=250, minwidth=150)
+        self.history_tree.column("company", width=150, minwidth=100)
+        self.history_tree.column("location", width=120, minwidth=80)
+        self.history_tree.column("status", width=100, minwidth=80, anchor=tk.CENTER)
+        self.history_tree.column("ai_score", width=80, minwidth=60, anchor=tk.CENTER)
+        self.history_tree.column("action", width=100, minwidth=80, anchor=tk.CENTER)
+        
+        # Add scrollbar
+        scrollbar = ttkb.Scrollbar(table_frame, orient=tk.VERTICAL, command=self.history_tree.yview)
+        self.history_tree.configure(yscrollcommand=scrollbar.set)
+        
+        self.history_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(10, 0), pady=10)
+        scrollbar.pack(side=tk.RIGHT, fill=tk.Y, pady=10, padx=(0, 10))
+        
+        # Load history data
+        self._load_history_data()
+        
+        # Context menu
+        self.history_tree.bind('<Button-3>', self._show_history_context_menu)
+        self.history_tree.bind('<Double-1>', self._view_application_details)
     
-    def create_tabs_section(self, parent):
-        """Create the main tabbed interface"""
-        notebook = ttkb.Notebook(parent)
-        notebook.pack(fill=tk.BOTH, expand=True)
-        
-        # === Live Logs Tab ===
-        logs_tab = ttkb.Frame(notebook)
-        notebook.add(logs_tab, text="📋 Live Logs")
-        
-        # Logs toolbar
-        logs_toolbar = ttkb.Frame(logs_tab)
-        logs_toolbar.pack(fill=tk.X, pady=(5, 10))
-        
-        ttkb.Label(logs_toolbar, text="🔍 Filter:", font=("Segoe UI", 10)).pack(side=tk.LEFT, padx=(5, 10))
-        
-        self.log_filter = ttkb.Combobox(logs_toolbar, values=["All", "Info", "Success", "Warning", "Error"],
-                                        state="readonly", width=15)
-        self.log_filter.set("All")
-        self.log_filter.pack(side=tk.LEFT)
-        
-        ttkb.Button(logs_toolbar, text="🗑️ Clear Logs", bootstyle="secondary-outline",
-                   command=self.clear_logs).pack(side=tk.RIGHT, padx=5)
-        
-        ttkb.Button(logs_toolbar, text="📥 Export", bootstyle="info-outline",
-                   command=self.export_logs).pack(side=tk.RIGHT, padx=5)
-        
-        # Main log area
-        log_paned = ttkb.Panedwindow(logs_tab, orient=tk.VERTICAL)
-        log_paned.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        # Log text
-        log_frame = ttkb.Frame(log_paned)
-        self.log_text = scrolledtext.ScrolledText(
-            log_frame, state=tk.NORMAL, height=18,
-            bg="#0d1117", fg="#c9d1d9", insertbackground="#ffffff",
-            font=("JetBrains Mono", 10), wrap=tk.WORD,
-            selectbackground="#388bfd", selectforeground="#ffffff"
-        )
-        self.log_text.pack(fill=tk.BOTH, expand=True)
-        
-        # Configure log text tags for coloring
-        self.log_text.tag_configure("error", foreground="#f85149")
-        self.log_text.tag_configure("success", foreground="#3fb950")
-        self.log_text.tag_configure("warning", foreground="#d29922")
-        self.log_text.tag_configure("info", foreground="#58a6ff")
-        self.log_text.tag_configure("timestamp", foreground="#8b949e")
-        
-        log_paned.add(log_frame, weight=3)
-        
-        # AI Output
-        ai_frame = ttkb.Labelframe(log_paned, text="🤖 AI Assistant Output", bootstyle="info")
-        self.ai_output = scrolledtext.ScrolledText(
-            ai_frame, height=6, bg="#161b22", fg="#7ee787",
-            font=("JetBrains Mono", 10), wrap=tk.WORD
-        )
-        self.ai_output.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        log_paned.add(ai_frame, weight=1)
-        
-        # === Statistics Tab ===
-        stats_tab = ttkb.Frame(notebook)
-        notebook.add(stats_tab, text="📊 Statistics")
-        self.create_statistics_tab(stats_tab)
-        
-        # === Job Applications Tab ===
-        jobs_tab = ttkb.Frame(notebook)
-        notebook.add(jobs_tab, text="💼 Job Applications")
-        self.create_jobs_tab(jobs_tab)
-        
-        # === Settings Tab ===
-        settings_tab = ttkb.Frame(notebook)
-        notebook.add(settings_tab, text="⚙️ Settings")
-        self.create_settings_tab(settings_tab)
-    
-    def create_statistics_tab(self, parent):
-        """Create the statistics and charts tab"""
-        # Top metrics row
-        metrics_frame = ttkb.Labelframe(parent, text="📈 Live Metrics", bootstyle="info")
-        metrics_frame.pack(fill=tk.X, padx=10, pady=10)
-        
-        self.metric_labels: dict[str, ttkb.Label] = {}
-        
-        metrics_grid = ttkb.Frame(metrics_frame)
-        metrics_grid.pack(fill=tk.X, padx=10, pady=10)
-        
-        metrics_data = [
-            ("AI Provider", "ai_provider", 0, 0),
-            ("Jobs Processed", "jobs_processed", 0, 1),
-            ("Easy Applied", "easy_applied", 0, 2),
-            ("External Jobs", "external_jobs", 0, 3),
-            ("JD Analyses", "jd_analysis_count", 1, 0),
-            ("Resume Tailorings", "resume_tailoring_count", 1, 1),
-            ("Avg JD Time (s)", "jd_analysis_avg", 1, 2),
-            ("Avg Resume Time (s)", "resume_tailoring_avg", 1, 3),
-            ("Last JD Time (s)", "jd_analysis_last", 2, 0),
-            ("Last Resume Time (s)", "resume_last", 2, 1),
-            ("ETA (min)", "eta_minutes", 2, 2),
-            ("Ollama Calls", "ollama_calls", 2, 3),
-        ]
-        
-        for label, key, row, col in metrics_data:
-            cell = ttkb.Frame(metrics_grid)
-            cell.grid(row=row, column=col, padx=15, pady=8, sticky="w")
-            ttkb.Label(cell, text=label, font=("Segoe UI", 10),
-                      foreground=COLORS['text_secondary']).pack(anchor=tk.W)
-            value_label = ttkb.Label(cell, text="--", font=("Segoe UI", 14, "bold"))
-            value_label.pack(anchor=tk.W)
-            self.metric_labels[key] = value_label
-        
-        for i in range(4):
-            metrics_grid.columnconfigure(i, weight=1)
-        
-        # Progress bars
-        progress_frame = ttkb.Frame(parent)
-        progress_frame.pack(fill=tk.X, padx=10, pady=(0, 10))
-        
-        # JD Analysis Progress
-        jd_frame = ttkb.Frame(progress_frame)
-        jd_frame.pack(fill=tk.X, pady=5)
-        ttkb.Label(jd_frame, text="Job Description Analysis", 
-                  font=("Segoe UI", 10, "bold")).pack(side=tk.LEFT)
-        self.jd_progress_label = ttkb.Label(jd_frame, text="0%", font=("Segoe UI", 10, "bold"),
-                                           bootstyle="success")
-        self.jd_progress_label.pack(side=tk.RIGHT)
-        self.jd_progress = ttkb.Progressbar(progress_frame, bootstyle="success-striped",
-                                           mode="determinate", length=400)
-        self.jd_progress.pack(fill=tk.X, pady=(0, 10))
-        
-        # Resume Tailoring Progress
-        resume_frame = ttkb.Frame(progress_frame)
-        resume_frame.pack(fill=tk.X, pady=5)
-        ttkb.Label(resume_frame, text="Resume Tailoring", 
-                  font=("Segoe UI", 10, "bold")).pack(side=tk.LEFT)
-        self.resume_progress_label = ttkb.Label(resume_frame, text="0%", 
-                                                font=("Segoe UI", 10, "bold"),
-                                                bootstyle="info")
-        self.resume_progress_label.pack(side=tk.RIGHT)
-        self.resume_progress = ttkb.Progressbar(progress_frame, bootstyle="info-striped",
-                                               mode="determinate", length=400)
-        self.resume_progress.pack(fill=tk.X)
-        
-        # Charts
-        charts_frame = ttkb.Frame(parent)
-        charts_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        plt.style.use('dark_background')
-        
-        fig = Figure(figsize=(12, 5), dpi=100, facecolor='#1a1a2e')
-        fig.patch.set_alpha(0.9)
-        
-        self.ax_ts = fig.add_subplot(131)
-        self.ax_pie = fig.add_subplot(132)
-        self.ax_bar = fig.add_subplot(133)
-        
-        for ax in [self.ax_ts, self.ax_pie, self.ax_bar]:
-            ax.set_facecolor('#16213e')
-            ax.tick_params(colors='white', labelsize=8)
-            for spine in ax.spines.values():
-                spine.set_color('#3a3a5c')
-        
-        self.canvas = FigureCanvasTkAgg(fig, master=charts_frame)
-        self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-    
-    def create_jobs_tab(self, parent):
-        """Create the job applications table tab"""
-        # Toolbar
-        toolbar = ttkb.Frame(parent)
-        toolbar.pack(fill=tk.X, padx=10, pady=10)
-        
-        ttkb.Label(toolbar, text="💼 Recent Applications", 
-                  font=("Segoe UI", 14, "bold")).pack(side=tk.LEFT)
-        
-        ttkb.Button(toolbar, text="🔄 Refresh", bootstyle="info-outline",
-                   command=self.refresh_jobs_table).pack(side=tk.RIGHT, padx=5)
-        ttkb.Button(toolbar, text="📥 Export to CSV", bootstyle="success-outline",
-                   command=self.export_jobs_csv).pack(side=tk.RIGHT, padx=5)
-        
-        # Table
-        table_frame = ttkb.Frame(parent)
-        table_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=(0, 10))
-        
-        columns = ("ID", "Job Title", "Company", "Location", "Status", "Date Applied")
-        self.job_tree = ttkb.Treeview(table_frame, columns=columns, show="headings",
-                                      height=15)
-        
-        # Column configuration
-        widths = {"ID": 80, "Job Title": 250, "Company": 200, "Location": 150, 
-                 "Status": 100, "Date Applied": 150}
-        
-        for col in columns:
-            self.job_tree.heading(col, text=col, anchor=tk.W)
-            self.job_tree.column(col, width=widths.get(col, 100), anchor=tk.W)
-        
-        # Tags for coloring
-        self.job_tree.tag_configure("applied", background="#1e4620")
-        self.job_tree.tag_configure("failed", background="#4a1e1e")
-        self.job_tree.tag_configure("skipped", background="#4a3d1e")
-        
-        # Scrollbars
-        y_scroll = ttkb.Scrollbar(table_frame, orient=tk.VERTICAL, command=self.job_tree.yview)
-        x_scroll = ttkb.Scrollbar(table_frame, orient=tk.HORIZONTAL, command=self.job_tree.xview)
-        self.job_tree.configure(yscrollcommand=y_scroll.set, xscrollcommand=x_scroll.set)
-        
-        self.job_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        y_scroll.pack(side=tk.RIGHT, fill=tk.Y)
-    
-    def create_settings_tab(self, parent):
-        """Create the settings tab"""
-        settings_frame = ttkb.Frame(parent)
-        settings_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
-        
-        ttkb.Label(settings_frame, text="⚙️ Quick Settings", 
-                  font=("Segoe UI", 16, "bold")).pack(anchor=tk.W, pady=(0, 20))
-        
-        # Settings grid
-        settings_grid = ttkb.Frame(settings_frame)
-        settings_grid.pack(fill=tk.X)
-        
-        settings = [
-            ("🔊 Enable Sound Notifications", "sound_notify", True),
-            ("📧 Email Notifications", "email_notify", False),
-            ("🌙 Dark Mode", "dark_mode", True),
-            ("📊 Auto Refresh Stats", "auto_refresh", True),
-            ("💾 Auto Save Logs", "auto_save_logs", True),
-        ]
-        
-        self.setting_vars = {}
-        
-        for i, (label, key, default) in enumerate(settings):
-            frame = ttkb.Frame(settings_grid)
-            frame.pack(fill=tk.X, pady=8)
-            
-            var = tk.BooleanVar(value=default)
-            self.setting_vars[key] = var
-            
-            ttkb.Label(frame, text=label, font=("Segoe UI", 11)).pack(side=tk.LEFT)
-            
-            switch = ttkb.Checkbutton(frame, variable=var, bootstyle="round-toggle")
-            switch.pack(side=tk.RIGHT)
-        
-        # Info section
-        info_frame = ttkb.Labelframe(settings_frame, text="ℹ️ System Information", 
-                                    bootstyle="info")
-        info_frame.pack(fill=tk.X, pady=(30, 0))
-        
-        info_grid = ttkb.Frame(info_frame)
-        info_grid.pack(fill=tk.X, padx=15, pady=15)
-        
-        info_items = [
-            ("Version", "1.0.0"),
-            ("AI Provider", ai_provider),
-            ("Python Version", "3.14"),
-            ("Author", "Suraj Singh Panwar"),
-        ]
-        
-        for i, (label, value) in enumerate(info_items):
-            ttkb.Label(info_grid, text=f"{label}:", font=("Segoe UI", 10, "bold")).grid(
-                row=i, column=0, sticky="w", padx=(0, 20), pady=3)
-            ttkb.Label(info_grid, text=value, font=("Segoe UI", 10)).grid(
-                row=i, column=1, sticky="w", pady=3)
-    
-    def create_right_panel(self, parent):
-        """Create the enhanced right side panel with multiple tabs"""
-        # Create notebook for tabbed interface
-        self.right_notebook = ttkb.Notebook(parent)
-        self.right_notebook.pack(fill=tk.BOTH, expand=True)
-        
-        # Tab 1: Live Logs
-        logs_tab = ttkb.Frame(self.right_notebook)
-        self.right_notebook.add(logs_tab, text="📊 Live Logs")
-        self._create_live_logs_tab(logs_tab)
-        
-        # Tab 2: Job Details
-        job_tab = ttkb.Frame(self.right_notebook)
-        self.right_notebook.add(job_tab, text="📋 Job Details")
-        self._create_job_details_tab(job_tab)
-        
-        # Tab 3: Analytics
-        analytics_tab = ttkb.Frame(self.right_notebook)
-        self.right_notebook.add(analytics_tab, text="📈 Analytics")
-        self._create_analytics_tab(analytics_tab)
-        
-        # Tab 4: Quick Settings
-        settings_tab = ttkb.Frame(self.right_notebook)
-        self.right_notebook.add(settings_tab, text="⚙️ Settings")
-        self._create_settings_tab(settings_tab)
-        
-        # Tab 5: Resume Preview
-        resume_tab = ttkb.Frame(self.right_notebook)
-        self.right_notebook.add(resume_tab, text="📝 Resume")
-        self._create_resume_tab(resume_tab)
-        
-        # Tab 6: Activity Feed (original)
-        activity_tab = ttkb.Frame(self.right_notebook)
-        self.right_notebook.add(activity_tab, text="🔔 Activity")
-        self._create_activity_tab(activity_tab)
-    
-    def _create_live_logs_tab(self, parent):
-        """Create live logs panel with real-time updates"""
-        # Header with controls
-        header = ttkb.Frame(parent)
-        header.pack(fill=tk.X, padx=5, pady=5)
-        
-        ttkb.Label(header, text="🔴 Live Bot Activity", font=("Segoe UI", 11, "bold")).pack(side=tk.LEFT)
-        
-        # Controls
-        ctrl_frame = ttkb.Frame(header)
-        ctrl_frame.pack(side=tk.RIGHT)
-        
-        self.auto_scroll_var = tk.BooleanVar(value=True)
-        ttkb.Checkbutton(ctrl_frame, text="Auto-scroll", variable=self.auto_scroll_var,
-                        bootstyle="success-round-toggle").pack(side=tk.LEFT, padx=5)
-        
-        ttkb.Button(ctrl_frame, text="Clear", command=self._clear_live_logs,
-                   bootstyle="danger-outline", width=6).pack(side=tk.LEFT)
-        
-        # Live log text area
-        self.live_log_text = scrolledtext.ScrolledText(
-            parent, wrap=tk.WORD, font=("Consolas", 9),
-            bg='#1a1a2e', fg='#00ff00', insertbackground='#00ff00',
-            height=15
-        )
-        self.live_log_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        # Configure tags for colored output
-        self.live_log_text.tag_configure("info", foreground="#3498db")
-        self.live_log_text.tag_configure("success", foreground="#00d26a")
-        self.live_log_text.tag_configure("warning", foreground="#ffb302")
-        self.live_log_text.tag_configure("error", foreground="#ff4757")
-        self.live_log_text.tag_configure("job", foreground="#e94560", font=("Consolas", 9, "bold"))
-        
-        # Progress section at bottom
-        progress_frame = ttkb.Labelframe(parent, text="Current Progress", bootstyle="info")
-        progress_frame.pack(fill=tk.X, padx=5, pady=5)
-        
-        # Overall progress bar
-        self.overall_progress_var = tk.DoubleVar(value=0)
-        ttkb.Label(progress_frame, text="Session Progress:", font=("Segoe UI", 9)).pack(anchor=tk.W, padx=10, pady=(5,0))
-        self.overall_progress_bar = ttkb.Progressbar(
-            progress_frame, variable=self.overall_progress_var, 
-            bootstyle="success-striped", length=280
-        )
-        self.overall_progress_bar.pack(fill=tk.X, padx=10, pady=5)
-        
-        # Current task label
-        self.current_task_label = ttkb.Label(progress_frame, text="Status: Idle", 
-                                            font=("Segoe UI", 9), foreground=COLORS['text_secondary'])
-        self.current_task_label.pack(anchor=tk.W, padx=10, pady=(0,10))
-    
-    def _create_job_details_tab(self, parent):
-        """Create job details panel showing current job info"""
-        # Current Job Header
-        header_frame = ttkb.Labelframe(parent, text="🎯 Current Job", bootstyle="primary")
-        header_frame.pack(fill=tk.X, padx=5, pady=5)
-        
-        # Job title
-        self.job_title_label = ttkb.Label(header_frame, text="No job processing", 
-                                         font=("Segoe UI", 12, "bold"), wraplength=350)
-        self.job_title_label.pack(anchor=tk.W, padx=10, pady=5)
-        
-        # Company
-        self.job_company_label = ttkb.Label(header_frame, text="Company: --", 
-                                           font=("Segoe UI", 10), foreground=COLORS['text_secondary'])
-        self.job_company_label.pack(anchor=tk.W, padx=10)
-        
-        # Location & Type
-        info_frame = ttkb.Frame(header_frame)
-        info_frame.pack(fill=tk.X, padx=10, pady=5)
-        
-        self.job_location_label = ttkb.Label(info_frame, text="📍 --", font=("Segoe UI", 9))
-        self.job_location_label.pack(side=tk.LEFT, padx=(0, 15))
-        
-        self.job_posted_label = ttkb.Label(info_frame, text="🕐 --", font=("Segoe UI", 9))
-        self.job_posted_label.pack(side=tk.LEFT)
-        
-        # Job Description Preview
-        jd_frame = ttkb.Labelframe(parent, text="📄 Job Description Preview", bootstyle="secondary")
-        jd_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        self.jd_preview_text = scrolledtext.ScrolledText(
-            jd_frame, wrap=tk.WORD, font=("Segoe UI", 9),
-            bg='#252540', fg='#ffffff', height=10
-        )
-        self.jd_preview_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        self.jd_preview_text.insert(tk.END, "Job description will appear here when processing...")
-        self.jd_preview_text.config(state=tk.DISABLED)
-        
-        # Skip Reasons Section
-        skip_frame = ttkb.Labelframe(parent, text="⏭️ Recent Skip Reasons", bootstyle="warning")
-        skip_frame.pack(fill=tk.X, padx=5, pady=5)
-        
-        self.skip_reasons_list = tk.Listbox(
-            skip_frame, font=("Segoe UI", 9), height=5,
-            bg='#252540', fg='#ffb302', selectbackground='#3a3a5c'
-        )
-        self.skip_reasons_list.pack(fill=tk.X, padx=5, pady=5)
-        
-        # Add sample skip reasons
-        self.skip_reasons_list.insert(tk.END, "No skip reasons yet...")
-    
-    def _create_analytics_tab(self, parent):
-        """Create analytics panel with charts and stats"""
-        # Success Rate Pie Chart
-        chart_frame = ttkb.Labelframe(parent, text="📊 Application Results", bootstyle="info")
-        chart_frame.pack(fill=tk.X, padx=5, pady=5)
-        
-        # Create matplotlib figure
-        self.analytics_fig = Figure(figsize=(3.5, 2.5), dpi=80, facecolor='#1a1a2e')
-        self.analytics_ax = self.analytics_fig.add_subplot(111)
-        self.analytics_ax.set_facecolor('#1a1a2e')
-        
-        # Initial empty pie chart
-        self._update_analytics_chart()
-        
-        self.analytics_canvas = FigureCanvasTkAgg(self.analytics_fig, chart_frame)
-        self.analytics_canvas.get_tk_widget().pack(fill=tk.X, padx=5, pady=5)
-        
-        # Stats Grid
-        stats_frame = ttkb.Labelframe(parent, text="📈 Session Statistics", bootstyle="success")
-        stats_frame.pack(fill=tk.X, padx=5, pady=5)
-        
-        stats_grid = ttkb.Frame(stats_frame)
-        stats_grid.pack(fill=tk.X, padx=10, pady=10)
-        
-        # Row 1
-        ttkb.Label(stats_grid, text="Success Rate:", font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w", pady=2)
-        self.success_rate_label = ttkb.Label(stats_grid, text="0%", font=("Segoe UI", 9), bootstyle="success")
-        self.success_rate_label.grid(row=0, column=1, sticky="e", pady=2)
-        
-        ttkb.Label(stats_grid, text="Avg. Time/Job:", font=("Segoe UI", 9, "bold")).grid(row=1, column=0, sticky="w", pady=2)
-        self.avg_time_label = ttkb.Label(stats_grid, text="--", font=("Segoe UI", 9))
-        self.avg_time_label.grid(row=1, column=1, sticky="e", pady=2)
-        
-        ttkb.Label(stats_grid, text="Jobs/Hour:", font=("Segoe UI", 9, "bold")).grid(row=2, column=0, sticky="w", pady=2)
-        self.jobs_hour_label = ttkb.Label(stats_grid, text="--", font=("Segoe UI", 9))
-        self.jobs_hour_label.grid(row=2, column=1, sticky="e", pady=2)
-        
-        ttkb.Label(stats_grid, text="Resume Tailored:", font=("Segoe UI", 9, "bold")).grid(row=3, column=0, sticky="w", pady=2)
-        self.resume_tailored_label = ttkb.Label(stats_grid, text="0", font=("Segoe UI", 9))
-        self.resume_tailored_label.grid(row=3, column=1, sticky="e", pady=2)
-        
-        stats_grid.columnconfigure(1, weight=1)
-        
-        # Recent Activity Timeline
-        timeline_frame = ttkb.Labelframe(parent, text="🕐 Recent Activity", bootstyle="secondary")
-        timeline_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        self.timeline_list = tk.Listbox(
-            timeline_frame, font=("Consolas", 8), height=8,
-            bg='#252540', fg='#a0a0a0', selectbackground='#3a3a5c'
-        )
-        self.timeline_list.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-    
-    def _create_settings_tab(self, parent):
-        """Create quick settings panel with LLM configuration"""
-        # Create scrollable frame for settings
-        canvas = tk.Canvas(parent, bg=COLORS['bg_dark'], highlightthickness=0)
-        scrollbar = ttkb.Scrollbar(parent, orient="vertical", command=canvas.yview)
-        scrollable_frame = ttkb.Frame(canvas)
-        
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
-        
-        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
-        
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
-        
-        # Enable mouse wheel scrolling
-        def _on_mousewheel(event):
-            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
-        canvas.bind_all("<MouseWheel>", _on_mousewheel)
-        
-        # ============================================
-        # LLM CONFIGURATION SECTION
-        # ============================================
-        llm_frame = ttkb.Labelframe(scrollable_frame, text="🧠 LLM Configuration", bootstyle="primary")
-        llm_frame.pack(fill=tk.X, padx=5, pady=5)
-        
-        llm_container = ttkb.Frame(llm_frame)
-        llm_container.pack(fill=tk.X, padx=10, pady=10)
-        
-        # AI Provider Selection
-        provider_frame = ttkb.Frame(llm_container)
-        provider_frame.pack(fill=tk.X, pady=5)
-        
-        ttkb.Label(provider_frame, text="🔌 AI Provider:", font=("Segoe UI", 10, "bold")).pack(anchor=tk.W)
-        
-        self.ai_provider_var = tk.StringVar(value=ai_provider or "ollama")
-        
-        # Row 1: Local providers
-        provider_row1 = ttkb.Frame(llm_container)
-        provider_row1.pack(fill=tk.X, pady=2)
-        ttkb.Label(provider_row1, text="Local:", font=("Segoe UI", 8), width=6).pack(side=tk.LEFT)
-        ttkb.Radiobutton(provider_row1, text="🦙 Ollama", value="ollama", 
-                        variable=self.ai_provider_var, bootstyle="success-toolbutton",
-                        command=self._on_provider_change).pack(side=tk.LEFT, padx=2)
-        
-        # Row 2: Free API providers
-        provider_row2 = ttkb.Frame(llm_container)
-        provider_row2.pack(fill=tk.X, pady=2)
-        ttkb.Label(provider_row2, text="Free:", font=("Segoe UI", 8), width=6).pack(side=tk.LEFT)
-        ttkb.Radiobutton(provider_row2, text="⚡ Groq", value="groq", 
-                        variable=self.ai_provider_var, bootstyle="warning-toolbutton",
-                        command=self._on_provider_change).pack(side=tk.LEFT, padx=2)
-        ttkb.Radiobutton(provider_row2, text="🤗 HuggingFace", value="huggingface", 
-                        variable=self.ai_provider_var, bootstyle="warning-toolbutton",
-                        command=self._on_provider_change).pack(side=tk.LEFT, padx=2)
-        
-        # Row 3: Paid API providers
-        provider_row3 = ttkb.Frame(llm_container)
-        provider_row3.pack(fill=tk.X, pady=2)
-        ttkb.Label(provider_row3, text="Paid:", font=("Segoe UI", 8), width=6).pack(side=tk.LEFT)
-        ttkb.Radiobutton(provider_row3, text="🤖 OpenAI", value="openai", 
-                        variable=self.ai_provider_var, bootstyle="info-toolbutton",
-                        command=self._on_provider_change).pack(side=tk.LEFT, padx=2)
-        ttkb.Radiobutton(provider_row3, text="🌊 DeepSeek", value="deepseek", 
-                        variable=self.ai_provider_var, bootstyle="info-toolbutton",
-                        command=self._on_provider_change).pack(side=tk.LEFT, padx=2)
-        ttkb.Radiobutton(provider_row3, text="💎 Gemini", value="gemini", 
-                        variable=self.ai_provider_var, bootstyle="info-toolbutton",
-                        command=self._on_provider_change).pack(side=tk.LEFT, padx=2)
-        
-        # Provider status indicator
-        self.provider_status_frame = ttkb.Frame(llm_container)
-        self.provider_status_frame.pack(fill=tk.X, pady=5)
-        
-        self.provider_status_label = ttkb.Label(self.provider_status_frame, text="", font=("Segoe UI", 9))
-        self.provider_status_label.pack(side=tk.LEFT)
-        
-        # ============================================
-        # LOCAL LLM (OLLAMA) SECTION
-        # ============================================
-        self.ollama_frame = ttkb.Labelframe(scrollable_frame, text="🦙 Ollama (Local LLM)", bootstyle="success")
-        self.ollama_frame.pack(fill=tk.X, padx=5, pady=5)
-        
-        ollama_container = ttkb.Frame(self.ollama_frame)
-        ollama_container.pack(fill=tk.X, padx=10, pady=10)
-        
-        # Ollama Status
-        status_row = ttkb.Frame(ollama_container)
-        status_row.pack(fill=tk.X, pady=3)
-        
-        ttkb.Label(status_row, text="Status:", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT)
-        self.ollama_status_label = ttkb.Label(status_row, text="⏳ Checking...", font=("Segoe UI", 9))
-        self.ollama_status_label.pack(side=tk.LEFT, padx=(10, 0))
-        
-        ttkb.Button(status_row, text="🔄 Refresh", command=self._refresh_ollama_models,
-                   bootstyle="info-outline", width=10).pack(side=tk.RIGHT)
-        
-        # Ollama URL
-        url_row = ttkb.Frame(ollama_container)
-        url_row.pack(fill=tk.X, pady=5)
-        
-        ttkb.Label(url_row, text="API URL:", font=("Segoe UI", 9)).pack(side=tk.LEFT)
-        self.ollama_url_var = tk.StringVar(value="http://localhost:11434")
-        ttkb.Entry(url_row, textvariable=self.ollama_url_var, width=30).pack(side=tk.LEFT, padx=(10, 0))
-        
-        # Available Models Dropdown
-        model_row = ttkb.Frame(ollama_container)
-        model_row.pack(fill=tk.X, pady=5)
-        
-        ttkb.Label(model_row, text="Model:", font=("Segoe UI", 9, "bold")).pack(side=tk.LEFT)
-        
-        self.ollama_model_var = tk.StringVar(value="")
-        self.ollama_model_combo = ttkb.Combobox(model_row, textvariable=self.ollama_model_var, 
-                                                 state="readonly", bootstyle="success", width=25)
-        self.ollama_model_combo.pack(side=tk.LEFT, padx=(10, 5))
-        
-        # Model info
-        self.ollama_model_info = ttkb.Label(model_row, text="", font=("Segoe UI", 8), foreground=COLORS['text_secondary'])
-        self.ollama_model_info.pack(side=tk.LEFT, padx=(5, 0))
-        
-        # Available Models List
-        models_list_frame = ttkb.Frame(ollama_container)
-        models_list_frame.pack(fill=tk.X, pady=5)
-        
-        ttkb.Label(models_list_frame, text="📦 Available Models:", font=("Segoe UI", 9)).pack(anchor=tk.W)
-        
-        self.ollama_models_listbox = tk.Listbox(models_list_frame, height=4, font=("Consolas", 9),
-                                                 bg=COLORS['card_bg'], fg=COLORS['text_primary'],
-                                                 selectbackground=COLORS['accent'])
-        self.ollama_models_listbox.pack(fill=tk.X, pady=5)
-        self.ollama_models_listbox.bind('<<ListboxSelect>>', self._on_ollama_model_select)
-        
-        # Ollama Actions
-        ollama_actions = ttkb.Frame(ollama_container)
-        ollama_actions.pack(fill=tk.X, pady=5)
-        
-        ttkb.Button(ollama_actions, text="🧪 Test Connection", command=self._test_ollama_connection,
-                   bootstyle="info", width=15).pack(side=tk.LEFT, padx=2)
-        ttkb.Button(ollama_actions, text="📥 Pull Model", command=self._pull_ollama_model,
-                   bootstyle="warning", width=12).pack(side=tk.LEFT, padx=2)
-        ttkb.Button(ollama_actions, text="🌐 Ollama Website", command=lambda: webbrowser.open("https://ollama.com/library"),
-                   bootstyle="secondary-outline", width=14).pack(side=tk.LEFT, padx=2)
-        
-        # ============================================
-        # CLOUD API SECTION
-        # ============================================
-        self.cloud_frame = ttkb.Labelframe(scrollable_frame, text="☁️ Cloud API Configuration", bootstyle="info")
-        self.cloud_frame.pack(fill=tk.X, padx=5, pady=5)
-        
-        cloud_container = ttkb.Frame(self.cloud_frame)
-        cloud_container.pack(fill=tk.X, padx=10, pady=10)
-        
-        # OpenAI
-        openai_row = ttkb.Frame(cloud_container)
-        openai_row.pack(fill=tk.X, pady=3)
-        ttkb.Label(openai_row, text="OpenAI API Key:", font=("Segoe UI", 9), width=15).pack(side=tk.LEFT)
-        self.openai_key_var = tk.StringVar(value="")
-        self.openai_key_entry = ttkb.Entry(openai_row, textvariable=self.openai_key_var, show="*", width=40)
-        self.openai_key_entry.pack(side=tk.LEFT, padx=(5, 0))
-        
-        openai_model_row = ttkb.Frame(cloud_container)
-        openai_model_row.pack(fill=tk.X, pady=3)
-        ttkb.Label(openai_model_row, text="OpenAI Model:", font=("Segoe UI", 9), width=15).pack(side=tk.LEFT)
-        self.openai_model_var = tk.StringVar(value="gpt-4o-mini")
-        openai_models = ["gpt-4o-mini", "gpt-4o", "gpt-4-turbo", "gpt-3.5-turbo"]
-        ttkb.Combobox(openai_model_row, textvariable=self.openai_model_var, values=openai_models, 
-                     width=20, bootstyle="info").pack(side=tk.LEFT, padx=(5, 0))
-        
-        # DeepSeek
-        deepseek_row = ttkb.Frame(cloud_container)
-        deepseek_row.pack(fill=tk.X, pady=3)
-        ttkb.Label(deepseek_row, text="DeepSeek API Key:", font=("Segoe UI", 9), width=15).pack(side=tk.LEFT)
-        self.deepseek_key_var = tk.StringVar(value="")
-        ttkb.Entry(deepseek_row, textvariable=self.deepseek_key_var, show="*", width=40).pack(side=tk.LEFT, padx=(5, 0))
-        
-        # Gemini
-        gemini_row = ttkb.Frame(cloud_container)
-        gemini_row.pack(fill=tk.X, pady=3)
-        ttkb.Label(gemini_row, text="Gemini API Key:", font=("Segoe UI", 9), width=15).pack(side=tk.LEFT)
-        self.gemini_key_var = tk.StringVar(value="")
-        ttkb.Entry(gemini_row, textvariable=self.gemini_key_var, show="*", width=40).pack(side=tk.LEFT, padx=(5, 0))
-        
-        # Separator for Free APIs
-        ttkb.Separator(cloud_container, orient='horizontal').pack(fill=tk.X, pady=10)
-        ttkb.Label(cloud_container, text="🆓 FREE API Providers", font=("Segoe UI", 10, "bold"), 
-                  foreground=COLORS['success']).pack(anchor=tk.W, pady=(0, 5))
-        
-        # Groq (FREE)
-        groq_row = ttkb.Frame(cloud_container)
-        groq_row.pack(fill=tk.X, pady=3)
-        ttkb.Label(groq_row, text="Groq API Key:", font=("Segoe UI", 9), width=15).pack(side=tk.LEFT)
-        self.groq_key_var = tk.StringVar(value="")
-        ttkb.Entry(groq_row, textvariable=self.groq_key_var, show="*", width=40).pack(side=tk.LEFT, padx=(5, 0))
-        ttkb.Button(groq_row, text="Get Free Key", command=lambda: webbrowser.open("https://console.groq.com/keys"),
-                   bootstyle="success-link", width=12).pack(side=tk.LEFT, padx=5)
-        
-        groq_model_row = ttkb.Frame(cloud_container)
-        groq_model_row.pack(fill=tk.X, pady=3)
-        ttkb.Label(groq_model_row, text="Groq Model:", font=("Segoe UI", 9), width=15).pack(side=tk.LEFT)
-        self.groq_model_var = tk.StringVar(value="llama-3.1-70b-versatile")
-        groq_models = ["llama-3.1-70b-versatile", "llama-3.1-8b-instant", "llama3-70b-8192", 
-                      "llama3-8b-8192", "mixtral-8x7b-32768", "gemma2-9b-it"]
-        ttkb.Combobox(groq_model_row, textvariable=self.groq_model_var, values=groq_models,
-                     width=25, bootstyle="success").pack(side=tk.LEFT, padx=(5, 0))
-        ttkb.Label(groq_model_row, text="⚡ Ultra-fast!", font=("Segoe UI", 8), 
-                  foreground=COLORS['success']).pack(side=tk.LEFT, padx=5)
-        
-        # Hugging Face (FREE)
-        hf_row = ttkb.Frame(cloud_container)
-        hf_row.pack(fill=tk.X, pady=3)
-        ttkb.Label(hf_row, text="HuggingFace Key:", font=("Segoe UI", 9), width=15).pack(side=tk.LEFT)
-        self.huggingface_key_var = tk.StringVar(value="")
-        ttkb.Entry(hf_row, textvariable=self.huggingface_key_var, show="*", width=40).pack(side=tk.LEFT, padx=(5, 0))
-        ttkb.Button(hf_row, text="Get Free Key", command=lambda: webbrowser.open("https://huggingface.co/settings/tokens"),
-                   bootstyle="success-link", width=12).pack(side=tk.LEFT, padx=5)
-        
-        hf_model_row = ttkb.Frame(cloud_container)
-        hf_model_row.pack(fill=tk.X, pady=3)
-        ttkb.Label(hf_model_row, text="HF Model:", font=("Segoe UI", 9), width=15).pack(side=tk.LEFT)
-        self.huggingface_model_var = tk.StringVar(value="mistralai/Mistral-7B-Instruct-v0.3")
-        hf_models = ["mistralai/Mistral-7B-Instruct-v0.3", "meta-llama/Meta-Llama-3-8B-Instruct",
-                    "microsoft/Phi-3-mini-4k-instruct", "google/gemma-2-9b-it", "Qwen/Qwen2.5-7B-Instruct"]
-        ttkb.Combobox(hf_model_row, textvariable=self.huggingface_model_var, values=hf_models,
-                     width=35, bootstyle="success").pack(side=tk.LEFT, padx=(5, 0))
-        
-        # Test Cloud Connection
-        ttkb.Button(cloud_container, text="🧪 Test Cloud API", command=self._test_cloud_api,
-                   bootstyle="info", width=15).pack(anchor=tk.W, pady=10)
-        
-        # ============================================
-        # BOT SETTINGS SECTION
-        # ============================================
-        bot_frame = ttkb.Labelframe(scrollable_frame, text="🤖 Bot Settings", bootstyle="warning")
-        bot_frame.pack(fill=tk.X, padx=5, pady=5)
-        
-        settings_container = ttkb.Frame(bot_frame)
-        settings_container.pack(fill=tk.X, padx=10, pady=10)
-        
-        # Slow Mode Toggle
-        self.slow_mode_var = tk.BooleanVar(value=False)
-        slow_frame = ttkb.Frame(settings_container)
-        slow_frame.pack(fill=tk.X, pady=3)
-        ttkb.Label(slow_frame, text="🐢 Slow Mode (Anti-Detection)", font=("Segoe UI", 9)).pack(side=tk.LEFT)
-        ttkb.Checkbutton(slow_frame, variable=self.slow_mode_var, 
-                        bootstyle="warning-round-toggle", command=self._toggle_slow_mode).pack(side=tk.RIGHT)
-        
-        # Resume Tailoring Toggle
-        self.resume_tailor_var = tk.BooleanVar(value=True)
-        tailor_frame = ttkb.Frame(settings_container)
-        tailor_frame.pack(fill=tk.X, pady=3)
-        ttkb.Label(tailor_frame, text="📝 Auto Resume Tailoring", font=("Segoe UI", 9)).pack(side=tk.LEFT)
-        ttkb.Checkbutton(tailor_frame, variable=self.resume_tailor_var,
-                        bootstyle="success-round-toggle", command=self._toggle_resume_tailor).pack(side=tk.RIGHT)
-        
-        # Auto-dismiss Popups
-        self.auto_dismiss_var = tk.BooleanVar(value=True)
-        dismiss_frame = ttkb.Frame(settings_container)
-        dismiss_frame.pack(fill=tk.X, pady=3)
-        ttkb.Label(dismiss_frame, text="🚫 Auto-dismiss Popups", font=("Segoe UI", 9)).pack(side=tk.LEFT)
-        ttkb.Checkbutton(dismiss_frame, variable=self.auto_dismiss_var,
-                        bootstyle="info-round-toggle").pack(side=tk.RIGHT)
-        
-        # Pause Before Submit
-        self.pause_submit_var = tk.BooleanVar(value=False)
-        pause_frame = ttkb.Frame(settings_container)
-        pause_frame.pack(fill=tk.X, pady=3)
-        ttkb.Label(pause_frame, text="⏸️ Pause Before Submit", font=("Segoe UI", 9)).pack(side=tk.LEFT)
-        ttkb.Checkbutton(pause_frame, variable=self.pause_submit_var,
-                        bootstyle="danger-round-toggle").pack(side=tk.RIGHT)
-        
-        # ============================================
-        # SAVE SETTINGS BUTTON
-        # ============================================
-        save_frame = ttkb.Frame(scrollable_frame)
-        save_frame.pack(fill=tk.X, padx=5, pady=15)
-        
-        ttkb.Button(save_frame, text="💾 Save All Settings", command=self._save_llm_settings,
-                   bootstyle="success", width=20).pack(side=tk.LEFT, padx=5)
-        ttkb.Button(save_frame, text="🔄 Reset to Defaults", command=self._reset_llm_settings,
-                   bootstyle="danger-outline", width=18).pack(side=tk.LEFT, padx=5)
-        
-        # Load settings and auto-detect models
-        self._load_llm_settings()
-        self._refresh_ollama_models()
-        self._on_provider_change()
-    
-    def _get_ollama_models(self):
-        """Get list of available Ollama models with their sizes"""
+    def _load_history_data(self):
+        """Load application history from CSV files"""
         try:
-            result = subprocess.run(['ollama', 'list'], capture_output=True, text=True, timeout=10)
-            if result.returncode == 0:
-                lines = result.stdout.strip().split('\n')
-                models = []
-                for line in lines[1:]:  # Skip header
-                    if line.strip():
-                        parts = line.split()
-                        if len(parts) >= 3:
-                            name = parts[0]
-                            size = parts[2] if len(parts) > 2 else "?"
-                            models.append((name, size))
-                return models
-            return []
-        except Exception:
-            return []
-    
-    def _refresh_ollama_models(self):
-        """Refresh the list of available Ollama models"""
-        def refresh_thread():
-            models = self._get_ollama_models()
+            # Clear existing items
+            for item in self.history_tree.get_children():
+                self.history_tree.delete(item)
+            self._history_urls.clear()
             
-            # Update UI in main thread
-            self.after(0, lambda: self._update_ollama_ui(models))
-        
-        self.ollama_status_label.config(text="⏳ Checking Ollama...")
-        threading.Thread(target=refresh_thread, daemon=True).start()
-    
-    def _update_ollama_ui(self, models):
-        """Update Ollama UI with detected models"""
-        if models:
-            self.ollama_status_label.config(text=f"✅ Running ({len(models)} models)", foreground=COLORS['success'])
+            # Try to load from history files
+            import csv
+            history_files = [
+                "all excels/all_applied_applications_history.csv",
+                "all excels/all_failed_applications_history.csv"
+            ]
             
-            # Update combobox
-            model_names = [m[0] for m in models]
-            self.ollama_model_combo['values'] = model_names
+            all_records = []
             
-            # Update listbox with sizes
-            self.ollama_models_listbox.delete(0, tk.END)
-            for name, size in models:
-                self.ollama_models_listbox.insert(tk.END, f"  {name:<25} ({size})")
+            for file_path in history_files:
+                if os.path.exists(file_path):
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            reader = csv.DictReader(f)
+                            for row in reader:
+                                status = "✅ Applied" if "applied" in file_path else "❌ Failed"
+                                all_records.append({
+                                    'timestamp': row.get('timestamp', row.get('date', 'N/A'))[:16],
+                                    'job_title': row.get('job_title', row.get('title', 'N/A'))[:40],
+                                    'company': row.get('company', 'N/A')[:20],
+                                    'location': row.get('location', 'N/A')[:15],
+                                    'status': status,
+                                    'ai_score': row.get('ai_score', '--'),
+                                    'url': row.get('link', row.get('url', ''))
+                                })
+                    except Exception as e:
+                        print(f"Error reading {file_path}: {e}")
             
-            # Select current model if available
-            try:
-                from config.secrets import ollama_model
-                if ollama_model in model_names:
-                    self.ollama_model_var.set(ollama_model)
-                    self._update_model_info(ollama_model, models)
-                elif model_names:
-                    self.ollama_model_var.set(model_names[0])
-            except ImportError:
-                if model_names:
-                    self.ollama_model_var.set(model_names[0])
-        else:
-            self.ollama_status_label.config(text="❌ Ollama not running", foreground=COLORS['danger'])
-            self.ollama_models_listbox.delete(0, tk.END)
-            self.ollama_models_listbox.insert(tk.END, "  No models found. Is Ollama running?")
-            self.ollama_models_listbox.insert(tk.END, "  Run: ollama serve")
-    
-    def _update_model_info(self, model_name, models):
-        """Update model info label"""
-        for name, size in models:
-            if name == model_name:
-                self.ollama_model_info.config(text=f"Size: {size}")
-                return
-    
-    def _on_ollama_model_select(self, event):
-        """Handle model selection from listbox"""
-        selection = self.ollama_models_listbox.curselection()
-        if selection:
-            item = self.ollama_models_listbox.get(selection[0])
-            model_name = item.strip().split()[0]
-            self.ollama_model_var.set(model_name)
+            # Sort by timestamp (newest first)
+            all_records.sort(key=lambda x: x['timestamp'], reverse=True)
             
-            # Update info
-            models = self._get_ollama_models()
-            self._update_model_info(model_name, models)
-    
-    def _on_provider_change(self):
-        """Handle provider selection change"""
-        provider = self.ai_provider_var.get()
-        
-        if provider == "ollama":
-            self.provider_status_label.config(text="🦙 Using local Ollama - No API key needed", foreground=COLORS['success'])
-            # Highlight Ollama frame, dim cloud frame
-            self.ollama_frame.configure(bootstyle="success")
-            self.cloud_frame.configure(bootstyle="secondary")
-        elif provider in ["groq", "huggingface"]:
-            provider_names = {"groq": "Groq", "huggingface": "HuggingFace"}
-            self.provider_status_label.config(text=f"🆓 Using {provider_names[provider]} - FREE API key required", 
-                                              foreground=COLORS['success'])
-            self.ollama_frame.configure(bootstyle="secondary")
-            self.cloud_frame.configure(bootstyle="success")
-        else:
-            provider_names = {"openai": "OpenAI", "deepseek": "DeepSeek", "gemini": "Google Gemini"}
-            self.provider_status_label.config(text=f"☁️ Using {provider_names.get(provider, provider)} - API key required", 
-                                              foreground=COLORS['info'])
-            self.ollama_frame.configure(bootstyle="secondary")
-            self.cloud_frame.configure(bootstyle="info")
-    
-    def _test_ollama_connection(self):
-        """Test connection to Ollama"""
-        def test_thread():
-            try:
-                import urllib.request
-                url = self.ollama_url_var.get() + "/api/tags"
-                req = urllib.request.urlopen(url, timeout=5)
-                data = json.loads(req.read().decode())
-                models_count = len(data.get('models', []))
-                self.after(0, lambda: messagebox.showinfo("Success", 
-                    f"✅ Ollama is running!\n\n{models_count} models available."))
-            except Exception as e:
-                self.after(0, lambda: messagebox.showerror("Connection Failed", 
-                    f"❌ Cannot connect to Ollama\n\nError: {str(e)}\n\nMake sure Ollama is running:\n  ollama serve"))
-        
-        threading.Thread(target=test_thread, daemon=True).start()
-    
-    def _test_cloud_api(self):
-        """Test cloud API connection"""
-        provider = self.ai_provider_var.get()
-        
-        if provider == "openai":
-            key = self.openai_key_var.get()
-            if not key or key == "your_openai_api_key_here":
-                messagebox.showwarning("Missing API Key", "Please enter your OpenAI API key.")
-                return
-            messagebox.showinfo("Test", "OpenAI API test - check console for results.")
-        elif provider == "deepseek":
-            key = self.deepseek_key_var.get()
-            if not key or key == "your_deepseek_api_key_here":
-                messagebox.showwarning("Missing API Key", "Please enter your DeepSeek API key.")
-                return
-            messagebox.showinfo("Test", "DeepSeek API test - check console for results.")
-        elif provider == "gemini":
-            key = self.gemini_key_var.get()
-            if not key or key == "your_gemini_api_key_here":
-                messagebox.showwarning("Missing API Key", "Please enter your Gemini API key.")
-                return
-            messagebox.showinfo("Test", "Gemini API test - check console for results.")
-        elif provider == "groq":
-            key = self.groq_key_var.get()
-            if not key or key == "your_groq_api_key_here":
-                messagebox.showwarning("Missing API Key", "Please enter your Groq API key.\n\nGet a FREE key at:\nhttps://console.groq.com/keys")
-                return
-            messagebox.showinfo("Test", "Groq API test - check console for results.\n\n⚡ Groq provides ultra-fast inference!")
-        elif provider == "huggingface":
-            key = self.huggingface_key_var.get()
-            if not key or key == "your_huggingface_api_key_here":
-                messagebox.showwarning("Missing API Key", "Please enter your HuggingFace API key.\n\nGet a FREE key at:\nhttps://huggingface.co/settings/tokens")
-                return
-            messagebox.showinfo("Test", "HuggingFace API test - check console for results.")
-        else:
-            messagebox.showinfo("Info", "Select a cloud provider first.")
-    
-    def _pull_ollama_model(self):
-        """Open dialog to pull a new Ollama model"""
-        dialog = tk.Toplevel(self)
-        dialog.title("Pull Ollama Model")
-        dialog.geometry("400x200")
-        dialog.transient(self)
-        dialog.grab_set()
-        
-        ttkb.Label(dialog, text="Enter model name to pull:", font=("Segoe UI", 11)).pack(pady=10)
-        
-        model_var = tk.StringVar(value="qwen2.5:7b")
-        suggestions = ["qwen2.5:7b", "qwen2.5:14b", "llama3.1:8b", "mistral:7b", "gemma2:9b", "phi3:14b"]
-        
-        combo = ttkb.Combobox(dialog, textvariable=model_var, values=suggestions, width=30)
-        combo.pack(pady=5)
-        
-        ttkb.Label(dialog, text="Recommended: qwen2.5:7b (4.7GB)", font=("Segoe UI", 9), 
-                  foreground=COLORS['text_secondary']).pack()
-        
-        def do_pull():
-            model = model_var.get()
-            if model:
-                dialog.destroy()
-                messagebox.showinfo("Pulling Model", 
-                    f"Pulling {model}...\n\nThis will run in a terminal.\nPlease wait for it to complete.")
-                os.system(f'start cmd /k "ollama pull {model}"')
-        
-        btn_frame = ttkb.Frame(dialog)
-        btn_frame.pack(pady=20)
-        
-        ttkb.Button(btn_frame, text="📥 Pull Model", command=do_pull, bootstyle="success", width=15).pack(side=tk.LEFT, padx=5)
-        ttkb.Button(btn_frame, text="Cancel", command=dialog.destroy, bootstyle="danger-outline", width=10).pack(side=tk.LEFT, padx=5)
-    
-    def _load_llm_settings(self):
-        """Load LLM settings from secrets.py"""
-        try:
-            from config import secrets
+            # Add to treeview
+            for i, record in enumerate(all_records[:100]):  # Limit to 100 records
+                tag = 'applied' if '✅' in record['status'] else 'failed'
+                item_id = self.history_tree.insert('', 'end', values=(
+                    record['timestamp'],
+                    record['job_title'],
+                    record['company'],
+                    record['location'],
+                    record['status'],
+                    record['ai_score'],
+                    "👁️ View"
+                ), tags=(tag,))
+                if record.get('url'):
+                    self._history_urls[item_id] = record['url']
             
-            # Load provider
-            self.ai_provider_var.set(getattr(secrets, 'ai_provider', 'ollama'))
+            # Configure tags for colors
+            self.history_tree.tag_configure('applied', foreground='#4ade80')
+            self.history_tree.tag_configure('failed', foreground='#ff6b6b')
             
-            # Load Ollama settings
-            self.ollama_url_var.set(getattr(secrets, 'ollama_api_url', 'http://localhost:11434'))
-            self.ollama_model_var.set(getattr(secrets, 'ollama_model', 'llama2:13b'))
-            
-            # Load API keys (masked)
-            openai_key = getattr(secrets, 'llm_api_key', '')
-            if openai_key and openai_key != 'your_openai_api_key_here':
-                self.openai_key_var.set(openai_key)
-            
-            self.openai_model_var.set(getattr(secrets, 'llm_model', 'gpt-4o-mini'))
-            
-            deepseek_key = getattr(secrets, 'deepseek_api_key', '')
-            if deepseek_key and deepseek_key != 'your_deepseek_api_key_here':
-                self.deepseek_key_var.set(deepseek_key)
-            
-            gemini_key = getattr(secrets, 'gemini_api_key', '')
-            if gemini_key and gemini_key != 'your_gemini_api_key_here':
-                self.gemini_key_var.set(gemini_key)
-            
-            # Load Groq settings (FREE)
-            groq_key = getattr(secrets, 'groq_api_key', '')
-            if groq_key and groq_key != 'your_groq_api_key_here':
-                self.groq_key_var.set(groq_key)
-            self.groq_model_var.set(getattr(secrets, 'groq_model', 'llama-3.1-70b-versatile'))
-            
-            # Load HuggingFace settings (FREE)
-            hf_key = getattr(secrets, 'huggingface_api_key', '')
-            if hf_key and hf_key != 'your_huggingface_api_key_here':
-                self.huggingface_key_var.set(hf_key)
-            self.huggingface_model_var.set(getattr(secrets, 'huggingface_model', 'mistralai/Mistral-7B-Instruct-v0.3'))
+            if not all_records:
+                self.history_tree.insert('', 'end', values=(
+                    "--", "No applications yet", "Start the bot!", "--", "⏳ Waiting", "--", "--"
+                ))
                 
         except Exception as e:
-            print(f"Error loading LLM settings: {e}")
+            print(f"Error loading history: {e}")
     
-    def _save_llm_settings(self):
-        """Save LLM settings to secrets.py"""
+    def _filter_history(self):
+        """Filter history table based on search and filter"""
+        # Re-load and filter
+        self._load_history_data()
+    
+    def _show_history_context_menu(self, event):
+        """Show context menu for history table"""
+        menu = tk.Menu(self, tearoff=0)
+        menu.add_command(label="👁️ View Details", command=self._view_application_details)
+        menu.add_command(label="🔗 Open Link", command=self._open_job_link)
+        menu.add_separator()
+        menu.add_command(label="📋 Copy to Clipboard", command=self._copy_to_clipboard)
+        menu.add_command(label="🗑️ Delete Record", command=self._delete_history_record)
+        menu.post(event.x_root, event.y_root)
+    
+    def _view_application_details(self, event=None):
+        """View detailed information about selected application"""
+        selection = self.history_tree.selection()
+        if selection:
+            item = self.history_tree.item(selection[0])
+            values = item['values']
+            details = f"Job: {values[1]}\nCompany: {values[2]}\nLocation: {values[3]}\nStatus: {values[4]}\nTime: {values[0]}"
+            messagebox.showinfo("Application Details", details)
+    
+    def _open_job_link(self):
+        """Open job link in browser"""
+        selection = self.history_tree.selection()
+        if not selection:
+            return
+        item_id = selection[0]
+        url = self._history_urls.get(item_id)
+        if url:
+            webbrowser.open(url)
+        else:
+            messagebox.showinfo("Info", "Job link not available")
+    
+    def _copy_to_clipboard(self):
+        """Copy selected record to clipboard"""
+        selection = self.history_tree.selection()
+        if selection:
+            item = self.history_tree.item(selection[0])
+            values = item['values']
+            text = f"{values[1]} at {values[2]} - {values[4]}"
+            self.clipboard_clear()
+            self.clipboard_append(text)
+            self.show_toast("Copied to clipboard!", "success")
+    
+    def _delete_history_record(self):
+        """Delete selected history record"""
+        selection = self.history_tree.selection()
+        if selection:
+            if messagebox.askyesno("Confirm Delete", "Delete this record?"):
+                item_id = selection[0]
+                self.history_tree.delete(item_id)
+                self._history_urls.pop(item_id, None)
+                self.show_toast("Record deleted", "info")
+    
+    def _export_history_pdf(self):
+        """Export history to PDF (via HTML)"""
         try:
-            secrets_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 
-                                        'config', 'secrets.py')
+            # Get all items from tree
+            items = self.history_tree.get_children()
+            if not items:
+                self.show_toast("No history to export!", "warning")
+                return
             
-            with open(secrets_path, 'r', encoding='utf-8') as f:
-                content = f.read()
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".html",
+                filetypes=[("HTML files", "*.html"), ("All files", "*.*")],
+                title="Export History",
+                initialfile=f"job_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+            )
             
-            # Update provider
-            import re
-            content = re.sub(r'ai_provider\s*=\s*"[^"]*"', f'ai_provider = "{self.ai_provider_var.get()}"', content)
-            
-            # Update Ollama settings
-            content = re.sub(r'ollama_api_url\s*=\s*"[^"]*"', f'ollama_api_url = "{self.ollama_url_var.get()}"', content)
-            content = re.sub(r'ollama_model\s*=\s*"[^"]*"', f'ollama_model = "{self.ollama_model_var.get()}"', content)
-            
-            # Update OpenAI settings
-            if self.openai_key_var.get():
-                content = re.sub(r'llm_api_key\s*=\s*"[^"]*"', f'llm_api_key = "{self.openai_key_var.get()}"', content)
-            content = re.sub(r'llm_model\s*=\s*"[^"]*"', f'llm_model = "{self.openai_model_var.get()}"', content)
-            
-            # Update DeepSeek
-            if self.deepseek_key_var.get():
-                content = re.sub(r'deepseek_api_key\s*=\s*"[^"]*"', f'deepseek_api_key = "{self.deepseek_key_var.get()}"', content)
-            
-            # Update Gemini
-            if self.gemini_key_var.get():
-                content = re.sub(r'gemini_api_key\s*=\s*"[^"]*"', f'gemini_api_key = "{self.gemini_key_var.get()}"', content)
-            
-            # Update Groq (FREE)
-            if self.groq_key_var.get():
-                content = re.sub(r'groq_api_key\s*=\s*"[^"]*"', f'groq_api_key = "{self.groq_key_var.get()}"', content)
-            content = re.sub(r'groq_model\s*=\s*"[^"]*"', f'groq_model = "{self.groq_model_var.get()}"', content)
-            
-            # Update HuggingFace (FREE)
-            if self.huggingface_key_var.get():
-                content = re.sub(r'huggingface_api_key\s*=\s*"[^"]*"', f'huggingface_api_key = "{self.huggingface_key_var.get()}"', content)
-            content = re.sub(r'huggingface_model\s*=\s*"[^"]*"', f'huggingface_model = "{self.huggingface_model_var.get()}"', content)
-            
-            with open(secrets_path, 'w', encoding='utf-8') as f:
-                f.write(content)
-            
-            messagebox.showinfo("Success", "✅ LLM settings saved successfully!\n\nRestart the bot for changes to take effect.")
-            
+            if file_path:
+                # Build HTML content
+                html = """<!DOCTYPE html>
+<html>
+<head>
+    <title>Job Application History</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h1 { color: #333; }
+        table { border-collapse: collapse; width: 100%; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+        th { background-color: #4CAF50; color: white; }
+        tr:nth-child(even) { background-color: #f2f2f2; }
+        .success { color: green; }
+        .failed { color: red; }
+        .pending { color: orange; }
+    </style>
+</head>
+<body>
+    <h1>Job Application History</h1>
+    <p>Exported on: """ + datetime.now().strftime('%Y-%m-%d %H:%M:%S') + """</p>
+    <table>
+        <tr><th>#</th><th>Job Title</th><th>Company</th><th>Date</th><th>Status</th></tr>
+"""
+                for item in items:
+                    values = self.history_tree.item(item)['values']
+                    status_text = str(values[4])
+                    if 'Applied' in status_text:
+                        status_class = 'success'
+                    elif 'Failed' in status_text:
+                        status_class = 'failed'
+                    else:
+                        status_class = 'pending'
+                    html += f"<tr><td>{values[0]}</td><td>{values[1]}</td><td>{values[2]}</td><td>{values[3]}</td><td class='{status_class}'>{values[4]}</td></tr>\n"
+                
+                html += "</table></body></html>"
+                
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    f.write(html)
+                
+                self.show_toast("History exported! Open in browser to print as PDF", "success")
+                # Try to open the file
+                try:
+                    os.startfile(file_path)
+                except Exception:
+                    pass
         except Exception as e:
-            messagebox.showerror("Error", f"Failed to save settings:\n{str(e)}")
+            self.show_toast(f"Export failed: {e}", "error")
     
-    def _reset_llm_settings(self):
-        """Reset LLM settings to defaults"""
-        if messagebox.askyesno("Reset Settings", "Reset all LLM settings to defaults?"):
-            self.ai_provider_var.set("ollama")
-            self.ollama_url_var.set("http://localhost:11434")
-            self.ollama_model_var.set("")
-            self.openai_key_var.set("")
-            self.openai_model_var.set("gpt-4o-mini")
-            self.deepseek_key_var.set("")
-            self.gemini_key_var.set("")
-            self.groq_key_var.set("")
-            self.groq_model_var.set("llama-3.1-70b-versatile")
-            self.huggingface_key_var.set("")
-            self.huggingface_model_var.set("mistralai/Mistral-7B-Instruct-v0.3")
-            self._on_provider_change()
-            self._refresh_ollama_models()
+    def _clear_history(self):
+        """Clear all history"""
+        if messagebox.askyesno("Confirm Clear", "Clear all application history?"):
+            for item in self.history_tree.get_children():
+                self.history_tree.delete(item)
+            self.show_toast("History cleared", "info")
     
-    def _create_resume_tab(self, parent):
-        """Create resume preview panel"""
-        # Current Resume Info
-        info_frame = ttkb.Labelframe(parent, text="📄 Current Resume", bootstyle="success")
-        info_frame.pack(fill=tk.X, padx=5, pady=5)
+    def _create_history_stat(self, parent, col, icon, label, value, color):
+        """Create a stat card for history page"""
+        frame = ttkb.Frame(parent, padding=6)
+        frame.grid(row=0, column=col, padx=3, sticky="nsew")
         
-        info_container = ttkb.Frame(info_frame)
-        info_container.pack(fill=tk.X, padx=10, pady=10)
-        
-        ttkb.Label(info_container, text="File:", font=("Segoe UI", 9, "bold")).grid(row=0, column=0, sticky="w")
-        self.resume_file_label = ttkb.Label(info_container, text="Loading...", font=("Segoe UI", 9))
-        self.resume_file_label.grid(row=0, column=1, sticky="w", padx=(10, 0))
-        
-        ttkb.Label(info_container, text="Type:", font=("Segoe UI", 9, "bold")).grid(row=1, column=0, sticky="w")
-        self.resume_type_label = ttkb.Label(info_container, text="--", font=("Segoe UI", 9))
-        self.resume_type_label.grid(row=1, column=1, sticky="w", padx=(10, 0))
-        
-        ttkb.Label(info_container, text="Last Tailored:", font=("Segoe UI", 9, "bold")).grid(row=2, column=0, sticky="w")
-        self.resume_tailored_time_label = ttkb.Label(info_container, text="--", font=("Segoe UI", 9))
-        self.resume_tailored_time_label.grid(row=2, column=1, sticky="w", padx=(10, 0))
-        
-        # Resume Preview
-        preview_frame = ttkb.Labelframe(parent, text="📝 Resume Content Preview", bootstyle="info")
-        preview_frame.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        self.resume_preview_text = scrolledtext.ScrolledText(
-            preview_frame, wrap=tk.WORD, font=("Consolas", 8),
-            bg='#252540', fg='#ffffff', height=12
-        )
-        self.resume_preview_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        self.resume_preview_text.insert(tk.END, "Resume content will be displayed here...")
-        self.resume_preview_text.config(state=tk.DISABLED)
-        
-        # Action Buttons
-        btn_frame = ttkb.Frame(parent)
-        btn_frame.pack(fill=tk.X, padx=5, pady=5)
-        
-        ttkb.Button(btn_frame, text="📂 Open File", command=self._open_current_resume,
-                   bootstyle="info-outline", width=12).pack(side=tk.LEFT, padx=2)
-        ttkb.Button(btn_frame, text="🔄 Refresh", command=self._refresh_resume_preview,
-                   bootstyle="secondary-outline", width=12).pack(side=tk.LEFT, padx=2)
-        ttkb.Button(btn_frame, text="📝 Tailor Now", command=self.open_resume_tailor_dialog,
-                   bootstyle="success", width=12).pack(side=tk.RIGHT, padx=2)
+        ttkb.Label(frame, text=f"{icon} {label}", font=("Segoe UI", 9),
+                  foreground="#888888").pack(anchor=tk.W)
+        ttkb.Label(frame, text=value, font=("Segoe UI", 18, "bold"),
+                  foreground=color).pack(anchor=tk.W)
     
-    def _create_activity_tab(self, parent):
-        """Create activity feed panel (original functionality)"""
-        # Activity Feed
-        self.activity_feed = ActivityFeed(parent)
-        self.activity_feed.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        # Progress Circle
-        progress_frame = ttkb.Labelframe(parent, text="📈 Overall Progress", bootstyle="info")
-        progress_frame.pack(fill=tk.X, padx=5, pady=(0, 5))
-        
-        circle_container = ttkb.Frame(progress_frame)
-        circle_container.pack(pady=10)
-        
-        self.progress_circle = CircularProgress(circle_container, size=100, thickness=10)
-        self.progress_circle.pack()
-        
-        # Quick Actions
-        actions_frame = ttkb.Labelframe(parent, text="⚡ Quick Actions", bootstyle="warning")
-        actions_frame.pack(fill=tk.X, padx=5)
-        
-        self.quick_actions = QuickActions(actions_frame, self)
-        self.quick_actions.pack(fill=tk.X, padx=5, pady=5)
+    def export_history(self):
+        """Export application history to CSV"""
+        try:
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".csv",
+                filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+                title="Export History"
+            )
+            if file_path:
+                import csv
+                with open(file_path, 'w', newline='', encoding='utf-8') as f:
+                    writer = csv.writer(f)
+                    writer.writerow(["Timestamp", "Job Title", "Company", "Location", "Status", "AI Score"])
+                    for item in self.history_tree.get_children():
+                        values = self.history_tree.item(item)['values']
+                        writer.writerow(values[:6])
+                self.show_toast(f"Exported to {os.path.basename(file_path)}", "success")
+                self.activity_feed.add_activity("History exported to CSV", "success")
+        except Exception as e:
+            messagebox.showerror("Export Error", str(e))
     
-    # ========== Right Panel Helper Methods ==========
+    def show_analytics(self):
+        """Show Analytics Dashboard with charts and insights"""
+        self.clear_main_panel()
+        
+        main_container = ttkb.Frame(self.main_panel)
+        main_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
+        
+        # Header
+        header = ttkb.Frame(main_container)
+        header.pack(fill=tk.X, pady=(0, 10))
+        
+        ttkb.Label(header, text="📊 Analytics & Insights", 
+                  font=("Segoe UI", 16, "bold")).pack(side=tk.LEFT)
+        
+        ttkb.Button(header, text="📥 Export Report", bootstyle="success-outline",
+                   command=self._export_analytics_report).pack(side=tk.RIGHT)
+        
+        # Main content - Two columns
+        content = ttkb.Frame(main_container)
+        content.pack(fill=tk.BOTH, expand=True)
+        content.columnconfigure(0, weight=1)
+        content.columnconfigure(1, weight=1)
+        content.rowconfigure(0, weight=1)
+        content.rowconfigure(1, weight=1)
+        
+        # ===== TOP LEFT: Application Status Breakdown =====
+        status_frame = ttkb.Labelframe(content, text="📈 Application Status", bootstyle="info")
+        status_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10), pady=(0, 10))
+        
+        status_inner = ttkb.Frame(status_frame)
+        status_inner.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Create pie chart using matplotlib
+        try:
+            fig = Figure(figsize=(4, 3), dpi=100, facecolor='#1a1a2e')
+            ax = fig.add_subplot(111)
+            ax.set_facecolor('#1a1a2e')
+            
+            total = self.applied_count + self.failed_count + self.skipped_count
+            if total > 0:
+                sizes = [self.applied_count, self.failed_count, self.skipped_count]
+                labels = ['Applied', 'Failed', 'Skipped']
+                colors = ['#4ade80', '#ff6b6b', '#fbbf24']
+                explode = (0.05, 0, 0)
+                
+                ax.pie(sizes, explode=explode, labels=labels, colors=colors,
+                      autopct='%1.1f%%', shadow=True, startangle=90,
+                      textprops={'color': 'white', 'fontsize': 9})
+            else:
+                ax.text(0.5, 0.5, 'No data yet', ha='center', va='center',
+                       fontsize=12, color='#888888')
+                ax.set_xlim(0, 1)
+                ax.set_ylim(0, 1)
+            
+            ax.axis('equal')
+            
+            canvas = FigureCanvasTkAgg(fig, status_inner)
+            canvas.draw()
+            canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        except Exception as e:
+            ttkb.Label(status_inner, text=f"Chart error: {e}", foreground="#ff6b6b").pack()
+        
+        # ===== TOP RIGHT: Performance Metrics =====
+        perf_frame = ttkb.Labelframe(content, text="🎯 Performance Metrics", bootstyle="success")
+        perf_frame.grid(row=0, column=1, sticky="nsew", padx=(10, 0), pady=(0, 10))
+        
+        perf_inner = ttkb.Frame(perf_frame)
+        perf_inner.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Metrics list
+        metrics_data = [
+            ("📊 Total Jobs Processed", str(self.job_count), "#3498db"),
+            ("✅ Applications Submitted", str(self.applied_count), "#4ade80"),
+            ("❌ Applications Failed", str(self.failed_count), "#ff6b6b"),
+            ("⏭️ Jobs Skipped", str(self.skipped_count), "#fbbf24"),
+            ("📈 Success Rate", f"{(self.applied_count / max(1, self.applied_count + self.failed_count) * 100):.1f}%", "#9b59b6"),
+            ("⏱️ Avg Time/Application", "~45 sec", "#17a2b8"),
+            ("🤖 AI Analyses Run", str(self.job_count), "#e94560"),
+        ]
+        
+        for label, value, color in metrics_data:
+            row = ttkb.Frame(perf_inner)
+            row.pack(fill=tk.X, pady=5)
+            ttkb.Label(row, text=label, font=("Segoe UI", 10)).pack(side=tk.LEFT)
+            ttkb.Label(row, text=value, font=("Segoe UI", 11, "bold"), 
+                      foreground=color).pack(side=tk.RIGHT)
+        
+        # ===== BOTTOM LEFT: AI Processing Stats =====
+        ai_frame = ttkb.Labelframe(content, text="🤖 AI Processing Statistics", bootstyle="primary")
+        ai_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 10), pady=(10, 0))
+        
+        ai_inner = ttkb.Frame(ai_frame)
+        ai_inner.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        ai_stats = [
+            ("JD Analyses Completed", str(metrics.get_metrics().get('jd_analysis_count', 0))),
+            ("Resume Tailoring Runs", str(metrics.get_metrics().get('resume_tailoring_count', 0))),
+            ("Avg JD Analysis Time", f"{metrics.get_metrics().get('jd_analysis_avg', 0):.2f}s"),
+            ("Avg Resume Tailor Time", f"{metrics.get_metrics().get('resume_tailoring_avg', 0):.2f}s"),
+            (LBL_AI_PROVIDER, str(ai_provider).upper()),
+        ]
+        
+        for label, value in ai_stats:
+            row = ttkb.Frame(ai_inner)
+            row.pack(fill=tk.X, pady=5)
+            ttkb.Label(row, text=label, font=("Segoe UI", 10)).pack(side=tk.LEFT)
+            ttkb.Label(row, text=value, font=("Segoe UI", 10, "bold"),
+                      foreground="#00d26a").pack(side=tk.RIGHT)
+        
+        # ===== BOTTOM RIGHT: Session Info =====
+        session_frame = ttkb.Labelframe(content, text="📅 Session Information", bootstyle="warning")
+        session_frame.grid(row=1, column=1, sticky="nsew", padx=(10, 0), pady=(10, 0))
+        
+        session_inner = ttkb.Frame(session_frame)
+        session_inner.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+        
+        # Runtime
+        if self.start_time:
+            elapsed = datetime.now() - self.start_time
+            runtime = str(elapsed).split('.')[0]
+        else:
+            runtime = "Not started"
+        
+        session_info = [
+            ("Session Status", self.current_status),
+            ("Started At", self.start_time.strftime("%H:%M:%S") if self.start_time else "N/A"),
+            ("Runtime", runtime),
+            ("Jobs/Hour", f"{self.job_count / max(1, (datetime.now() - (self.start_time or datetime.now())).total_seconds() / 3600):.1f}" if self.start_time else "N/A"),
+            ("Current Date", datetime.now().strftime("%Y-%m-%d")),
+        ]
+        
+        for label, value in session_info:
+            row = ttkb.Frame(session_inner)
+            row.pack(fill=tk.X, pady=5)
+            ttkb.Label(row, text=label, font=("Segoe UI", 10)).pack(side=tk.LEFT)
+            ttkb.Label(row, text=value, font=("Segoe UI", 10, "bold"),
+                      foreground="#fbbf24").pack(side=tk.RIGHT)
+    
+    def _export_analytics_report(self):
+        """Export analytics report to JSON file."""
+        try:
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".json",
+                filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+                title="Export Analytics Report",
+                initialfile=f"analytics_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+            )
+            
+            if file_path:
+                import json
+                
+                runtime = "N/A"
+                if self.start_time:
+                    elapsed = datetime.now() - self.start_time
+                    hours, remainder = divmod(int(elapsed.total_seconds()), 3600)
+                    minutes, seconds = divmod(remainder, 60)
+                    runtime = f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+                
+                report = {
+                    "report_generated": datetime.now().isoformat(),
+                    "session": {
+                        "status": self.current_status,
+                        "start_time": self.start_time.isoformat() if self.start_time else None,
+                        "runtime": runtime,
+                    },
+                    "metrics": {
+                        "total_jobs_processed": self.job_count,
+                        "applications_submitted": self.applied_count,
+                        "applications_failed": self.failed_count,
+                        "jobs_skipped": self.skipped_count,
+                        "success_rate": f"{(self.applied_count / max(1, self.applied_count + self.failed_count) * 100):.1f}%",
+                    },
+                    "performance": {
+                        "jobs_per_hour": f"{self.job_count / max(1, (datetime.now() - (self.start_time or datetime.now())).total_seconds() / 3600):.1f}" if self.start_time else "N/A",
+                    }
+                }
+                
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(report, f, indent=2)
+                
+                self.show_toast("Analytics report exported!", "success")
+                self.activity_feed.add_activity("Analytics report exported", "success")
+        except Exception as e:
+            self.show_toast(f"Export failed: {e}", "error")
+
+    def show_settings(self):
+        """Show Settings with modern UI"""
+        self.clear_main_panel()
+        
+        main_container = ttkb.Frame(self.main_panel)
+        main_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
+        
+        # Header
+        ttkb.Label(main_container, text="⚙️ Settings & Configuration", 
+                  font=("Segoe UI", 16, "bold")).pack(anchor=tk.W, pady=(0, 12))
+        
+        # Settings sections in scrollable frame
+        settings_frame = ttkb.Frame(main_container)
+        settings_frame.pack(fill=tk.BOTH, expand=True)
+        
+        # AI Configuration
+        ai_frame = ttkb.Labelframe(settings_frame, text="🤖 AI Configuration", bootstyle="info")
+        ai_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        ai_inner = ttkb.Frame(ai_frame)
+        ai_inner.pack(fill=tk.X, padx=10, pady=10)
+        
+        # Provider row
+        prov_row = ttkb.Frame(ai_inner)
+        prov_row.pack(fill=tk.X, pady=5)
+        ttkb.Label(prov_row, text="AI Provider:", width=15, anchor=tk.W).pack(side=tk.LEFT)
+        ttkb.Label(prov_row, text=ai_provider.upper(), 
+                  font=("Segoe UI", 10, "bold"), foreground="#00d26a").pack(side=tk.LEFT)
+        ttkb.Button(prov_row, text="⚙️ Configure", bootstyle="info-outline",
+                   command=self._open_api_config).pack(side=tk.RIGHT)
+        
+        # Application Settings
+        app_frame = ttkb.Labelframe(settings_frame, text="📋 Application Settings", bootstyle="warning")
+        app_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        app_inner = ttkb.Frame(app_frame)
+        app_inner.pack(fill=tk.X, padx=10, pady=10)
+        
+        # Settings toggles - WIRED to actual config.settings
+        # Load current values from settings
+        try:
+            from config import settings as cfg
+            auto_apply_val = getattr(cfg, 'run_non_stop', True)
+            tailor_val = getattr(cfg, 'resume_tailoring_enabled', True)
+            skip_ext_val = getattr(cfg, 'close_tabs', False)
+        except Exception:
+            auto_apply_val, tailor_val, skip_ext_val = True, True, False
+        
+        self.settings_auto_apply_var = tk.BooleanVar(value=auto_apply_val)
+        auto_cb = ttkb.Checkbutton(app_inner, text="Auto-apply to Easy Apply jobs (run_non_stop)",
+                        variable=self.settings_auto_apply_var, bootstyle="success-round-toggle",
+                        command=self._apply_settings_tab_change)
+        auto_cb.pack(anchor=tk.W, pady=3)
+        
+        self.settings_tailor_resume_var = tk.BooleanVar(value=tailor_val)
+        tailor_cb = ttkb.Checkbutton(app_inner, text="Auto-tailor resume for each job",
+                        variable=self.settings_tailor_resume_var, bootstyle="success-round-toggle",
+                        command=self._apply_settings_tab_change)
+        tailor_cb.pack(anchor=tk.W, pady=3)
+        
+        self.settings_skip_external_var = tk.BooleanVar(value=skip_ext_val)
+        skip_cb = ttkb.Checkbutton(app_inner, text="Close external application tabs",
+                        variable=self.settings_skip_external_var, bootstyle="warning-round-toggle",
+                        command=self._apply_settings_tab_change)
+        skip_cb.pack(anchor=tk.W, pady=3)
+        
+        # Restart warning
+        warn_frame = ttkb.Frame(app_inner)
+        warn_frame.pack(fill=tk.X, pady=(10, 0))
+        ttkb.Label(warn_frame, text="⚠️ Changes apply immediately to runtime but require bot restart to take full effect",
+                  font=("Segoe UI", 9), foreground="#f59e0b").pack(anchor=tk.W)
+        
+        # File paths
+        paths_frame = ttkb.Labelframe(settings_frame, text="📁 File Paths", bootstyle="secondary")
+        paths_frame.pack(fill=tk.X)
+        
+        paths_inner = ttkb.Frame(paths_frame)
+        paths_inner.pack(fill=tk.X, padx=10, pady=10)
+        
+        ttkb.Button(paths_inner, text="📂 Open Logs Folder",
+                   command=lambda: webbrowser.open(f'file:///{os.path.abspath("logs")}'),
+                   bootstyle="secondary-outline").pack(side=tk.LEFT, padx=(0, 10))
+        ttkb.Button(paths_inner, text="📂 Open Resumes Folder",
+                   command=lambda: webbrowser.open(f'file:///{os.path.abspath("all resumes")}'),
+                   bootstyle="secondary-outline").pack(side=tk.LEFT)
+    
+    def _apply_settings_tab_change(self):
+        """Apply Settings tab toggle changes to config.settings immediately."""
+        try:
+            from config import settings as cfg
+            
+            # Apply changes to runtime config
+            if hasattr(self, 'settings_auto_apply_var'):
+                cfg.run_non_stop = self.settings_auto_apply_var.get()
+            if hasattr(self, 'settings_tailor_resume_var'):
+                cfg.resume_tailoring_enabled = self.settings_tailor_resume_var.get()
+            if hasattr(self, 'settings_skip_external_var'):
+                cfg.close_tabs = self.settings_skip_external_var.get()
+            
+            self.show_toast("✅ Setting applied to runtime", "success")
+        except Exception as e:
+            self.show_toast(f"⚠️ Failed: {str(e)[:30]}", "warning")
+    
+    def _open_api_config(self):
+        """Open API configuration dialog"""
+        from modules.dashboard.api_config_dialog import open_api_config_dialog
+        open_api_config_dialog(self)
+
+    def show_help(self):
+        """Show Help with modern UI"""
+        self.clear_main_panel()
+        
+        main_container = ttkb.Frame(self.main_panel)
+        main_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
+        
+        # Header
+        ttkb.Label(main_container, text="❓ Help & Documentation", 
+                  font=("Segoe UI", 16, "bold")).pack(anchor=tk.W, pady=(0, 12))
+        
+        # Quick links
+        links_frame = ttkb.Labelframe(main_container, text="🔗 Quick Links", bootstyle="info")
+        links_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        links_inner = ttkb.Frame(links_frame)
+        links_inner.pack(fill=tk.X, padx=10, pady=10)
+        
+        links = [
+            ("📖 README Documentation", "README.md"),
+            ("✨ Enhanced Resume Guide", "ENHANCED_RESUME_QUICK_START.md"),
+            ("🔒 Security Setup", "SECURITY_SETUP.md"),
+            ("📋 Changelog", "CHANGELOG_ENHANCED_RESUME.md"),
+        ]
+        
+        for text, file in links:
+            btn = ttkb.Button(links_inner, text=text, bootstyle="info-outline", width=30,
+                             command=lambda f=file: webbrowser.open(f))
+            btn.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Keyboard shortcuts
+        shortcuts_frame = ttkb.Labelframe(main_container, text="⌨️ Keyboard Shortcuts", bootstyle="warning")
+        shortcuts_frame.pack(fill=tk.X, pady=(0, 15))
+        
+        shortcuts_inner = ttkb.Frame(shortcuts_frame)
+        shortcuts_inner.pack(fill=tk.X, padx=10, pady=10)
+        
+        shortcuts = [
+            ("Alt + 1", "Go to Dashboard"),
+            ("Alt + 2", "Go to Resume Tailor"),
+            ("Alt + 3", "Go to History"),
+            ("Alt + 4", "Go to Settings"),
+            ("Alt + 5", "Go to Help"),
+        ]
+        
+        for key, desc in shortcuts:
+            row = ttkb.Frame(shortcuts_inner)
+            row.pack(fill=tk.X, pady=2)
+            ttkb.Label(row, text=key, font=("Consolas", 10, "bold"), width=10).pack(side=tk.LEFT)
+            ttkb.Label(row, text=desc, font=("Segoe UI", 10), foreground="#aaaaaa").pack(side=tk.LEFT)
+        
+        # About section
+        about_frame = ttkb.Labelframe(main_container, text="ℹ️ About", bootstyle="secondary")
+        about_frame.pack(fill=tk.X)
+        
+        about_inner = ttkb.Frame(about_frame)
+        about_inner.pack(fill=tk.X, padx=10, pady=10)
+        
+        ttkb.Label(about_inner, text="🤖 AI Job Hunter Pro", 
+                  font=("Segoe UI", 14, "bold")).pack(anchor=tk.W)
+        ttkb.Label(about_inner, text="Automated LinkedIn Job Application System", 
+                  font=("Segoe UI", 10), foreground="#888888").pack(anchor=tk.W, pady=(5, 10))
+        ttkb.Label(about_inner, text="Version 2.0 | Built with ❤️ by Suraj Panwar", 
+                  font=("Segoe UI", 9), foreground="#666666").pack(anchor=tk.W)
+    
+    # NOTE: Dead code block removed (create_top_bar, create_stat_cards, create_tabs_section,
+    # create_statistics_tab, create_jobs_tab, create_settings_tab, create_right_panel,
+    # _create_live_logs_tab, _create_job_details_tab, _create_analytics_tab,
+    # _create_settings_tab [old], _get_ollama_models, _refresh_ollama_models,
+    # _update_ollama_ui, _update_model_info, _on_ollama_model_select, _on_provider_change,
+    # _test_ollama_connection, _test_cloud_api, _pull_ollama_model, _load_llm_settings,
+    # _save_llm_settings, _reset_llm_settings, _create_resume_tab, _create_activity_tab)
+    # These 14+ methods (~1236 lines) were dead code from old layout, replaced by
+    # _create_modern_layout/show_dashboard/show_settings/show_analytics/etc.
     
     def _clear_live_logs(self):
         """Clear the live logs panel"""
@@ -1798,10 +1971,8 @@ class BotDashboard(ttkb.Window):
         status = "enabled" if self.resume_tailor_var.get() else "disabled"
         self.add_live_log(f"Auto resume tailoring {status}", "info")
     
-    def _save_quick_settings(self):
-        """Save quick settings"""
-        self.add_live_log("Settings saved successfully", "success")
-        messagebox.showinfo("Settings", "Quick settings have been saved!")
+    # NOTE: _save_quick_settings is defined later in the class (around line 3851)
+    # It actually writes to config.settings module for immediate effect
     
     def _open_current_resume(self):
         """Open the current resume file"""
@@ -1855,7 +2026,7 @@ class BotDashboard(ttkb.Window):
                 self.resume_preview_text.delete(1.0, tk.END)
                 self.resume_preview_text.insert(tk.END, f"Preview not available for {ext} files.\nClick 'Open File' to view.")
                 self.resume_preview_text.config(state=tk.DISABLED)
-        except Exception as e:
+        except Exception:
             self.resume_file_label.config(text="Error loading")
     
     def add_timeline_event(self, event: str):
@@ -1895,7 +2066,7 @@ class BotDashboard(ttkb.Window):
 
     
     def create_status_bar(self, parent):
-        """Create the bottom status bar"""
+        """Create the bottom status bar with prominent Live Monitor button"""
         status_bar = ttkb.Frame(parent)
         status_bar.pack(fill=tk.X, side=tk.BOTTOM)
         
@@ -1908,6 +2079,20 @@ class BotDashboard(ttkb.Window):
         self.connection_indicator.pack(side=tk.LEFT)
         ttkb.Label(left_frame, text="System Ready", 
                   font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=(5, 0))
+        
+        # ===== PROMINENT LIVE MONITOR BUTTON IN STATUS BAR =====
+        monitor_btn_frame = ttkb.Frame(status_bar)
+        monitor_btn_frame.pack(side=tk.LEFT, padx=20)
+        
+        self.status_bar_monitor_btn = AnimatedButton(
+            monitor_btn_frame, 
+            text="📺 SIDE PANEL", 
+            command=self.toggle_side_panel_mode,
+            bootstyle="success",
+            width=22,
+            padding=(10, 5)
+        )
+        self.status_bar_monitor_btn.pack(side=tk.LEFT)
         
         # Center - Quick stats
         center_frame = ttkb.Frame(status_bar)
@@ -1928,6 +2113,27 @@ class BotDashboard(ttkb.Window):
         self.time_label.pack()
         self._update_time()
     
+    def _toggle_sidebar_expand(self):
+        """Toggle sidebar between collapsed (icons) and expanded (icons + labels) mode"""
+        if not hasattr(self, 'sidebar') or not hasattr(self, 'sidebar_toggle'):
+            return  # Sidebar not created in current layout
+        if not self.sidebar_expanded:
+            # Expand sidebar
+            self.sidebar_expanded = True
+            self.sidebar_toggle.config(text="✕")
+            self.sidebar.configure(width=180)
+            # Show labels next to icons
+            for lbl in self.sidebar_labels:
+                lbl.pack(side=tk.LEFT, padx=(5, 0))
+        else:
+            # Collapse sidebar
+            self.sidebar_expanded = False
+            self.sidebar_toggle.config(text="☰")
+            self.sidebar.configure(width=70)
+            # Hide labels
+            for lbl in self.sidebar_labels:
+                lbl.pack_forget()
+    
     def _update_time(self):
         """Update the time display"""
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -1938,7 +2144,8 @@ class BotDashboard(ttkb.Window):
             elapsed = datetime.now() - self.start_time
             hours, remainder = divmod(int(elapsed.total_seconds()), 3600)
             minutes, seconds = divmod(remainder, 60)
-            self.runtime_label.config(text=f"Runtime: {hours:02d}:{minutes:02d}:{seconds:02d}")
+            if hasattr(self, 'runtime_label'):
+                self.runtime_label.config(text=f"Runtime: {hours:02d}:{minutes:02d}:{seconds:02d}")
         
         self.after(1000, self._update_time)
     
@@ -1981,6 +2188,8 @@ class BotDashboard(ttkb.Window):
     
     def toggle_right_panel(self):
         """Toggle the right panel visibility"""
+        if not hasattr(self, 'paned_window') or not hasattr(self, 'right_panel_frame'):
+            return  # Right panel not created in current layout
         if self.panel_visible:
             # Hide the right panel
             self.paned_window.forget(self.right_panel_frame)
@@ -1999,7 +2208,9 @@ class BotDashboard(ttkb.Window):
         if not self.side_panel_mode:
             # Enter side panel mode - create separate window
             self.side_panel_mode = True
-            self.side_panel_btn.config(text="❌ Close Side", bootstyle="danger")
+            self.side_panel_btn.config(text="❌ Close Panel", bootstyle="danger")
+            if hasattr(self, 'side_panel_help'):
+                self.side_panel_help.config(text="(Panel Open)")
             
             # Create side panel window
             self._create_side_panel_window()
@@ -2070,6 +2281,21 @@ class BotDashboard(ttkb.Window):
         self._create_mini_stat(stats_frame, 2, "❌", "Failed", "sp_failed_val")
         # Skipped stat
         self._create_mini_stat(stats_frame, 3, "⏭️", "Skip", "sp_skipped_val")
+        
+        # ===== NEXT STEP SECTION (NEW!) =====
+        next_frame = ttkb.Frame(main_frame)
+        next_frame.pack(fill=tk.X, pady=(0, 8))
+        
+        next_header = ttkb.Frame(next_frame)
+        next_header.pack(fill=tk.X)
+        ttkb.Label(next_header, text="➡️ NEXT STEP:", 
+                  font=("Segoe UI", 9, "bold"), foreground="#00d26a").pack(side=tk.LEFT)
+        
+        self.sp_next_step = ttkb.Label(next_frame, text="⏳ Waiting for bot to start...",
+                                       font=("Segoe UI", 10, "bold"),
+                                       foreground="#fbbf24",
+                                       wraplength=300)
+        self.sp_next_step.pack(anchor=tk.W, pady=(3, 0))
         
         # ===== CURRENT JOB SECTION =====
         job_frame = ttkb.Labelframe(main_frame, text="💼 Current Job", bootstyle="info")
@@ -2203,11 +2429,15 @@ class BotDashboard(ttkb.Window):
             return
         
         try:
-            # Update stats
-            self.sp_jobs_val.config(text=str(self.job_count))
-            self.sp_applied_val.config(text=str(self.applied_count))
-            self.sp_failed_val.config(text=str(self.failed_count))
-            self.sp_skipped_val.config(text=str(self.skipped_count))
+            # Update stats (guard each attribute)
+            if hasattr(self, 'sp_jobs_val'):
+                self.sp_jobs_val.config(text=str(self.job_count))
+            if hasattr(self, 'sp_applied_val'):
+                self.sp_applied_val.config(text=str(self.applied_count))
+            if hasattr(self, 'sp_failed_val'):
+                self.sp_failed_val.config(text=str(self.failed_count))
+            if hasattr(self, 'sp_skipped_val'):
+                self.sp_skipped_val.config(text=str(self.skipped_count))
             
             # Update status
             if self.current_status == "Running":
@@ -2247,7 +2477,7 @@ class BotDashboard(ttkb.Window):
             try:
                 from modules.dashboard import metrics as _m
                 
-                # JD Analysis Progress
+                # JD Analysis Progress (REAL-TIME!)
                 jd_pct = int(_m.get_metric('jd_progress', 0))
                 self.sp_jd_progress.config(value=jd_pct)
                 if jd_pct == 0:
@@ -2257,7 +2487,7 @@ class BotDashboard(ttkb.Window):
                 else:
                     self.sp_jd_status.config(text="✓ Done", foreground="#4ade80")
                 
-                # Resume Tailoring Progress
+                # Resume Tailoring Progress (REAL-TIME!)
                 resume_pct = int(_m.get_metric('resume_progress', 0))
                 self.sp_resume_progress.config(value=resume_pct)
                 if resume_pct == 0:
@@ -2269,8 +2499,13 @@ class BotDashboard(ttkb.Window):
             except Exception:
                 pass
             
-            # Schedule next update
-            self.side_panel_window.after(500, self._update_side_panel)
+            # Update "Next Step" from log messages
+            if hasattr(self, '_last_next_step'):
+                if hasattr(self, 'sp_next_step'):
+                    self.sp_next_step.config(text=self._last_next_step)
+            
+            # Schedule next update (faster for real-time progress)
+            self.side_panel_window.after(300, self._update_side_panel)
             
         except tk.TclError:
             # Window was closed
@@ -2282,6 +2517,14 @@ class BotDashboard(ttkb.Window):
             return
         
         try:
+            # Check if this is a "NEXT" step message and update the next step display
+            if "[NEXT]" in msg or "➡️ NEXT:" in msg:
+                # Extract the next step text
+                next_text = msg.replace("[NEXT]", "").replace("➡️ NEXT:", "").strip()
+                self._last_next_step = f"➡️ {next_text}"
+                if hasattr(self, 'sp_next_step'):
+                    self.sp_next_step.config(text=self._last_next_step, foreground="#00d26a")
+            
             timestamp = datetime.now().strftime("%H:%M:%S")
             self.sp_log_text.insert(tk.END, f"[{timestamp}] ", "timestamp")
             self.sp_log_text.insert(tk.END, f"{msg}\n", level)
@@ -2297,7 +2540,9 @@ class BotDashboard(ttkb.Window):
     def _close_side_panel(self):
         """Close the side panel window"""
         self.side_panel_mode = False
-        self.side_panel_btn.config(text="📌 Side Mode", bootstyle="primary")
+        self.side_panel_btn.config(text="📌 Side Panel", bootstyle="info")
+        if hasattr(self, 'side_panel_help'):
+            self.side_panel_help.config(text="(Live Monitor)")
         
         if hasattr(self, 'side_panel_window'):
             try:
@@ -2333,6 +2578,9 @@ class BotDashboard(ttkb.Window):
             self.current_status = "Running"
             self.start_time = datetime.now()
             
+            # Start periodic health monitoring
+            self._start_bot_health_monitor()
+            
             self._log_with_timestamp("✅ Bot started successfully!", "success")
             self.activity_feed.add_activity("Bot started successfully!", "success")
             
@@ -2345,6 +2593,9 @@ class BotDashboard(ttkb.Window):
         try:
             self._log_with_timestamp("🛑 Stopping bot - please wait...", "warning")
             self.activity_feed.add_activity("Stopping bot...", "warning")
+            
+            # Stop health monitor first
+            self._stop_bot_health_monitor()
             
             # Disable buttons during stop
             self.stop_btn.config(state=tk.DISABLED)
@@ -2365,12 +2616,7 @@ class BotDashboard(ttkb.Window):
             self._log_with_timestamp("🌐 Chrome and chromedriver terminated", "chrome")
             self.activity_feed.add_activity("Chrome browser closed", "chrome")
             
-            self.start_btn.config(state=tk.NORMAL)
-            self.stop_btn.config(state=tk.DISABLED)
-            self.pause_btn.config(state=tk.DISABLED)
-            self.status_label.config(text="STOPPED")
-            self.status_indicator.config(foreground=COLORS['danger'])
-            self.current_status = "Stopped"
+            self._reset_ui_to_stopped()
             
             self._log_with_timestamp("✅ Bot stopped completely - all processes killed!", "success")
             self.activity_feed.add_activity("Bot stopped completely", "success")
@@ -2379,13 +2625,108 @@ class BotDashboard(ttkb.Window):
             self._log_with_timestamp(f"❌ Error stopping bot: {str(e)}", "error")
             self.activity_feed.add_activity(f"Stop error: {str(e)}", "error")
             # Re-enable start button even on error
-            self.start_btn.config(state=tk.NORMAL)
-            self.stop_btn.config(state=tk.DISABLED)
+            self._reset_ui_to_stopped()
             messagebox.showerror("Stop Failed", str(e))
     
-    def toggle_pause(self):
-        messagebox.showinfo("Pause", "Pause functionality coming soon!")
+    def _start_bot_health_monitor(self):
+        """Start periodic monitoring of bot thread health."""
+        self._health_monitor_active = True
+        self._check_bot_health()
     
+    def _stop_bot_health_monitor(self):
+        """Stop the health monitor."""
+        self._health_monitor_active = False
+    
+    def _check_bot_health(self):
+        """Periodically check if bot thread is still alive and sync UI state."""
+        if not getattr(self, '_health_monitor_active', False):
+            return
+        
+        try:
+            is_running = self.controller.is_running()
+            
+            # Bot thread died unexpectedly while UI still shows Running/Paused
+            if not is_running and self.current_status in ("Running", "Paused"):
+                self._log_with_timestamp("⚠️ Bot thread has stopped unexpectedly", "warning")
+                self.activity_feed.add_activity("Bot thread stopped", "warning")
+                self._reset_ui_to_stopped()
+                self._health_monitor_active = False
+                return
+        except Exception:
+            pass
+        
+        # Schedule next check in 2 seconds
+        if self._health_monitor_active:
+            self.after(2000, self._check_bot_health)
+    
+    def _reset_ui_to_stopped(self):
+        """Reset all UI elements to stopped state."""
+        self.start_btn.config(state=tk.NORMAL)
+        self.stop_btn.config(state=tk.DISABLED)
+        self.pause_btn.config(state=tk.DISABLED)
+        self.pause_btn.config(text="⏸️ Pause")
+        self.status_label.config(text="STOPPED")
+        self.status_indicator.config(foreground=COLORS['danger'])
+        self.current_status = "Stopped"
+    
+    def toggle_pause(self):
+        """Toggle pause state of the bot."""
+        if self.current_status != "Running" and self.current_status != "Paused":
+            messagebox.showinfo("Info", "Bot is not running.")
+            return
+        
+        # Verify bot thread is actually alive before toggling
+        if not self.controller.is_running():
+            self._log_with_timestamp("⚠️ Bot thread is no longer running", "warning")
+            self._reset_ui_to_stopped()
+            return
+        
+        try:
+            is_paused = self.controller.pause()
+            
+            if is_paused:
+                self.status_label.config(text="PAUSED")
+                self.status_indicator.config(foreground=COLORS['warning'])
+                self.current_status = "Paused"
+                self.pause_btn.config(text="▶️ Resume")
+                self._log_with_timestamp("⏸️ Bot paused", "warning")
+                self.activity_feed.add_activity("Bot paused", "warning")
+            else:
+                self.status_label.config(text="RUNNING")
+                self.status_indicator.config(foreground=COLORS['success'])
+                self.current_status = "Running"
+                self.pause_btn.config(text="⏸️ Pause")
+                self._log_with_timestamp("▶️ Bot resumed", "success")
+                self.activity_feed.add_activity("Bot resumed", "success")
+                
+        except Exception as e:
+            self._log_with_timestamp(f"❌ Pause error: {str(e)}", "error")
+            messagebox.showwarning("Pause Error", f"Could not toggle pause: {e}")
+    
+    def skip_current_job(self):
+        """Skip the current job being processed"""
+        if self.current_status != "Running":
+            messagebox.showinfo("Info", "Bot is not currently processing a job.")
+            return
+        
+        try:
+            self._log_with_timestamp("⏭️ Skipping current job...", "warning")
+            self.activity_feed.add_activity("Skipping current job", "warning")
+            
+            # Increment skipped count
+            self.skipped_count += 1
+            self._update_dashboard_stats()
+            
+            # Signal the controller to skip (if implemented)
+            if hasattr(self.controller, 'skip_current_job'):
+                self.controller.skip_current_job()
+            
+            self._log_with_timestamp("✅ Job skipped - moving to next", "success")
+            self.activity_feed.add_activity("Job skipped successfully", "success")
+        except Exception as e:
+            self._log_with_timestamp(f"❌ Error skipping job: {str(e)}", "error")
+            self.activity_feed.add_activity(f"Skip failed: {str(e)}", "error")
+
     def _log_with_timestamp(self, message, msg_type="info"):
         """Add a log message with timestamp and color coding"""
         timestamp = datetime.now().strftime("%H:%M:%S")
@@ -2425,19 +2766,65 @@ class BotDashboard(ttkb.Window):
             messagebox.showerror("Error", str(e))
     
     def export_stats(self):
-        messagebox.showinfo("Export", "Statistics export coming soon!")
+        """Export statistics to a JSON file."""
+        try:
+            file_path = filedialog.asksaveasfilename(
+                defaultextension=".json",
+                filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+                title="Export Statistics"
+            )
+            if file_path:
+                import json
+                stats = {
+                    "export_date": datetime.now().isoformat(),
+                    "session_stats": {
+                        "applied_count": self.applied_count,
+                        "failed_count": self.failed_count,
+                        "success_rate": f"{(self.applied_count / max(self.applied_count + self.skipped_count, 1)) * 100:.1f}%",
+                        "skipped_count": self.skipped_count,
+                    },
+                    "current_status": self.current_status,
+                    "start_time": self.start_time.isoformat() if self.start_time else None,
+                }
+                with open(file_path, 'w', encoding='utf-8') as f:
+                    json.dump(stats, f, indent=2)
+                messagebox.showinfo("Success", f"Statistics exported to {file_path}")
+                self.activity_feed.add_activity("Statistics exported", "success")
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
     
     def export_jobs_csv(self):
-        messagebox.showinfo("Export", "CSV export coming soon!")
+        """Export job application history to CSV."""
+        try:
+            # Check if history files exist
+            history_file = os.path.join("all excels", "all_applied_applications_history.csv")
+            if os.path.exists(history_file):
+                # Open file dialog to choose where to save
+                file_path = filedialog.asksaveasfilename(
+                    defaultextension=".csv",
+                    filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
+                    title="Export Job History",
+                    initialfile=f"job_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+                )
+                if file_path:
+                    import shutil
+                    shutil.copy2(history_file, file_path)
+                    messagebox.showinfo("Success", f"Job history exported to {file_path}")
+                    self.activity_feed.add_activity("Job history exported", "success")
+            else:
+                messagebox.showinfo("Info", "No job history file found. Run the bot first to generate application history.")
+        except Exception as e:
+            messagebox.showerror("Error", str(e))
     
     def clear_logs(self):
         self.log_text.delete("1.0", tk.END)
-        self.ai_output.delete("1.0", tk.END)
+        if hasattr(self, 'ai_output'):
+            self.ai_output.delete("1.0", tk.END)
         self.activity_feed.add_activity("Logs cleared", "info")
     
     def manual_refresh(self):
         self._refresh_metrics()
-        self.activity_feed.add_activity("Dashboard refreshed", "info")
+        self.activity_feed.add_activity(LBL_DASHBOARD_REFRESHED, "info")
     
     def refresh_jobs_table(self):
         self.activity_feed.add_activity("Jobs table refreshed", "info")
@@ -2477,6 +2864,14 @@ GitHub: github.com/surajpanwar26
     # ========== Background Updates ==========
     
     def _on_new_log(self, msg: str):
+        """Handle new log message - schedule on main thread for Tkinter safety."""
+        try:
+            self.root.after_idle(self._process_log_message, msg)
+        except Exception:
+            # Fallback if root is not available
+            self._process_log_message(msg)
+    
+    def _process_log_message(self, msg: str):
         if isinstance(msg, str):
             self._log_buffer.append(msg)
         
@@ -2507,14 +2902,14 @@ GitHub: github.com/surajpanwar26
             self.applied_count += 1
             self.activity_feed.add_activity("Applied to job!", "success")
             try:
-                self.add_timeline_event(f"✅ Applied to job")
+                self.add_timeline_event("✅ Applied to job")
             except Exception:
                 pass
         elif "failed" in msg_lower or "error" in msg_lower:
             self.failed_count += 1
             self.activity_feed.add_activity("Job application failed", "error")
             try:
-                self.add_timeline_event(f"❌ Application failed")
+                self.add_timeline_event("❌ Application failed")
             except Exception:
                 pass
         elif "skipped" in msg_lower or "skip" in msg_lower:
@@ -2555,21 +2950,29 @@ GitHub: github.com/surajpanwar26
         self.update_stats_display()
     
     def update_stats_display(self):
-        # Update stat cards
-        self.jobs_card.set_value(self.job_count)
-        self.applied_card.set_value(self.applied_count)
-        self.failed_card.set_value(self.failed_count)
-        self.skipped_card.set_value(self.skipped_count)
+        # Update stat cards (guarded - may not exist in all layouts)
+        if hasattr(self, 'jobs_card'):
+            self.jobs_card.set_value(self.job_count)
+        if hasattr(self, 'applied_card'):
+            self.applied_card.set_value(self.applied_count)
+        if hasattr(self, 'failed_card'):
+            self.failed_card.set_value(self.failed_count)
+        if hasattr(self, 'skipped_card'):
+            self.skipped_card.set_value(self.skipped_count)
         
         # Calculate success rate
         total = self.applied_count + self.failed_count
         if total > 0:
             rate = round((self.applied_count / total) * 100, 1)
-            self.rate_card.set_value(f"{rate}%")
-            self.progress_circle.set_progress(rate)
+            if hasattr(self, 'rate_card'):
+                self.rate_card.set_value(f"{rate}%")
+            if hasattr(self, 'progress_circle') and self.progress_circle:
+                self.progress_circle.set_progress(rate)
         else:
-            self.rate_card.set_value("0%")
-            self.progress_circle.set_progress(0)
+            if hasattr(self, 'rate_card'):
+                self.rate_card.set_value("0%")
+            if hasattr(self, 'progress_circle') and self.progress_circle:
+                self.progress_circle.set_progress(0)
         
         # Update status bar
         self.quick_stats_label.config(
@@ -2577,6 +2980,1087 @@ GitHub: github.com/surajpanwar26
                  f"❌ Failed: {self.failed_count} | ⏭️ Skipped: {self.skipped_count}"
         )
     
+    # ============================================
+    # QUICK SETTINGS PANEL HELPER METHODS
+    # ============================================
+    def _init_quick_settings_vars(self):
+        """Initialize ALL Settings variables with current config values."""
+        try:
+            from config import settings
+            
+            # ===== Bot Behavior Settings =====
+            self.qs_run_non_stop = tk.BooleanVar(value=getattr(settings, 'run_non_stop', True))
+            self.qs_alternate_sortby = tk.BooleanVar(value=getattr(settings, 'alternate_sortby', True))
+            self.qs_cycle_date_posted = tk.BooleanVar(value=getattr(settings, 'cycle_date_posted', True))
+            self.qs_stop_date_24hr = tk.BooleanVar(value=getattr(settings, 'stop_date_cycle_at_24hr', True))
+            self.qs_close_tabs = tk.BooleanVar(value=getattr(settings, 'close_tabs', False))
+            self.qs_follow_companies = tk.BooleanVar(value=getattr(settings, 'follow_companies', False))
+            self.qs_max_jobs = tk.IntVar(value=getattr(settings, 'max_jobs_to_process', 0))
+            self.qs_click_gap = tk.IntVar(value=getattr(settings, 'click_gap', 20))
+            
+            # ===== Form Filling Settings =====
+            self.qs_fast_mode = tk.BooleanVar(value=getattr(settings, 'form_fill_fast_mode', True))
+            self.qs_smart_form_filler = tk.BooleanVar(value=getattr(settings, 'use_smart_form_filler', True))
+            self.qs_delay_multiplier = tk.DoubleVar(value=getattr(settings, 'form_fill_delay_multiplier', 0.5))
+            
+            # ===== Resume Tailoring Settings =====
+            self.qs_resume_tailor = tk.BooleanVar(value=getattr(settings, 'resume_tailoring_enabled', True))
+            self.qs_tailor_confirm_filters = tk.BooleanVar(value=getattr(settings, 'resume_tailoring_confirm_after_filters', True))
+            self.qs_tailor_prompt_jd = tk.BooleanVar(value=getattr(settings, 'resume_tailoring_prompt_before_jd', True))
+            # Resume upload format: "auto", "pdf", "docx"
+            format_val = getattr(settings, 'resume_upload_format', 'auto')
+            format_display = {"auto": RESUME_AUTO, "pdf": RESUME_PDF, "docx": RESUME_DOCX}.get(format_val, RESUME_AUTO)
+            self.qs_resume_upload_format = tk.StringVar(value=format_display)
+            
+            # ===== Browser & UI Settings =====
+            self.qs_show_browser = tk.BooleanVar(value=not getattr(settings, 'run_in_background', False))
+            self.qs_disable_extensions = tk.BooleanVar(value=getattr(settings, 'disable_extensions', False))
+            self.qs_safe_mode = tk.BooleanVar(value=getattr(settings, 'safe_mode', True))
+            self.qs_smooth_scroll = tk.BooleanVar(value=getattr(settings, 'smooth_scroll', True))
+            self.qs_keep_awake = tk.BooleanVar(value=getattr(settings, 'keep_screen_awake', True))
+            self.qs_stealth_mode = tk.BooleanVar(value=getattr(settings, 'stealth_mode', False))
+            
+            # ===== Control & Alerts Settings =====
+            self.qs_pause_submit = tk.BooleanVar(value=getattr(settings, 'pause_before_submit', False))
+            self.qs_pause_failed_q = tk.BooleanVar(value=getattr(settings, 'pause_at_failed_question', False))
+            self.qs_show_ai_errors = tk.BooleanVar(value=getattr(settings, 'showAiErrorAlerts', False))
+            
+            # ===== PILOT MODE Settings =====
+            self.qs_pilot_mode = tk.BooleanVar(value=getattr(settings, 'pilot_mode_enabled', False))
+            self.qs_pilot_resume_mode = tk.StringVar(value=getattr(settings, 'pilot_resume_mode', 'tailored'))
+            self.qs_pilot_max_apps = tk.IntVar(value=getattr(settings, 'pilot_max_applications', 0))
+            self.qs_pilot_delay = tk.IntVar(value=getattr(settings, 'pilot_application_delay', 5))
+            self.qs_pilot_continue_error = tk.BooleanVar(value=getattr(settings, 'pilot_continue_on_error', True))
+            
+            # ===== AUTOPILOT FORM PRE-FILL SETTINGS =====
+            # These are used when autopilot encounters common form questions
+            self.qs_autopilot_visa_required = tk.StringVar(value=getattr(settings, 'autopilot_visa_required', 'Yes'))
+            self.qs_autopilot_willing_relocate = tk.StringVar(value=getattr(settings, 'autopilot_willing_relocate', 'Yes'))
+            self.qs_autopilot_work_authorization = tk.StringVar(value=getattr(settings, 'autopilot_work_authorization', 'Yes'))
+            self.qs_autopilot_remote_preference = tk.StringVar(value=getattr(settings, 'autopilot_remote_preference', 'Yes'))
+            self.qs_autopilot_start_immediately = tk.StringVar(value=getattr(settings, 'autopilot_start_immediately', 'Yes'))
+            self.qs_autopilot_background_check = tk.StringVar(value=getattr(settings, 'autopilot_background_check', 'Yes'))
+            self.qs_autopilot_commute_ok = tk.StringVar(value=getattr(settings, 'autopilot_commute_ok', 'Yes'))
+            self.qs_autopilot_chrome_wait_time = tk.IntVar(value=getattr(settings, 'autopilot_chrome_wait_time', 10))
+            
+            # ===== SCHEDULING Settings =====
+            self.qs_schedule_enabled = tk.BooleanVar(value=getattr(settings, 'scheduling_enabled', False))
+            self.qs_schedule_type = tk.StringVar(value=getattr(settings, 'schedule_type', 'interval'))
+            self.qs_schedule_interval = tk.IntVar(value=getattr(settings, 'schedule_interval_hours', 4))
+            self.qs_schedule_max_runtime = tk.IntVar(value=getattr(settings, 'schedule_max_runtime', 120))
+            self.qs_schedule_max_apps = tk.IntVar(value=getattr(settings, 'schedule_max_applications', 50))
+            
+            # ===== JOB SEARCH Settings =====
+            try:
+                from config import search as search_config
+                # Load search terms as comma-separated string for easy editing
+                search_terms_list = getattr(search_config, 'search_terms', [])
+                self.qs_search_terms = tk.StringVar(value=', '.join(search_terms_list))
+                self.qs_search_location = tk.StringVar(value=getattr(search_config, 'search_location', 'United States'))
+                self.qs_date_posted = tk.StringVar(value=getattr(search_config, 'date_posted', 'Past 24 hours'))
+                self.qs_easy_apply_only = tk.BooleanVar(value=getattr(search_config, 'easy_apply_only', True))
+                self.qs_switch_number = tk.IntVar(value=getattr(search_config, 'switch_number', 30))
+                self.qs_randomize_search = tk.BooleanVar(value=getattr(search_config, 'randomize_search_order', False))
+                # Job search mode: "sequential", "random", "single" (apply to one job title until limit)
+                self.qs_job_search_mode = tk.StringVar(value=getattr(settings, 'job_search_mode', 'sequential'))
+                self.qs_current_experience = tk.IntVar(value=getattr(search_config, 'current_experience', 5))
+            except Exception as search_err:
+                print(f"[Dashboard] Search config load warning: {search_err}")
+                self.qs_search_terms = tk.StringVar(value='Software Engineer, Python Developer')
+                self.qs_search_location = tk.StringVar(value='United States')
+                self.qs_date_posted = tk.StringVar(value='Past 24 hours')
+                self.qs_easy_apply_only = tk.BooleanVar(value=True)
+                self.qs_switch_number = tk.IntVar(value=30)
+                self.qs_randomize_search = tk.BooleanVar(value=False)
+                self.qs_job_search_mode = tk.StringVar(value='sequential')
+                self.qs_current_experience = tk.IntVar(value=5)
+            
+            # ===== EXTENSION Settings =====
+            self.qs_extension_enabled = tk.BooleanVar(value=getattr(settings, 'extension_enabled', True))
+            self.qs_extension_auto_sync = tk.BooleanVar(value=getattr(settings, 'extension_auto_sync', True))
+            self.qs_extension_ai_learning = tk.BooleanVar(value=getattr(settings, 'extension_ai_learning', True))
+            mode_val = getattr(settings, 'extension_detection_mode', 'universal')
+            mode_display = {"linkedin": DETECT_LINKEDIN, "universal": DETECT_UNIVERSAL, "smart": DETECT_SMART}.get(mode_val, DETECT_UNIVERSAL)
+            self.qs_extension_detection_mode = tk.StringVar(value=mode_display)
+            
+        except Exception as e:
+            # Default fallback values for ALL settings
+            self.qs_run_non_stop = tk.BooleanVar(value=True)
+            self.qs_alternate_sortby = tk.BooleanVar(value=True)
+            self.qs_cycle_date_posted = tk.BooleanVar(value=True)
+            self.qs_stop_date_24hr = tk.BooleanVar(value=True)
+            self.qs_close_tabs = tk.BooleanVar(value=False)
+            self.qs_follow_companies = tk.BooleanVar(value=False)
+            self.qs_max_jobs = tk.IntVar(value=0)
+            self.qs_click_gap = tk.IntVar(value=20)
+            self.qs_fast_mode = tk.BooleanVar(value=True)
+            self.qs_smart_form_filler = tk.BooleanVar(value=True)
+            self.qs_delay_multiplier = tk.DoubleVar(value=0.5)
+            self.qs_resume_tailor = tk.BooleanVar(value=True)
+            self.qs_tailor_confirm_filters = tk.BooleanVar(value=True)
+            self.qs_tailor_prompt_jd = tk.BooleanVar(value=True)
+            self.qs_resume_upload_format = tk.StringVar(value=RESUME_AUTO)
+            self.qs_show_browser = tk.BooleanVar(value=True)
+            self.qs_disable_extensions = tk.BooleanVar(value=False)
+            self.qs_safe_mode = tk.BooleanVar(value=True)
+            self.qs_smooth_scroll = tk.BooleanVar(value=True)
+            self.qs_keep_awake = tk.BooleanVar(value=True)
+            self.qs_stealth_mode = tk.BooleanVar(value=False)
+            self.qs_pause_submit = tk.BooleanVar(value=False)
+            self.qs_pause_failed_q = tk.BooleanVar(value=False)
+            self.qs_show_ai_errors = tk.BooleanVar(value=False)
+            # Pilot Mode defaults
+            self.qs_pilot_mode = tk.BooleanVar(value=False)
+            self.qs_pilot_resume_mode = tk.StringVar(value='tailored')
+            self.qs_pilot_max_apps = tk.IntVar(value=0)
+            self.qs_pilot_delay = tk.IntVar(value=5)
+            self.qs_pilot_continue_error = tk.BooleanVar(value=True)
+            # Autopilot form pre-fill defaults
+            self.qs_autopilot_visa_required = tk.StringVar(value='Yes')
+            self.qs_autopilot_willing_relocate = tk.StringVar(value='Yes')
+            self.qs_autopilot_work_authorization = tk.StringVar(value='Yes')
+            self.qs_autopilot_remote_preference = tk.StringVar(value='Yes')
+            self.qs_autopilot_start_immediately = tk.StringVar(value='Yes')
+            self.qs_autopilot_background_check = tk.StringVar(value='Yes')
+            self.qs_autopilot_commute_ok = tk.StringVar(value='Yes')
+            self.qs_autopilot_chrome_wait_time = tk.IntVar(value=10)
+            # Scheduling defaults
+            self.qs_schedule_enabled = tk.BooleanVar(value=False)
+            self.qs_schedule_type = tk.StringVar(value='interval')
+            self.qs_schedule_interval = tk.IntVar(value=4)
+            self.qs_schedule_max_runtime = tk.IntVar(value=120)
+            self.qs_schedule_max_apps = tk.IntVar(value=50)
+            # Extension defaults
+            self.qs_extension_enabled = tk.BooleanVar(value=True)
+            self.qs_extension_auto_sync = tk.BooleanVar(value=True)
+            self.qs_extension_ai_learning = tk.BooleanVar(value=True)
+            self.qs_extension_detection_mode = tk.StringVar(value=DETECT_UNIVERSAL)
+            # Job Search defaults (missing from original fallback)
+            self.qs_search_terms = tk.StringVar(value='Software Engineer, Python Developer')
+            self.qs_search_location = tk.StringVar(value='United States')
+            self.qs_date_posted = tk.StringVar(value='Past 24 hours')
+            self.qs_easy_apply_only = tk.BooleanVar(value=True)
+            self.qs_switch_number = tk.IntVar(value=30)
+            self.qs_randomize_search = tk.BooleanVar(value=False)
+            self.qs_job_search_mode = tk.StringVar(value='sequential')
+            self.qs_current_experience = tk.IntVar(value=5)
+            print(f"[Dashboard] Settings init warning: {e}")
+    
+    def _save_quick_settings(self):
+        """Save ALL Settings to runtime config (immediate effect)."""
+        try:
+            from config import settings
+            
+            # ===== Bot Behavior Settings =====
+            settings.run_non_stop = self.qs_run_non_stop.get()
+            settings.alternate_sortby = self.qs_alternate_sortby.get()
+            settings.cycle_date_posted = self.qs_cycle_date_posted.get()
+            settings.stop_date_cycle_at_24hr = self.qs_stop_date_24hr.get()
+            settings.close_tabs = self.qs_close_tabs.get()
+            settings.follow_companies = self.qs_follow_companies.get()
+            settings.max_jobs_to_process = self.qs_max_jobs.get()
+            settings.click_gap = self.qs_click_gap.get()
+            
+            # ===== Form Filling Settings =====
+            settings.form_fill_fast_mode = self.qs_fast_mode.get()
+            settings.use_smart_form_filler = self.qs_smart_form_filler.get()
+            settings.form_fill_delay_multiplier = self.qs_delay_multiplier.get()
+            
+            # ===== Resume Tailoring Settings =====
+            settings.resume_tailoring_enabled = self.qs_resume_tailor.get()
+            settings.resume_tailoring_confirm_after_filters = self.qs_tailor_confirm_filters.get()
+            settings.resume_tailoring_prompt_before_jd = self.qs_tailor_prompt_jd.get()
+            # Convert display format to setting value
+            format_display = self.qs_resume_upload_format.get()
+            format_map = {RESUME_AUTO: "auto", RESUME_PDF: "pdf", RESUME_DOCX: "docx"}
+            settings.resume_upload_format = format_map.get(format_display, "auto")
+            
+            # ===== Browser & UI Settings =====
+            settings.run_in_background = not self.qs_show_browser.get()
+            settings.disable_extensions = self.qs_disable_extensions.get()
+            settings.safe_mode = self.qs_safe_mode.get()
+            settings.smooth_scroll = self.qs_smooth_scroll.get()
+            settings.keep_screen_awake = self.qs_keep_awake.get()
+            settings.stealth_mode = self.qs_stealth_mode.get()
+            
+            # ===== Control & Alerts Settings =====
+            settings.pause_before_submit = self.qs_pause_submit.get()
+            settings.pause_at_failed_question = self.qs_pause_failed_q.get()
+            settings.showAiErrorAlerts = self.qs_show_ai_errors.get()
+            
+            # ===== PILOT MODE Settings =====
+            settings.pilot_mode_enabled = self.qs_pilot_mode.get()
+            settings.pilot_resume_mode = self.qs_pilot_resume_mode.get()
+            settings.pilot_max_applications = self.qs_pilot_max_apps.get()
+            settings.pilot_application_delay = self.qs_pilot_delay.get()
+            settings.pilot_continue_on_error = self.qs_pilot_continue_error.get()
+            
+            # ===== AUTOPILOT FORM PRE-FILL Settings =====
+            settings.autopilot_visa_required = self.qs_autopilot_visa_required.get()
+            settings.autopilot_willing_relocate = self.qs_autopilot_willing_relocate.get()
+            settings.autopilot_work_authorization = self.qs_autopilot_work_authorization.get()
+            settings.autopilot_remote_preference = self.qs_autopilot_remote_preference.get()
+            settings.autopilot_start_immediately = self.qs_autopilot_start_immediately.get()
+            settings.autopilot_background_check = self.qs_autopilot_background_check.get()
+            settings.autopilot_commute_ok = self.qs_autopilot_commute_ok.get()
+            settings.autopilot_chrome_wait_time = self.qs_autopilot_chrome_wait_time.get()
+            
+            # ===== SCHEDULING Settings =====
+            settings.scheduling_enabled = self.qs_schedule_enabled.get()
+            settings.schedule_type = self.qs_schedule_type.get()
+            settings.schedule_interval_hours = self.qs_schedule_interval.get()
+            settings.schedule_max_runtime = self.qs_schedule_max_runtime.get()
+            settings.schedule_max_applications = self.qs_schedule_max_apps.get()
+            
+            # ===== JOB SEARCH Settings =====
+            settings.job_search_mode = self.qs_job_search_mode.get()
+            
+            # Also save to search config
+            try:
+                from config import search as search_config
+                # Parse comma-separated job titles
+                job_titles_str = self.qs_search_terms.get().strip()
+                if job_titles_str:
+                    search_terms = [t.strip() for t in job_titles_str.split(',') if t.strip()]
+                    search_config.search_terms = search_terms
+                search_config.search_location = self.qs_search_location.get()
+                search_config.date_posted = self.qs_date_posted.get()
+                search_config.easy_apply_only = self.qs_easy_apply_only.get()
+                search_config.switch_number = self.qs_switch_number.get()
+                search_config.randomize_search_order = self.qs_randomize_search.get()
+                search_config.current_experience = self.qs_current_experience.get()
+            except Exception as search_err:
+                print(f"[Dashboard] Search config save warning: {search_err}")
+            
+            # ===== EXTENSION Settings =====
+            settings.extension_enabled = self.qs_extension_enabled.get()
+            settings.extension_auto_sync = self.qs_extension_auto_sync.get()
+            settings.extension_ai_learning = self.qs_extension_ai_learning.get()
+            # Convert display mode to setting value
+            mode_display = self.qs_extension_detection_mode.get()
+            mode_map = {DETECT_LINKEDIN: "linkedin", DETECT_UNIVERSAL: "universal", DETECT_SMART: "smart"}
+            settings.extension_detection_mode = mode_map.get(mode_display, "universal")
+            
+        except Exception as e:
+            print(f"[Dashboard] Settings save warning: {e}")
+    
+    def _apply_quick_settings(self):
+        """Apply ALL Settings and save to config file."""
+        self._save_quick_settings()
+        
+        # Also write to settings.py file for persistence
+        try:
+            settings_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'config', 'settings.py')
+            
+            if os.path.exists(settings_path):
+                with open(settings_path, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                
+                import re
+                # Update ALL settings in file using regex
+                # Boolean and numeric settings (matched by True/False/number pattern)
+                bool_num_replacements = {
+                    # Bot Behavior
+                    'run_non_stop': str(self.qs_run_non_stop.get()),
+                    'alternate_sortby': str(self.qs_alternate_sortby.get()),
+                    'cycle_date_posted': str(self.qs_cycle_date_posted.get()),
+                    'stop_date_cycle_at_24hr': str(self.qs_stop_date_24hr.get()),
+                    'close_tabs': str(self.qs_close_tabs.get()),
+                    'follow_companies': str(self.qs_follow_companies.get()),
+                    'max_jobs_to_process': str(self.qs_max_jobs.get()),
+                    'click_gap': str(self.qs_click_gap.get()),
+                    # Form Filling
+                    'form_fill_fast_mode': str(self.qs_fast_mode.get()),
+                    'use_smart_form_filler': str(self.qs_smart_form_filler.get()),
+                    'form_fill_delay_multiplier': str(self.qs_delay_multiplier.get()),
+                    # Resume Tailoring
+                    'resume_tailoring_enabled': str(self.qs_resume_tailor.get()),
+                    'resume_tailoring_confirm_after_filters': str(self.qs_tailor_confirm_filters.get()),
+                    'resume_tailoring_prompt_before_jd': str(self.qs_tailor_prompt_jd.get()),
+                    # Browser & UI
+                    'run_in_background': str(not self.qs_show_browser.get()),
+                    'disable_extensions': str(self.qs_disable_extensions.get()),
+                    'safe_mode': str(self.qs_safe_mode.get()),
+                    'smooth_scroll': str(self.qs_smooth_scroll.get()),
+                    'keep_screen_awake': str(self.qs_keep_awake.get()),
+                    'stealth_mode': str(self.qs_stealth_mode.get()),
+                    # Control & Alerts
+                    'pause_before_submit': str(self.qs_pause_submit.get()),
+                    'pause_at_failed_question': str(self.qs_pause_failed_q.get()),
+                    'showAiErrorAlerts': str(self.qs_show_ai_errors.get()),
+                    # Pilot Mode (bool/int)
+                    'pilot_mode_enabled': str(self.qs_pilot_mode.get()),
+                    'pilot_max_applications': str(self.qs_pilot_max_apps.get()),
+                    'pilot_application_delay': str(self.qs_pilot_delay.get()),
+                    'pilot_continue_on_error': str(self.qs_pilot_continue_error.get()),
+                    # Scheduling (bool/int)
+                    'scheduling_enabled': str(self.qs_schedule_enabled.get()),
+                    'schedule_interval_hours': str(self.qs_schedule_interval.get()),
+                    'schedule_max_runtime': str(self.qs_schedule_max_runtime.get()),
+                    'schedule_max_applications': str(self.qs_schedule_max_apps.get()),
+                    # Extension (bool)
+                    'extension_enabled': str(self.qs_extension_enabled.get()),
+                    'extension_auto_sync': str(self.qs_extension_auto_sync.get()),
+                    'extension_ai_learning': str(self.qs_extension_ai_learning.get()),
+                    # Autopilot (int)
+                    'autopilot_chrome_wait_time': str(self.qs_autopilot_chrome_wait_time.get()),
+                }
+                
+                for setting, value in bool_num_replacements.items():
+                    # Handle boolean and numeric values
+                    pattern = rf'^(\s*{setting}\s*=\s*)(True|False|\d+\.?\d*)'
+                    replacement = rf'\g<1>{value}'
+                    content = re.sub(pattern, replacement, content, flags=re.MULTILINE)
+                
+                # String settings (matched by quoted string pattern)
+                format_display = self.qs_resume_upload_format.get()
+                format_map = {RESUME_AUTO: "auto", RESUME_PDF: "pdf", RESUME_DOCX: "docx"}
+                mode_display = self.qs_extension_detection_mode.get()
+                mode_map = {DETECT_LINKEDIN: "linkedin", DETECT_UNIVERSAL: "universal", DETECT_SMART: "smart"}
+                
+                string_replacements = {
+                    # Pilot Mode (string)
+                    'pilot_resume_mode': self.qs_pilot_resume_mode.get(),
+                    # Resume
+                    'resume_upload_format': format_map.get(format_display, "auto"),
+                    # Scheduling (string)
+                    'schedule_type': self.qs_schedule_type.get(),
+                    # Job Search (string)
+                    'job_search_mode': self.qs_job_search_mode.get(),
+                    # Extension (string)
+                    'extension_detection_mode': mode_map.get(mode_display, "universal"),
+                    # Autopilot form answers (string)
+                    'autopilot_visa_required': self.qs_autopilot_visa_required.get(),
+                    'autopilot_willing_relocate': self.qs_autopilot_willing_relocate.get(),
+                    'autopilot_work_authorization': self.qs_autopilot_work_authorization.get(),
+                    'autopilot_remote_preference': self.qs_autopilot_remote_preference.get(),
+                    'autopilot_start_immediately': self.qs_autopilot_start_immediately.get(),
+                    'autopilot_background_check': self.qs_autopilot_background_check.get(),
+                    'autopilot_commute_ok': self.qs_autopilot_commute_ok.get(),
+                }
+                
+                for setting, value in string_replacements.items():
+                    # Match quoted string values: setting = "value" or setting = 'value'
+                    pattern = rf'^(\s*{setting}\s*=\s*)["\']([^"\']*)["\']'
+                    replacement = rf'\g<1>"{value}"'
+                    content = re.sub(pattern, replacement, content, flags=re.MULTILINE)
+                
+                with open(settings_path, 'w', encoding='utf-8') as f:
+                    f.write(content)
+                
+                self.show_toast("✅ All settings saved successfully!", "success")
+            else:
+                self.show_toast("⚠️ Applied to runtime only", "warning")
+        except Exception as e:
+            self.show_toast(f"⚠️ Runtime applied, file save failed: {str(e)[:30]}", "warning")
+    
+    def _reset_settings_to_defaults(self):
+        """Reset all settings to their default values (matching config/settings.py)."""
+        # Default values from config/settings.py — MUST match actual file defaults
+        self.qs_run_non_stop.set(True)
+        self.qs_alternate_sortby.set(False)        # settings.py: alternate_sortby = False
+        self.qs_cycle_date_posted.set(True)
+        self.qs_stop_date_24hr.set(True)
+        self.qs_close_tabs.set(False)
+        self.qs_follow_companies.set(False)
+        self.qs_max_jobs.set(0)
+        self.qs_click_gap.set(20)
+        self.qs_fast_mode.set(True)
+        self.qs_smart_form_filler.set(True)
+        self.qs_delay_multiplier.set(0.5)
+        self.qs_resume_tailor.set(True)
+        self.qs_tailor_confirm_filters.set(True)
+        self.qs_tailor_prompt_jd.set(True)
+        self.qs_resume_upload_format.set(RESUME_AUTO)
+        self.qs_show_browser.set(True)             # run_in_background=False → show_browser=True
+        self.qs_disable_extensions.set(False)       # settings.py: disable_extensions = False
+        self.qs_safe_mode.set(False)                # settings.py: safe_mode = False
+        self.qs_smooth_scroll.set(True)
+        self.qs_keep_awake.set(True)
+        self.qs_stealth_mode.set(True)              # settings.py: stealth_mode = True
+        self.qs_pause_submit.set(False)
+        self.qs_pause_failed_q.set(False)
+        self.qs_show_ai_errors.set(True)            # settings.py: showAiErrorAlerts = True
+        # Reset pilot mode
+        self.qs_pilot_mode.set(False)               # settings.py: pilot_mode_enabled = True (but reset to safe default)
+        self.qs_pilot_resume_mode.set('tailored')
+        self.qs_pilot_max_apps.set(0)
+        self.qs_pilot_delay.set(5)
+        self.qs_pilot_continue_error.set(True)
+        # Reset autopilot form answers
+        self.qs_autopilot_visa_required.set('Yes')
+        self.qs_autopilot_willing_relocate.set('Yes')
+        self.qs_autopilot_work_authorization.set('Yes')
+        self.qs_autopilot_remote_preference.set('Yes')
+        self.qs_autopilot_start_immediately.set('Yes')
+        self.qs_autopilot_background_check.set('Yes')
+        self.qs_autopilot_commute_ok.set('Yes')
+        self.qs_autopilot_chrome_wait_time.set(10)
+        # Reset scheduling
+        self.qs_schedule_enabled.set(False)
+        self.qs_schedule_type.set('interval')
+        self.qs_schedule_interval.set(4)
+        self.qs_schedule_max_runtime.set(120)
+        self.qs_schedule_max_apps.set(50)
+        # Reset job search mode
+        self.qs_job_search_mode.set('sequential')
+        # Reset extension settings
+        self.qs_extension_enabled.set(True)
+        self.qs_extension_auto_sync.set(True)
+        self.qs_extension_ai_learning.set(True)
+        self.qs_extension_detection_mode.set(DETECT_UNIVERSAL)
+        
+        self._save_quick_settings()
+        self.show_toast("🔄 Settings reset to defaults!", "info")
+    
+    def _export_extension_config(self):
+        """Export current config to extension's user_config.json."""
+        try:
+            import subprocess
+            import sys
+            config_loader_path = os.path.join(os.path.dirname(__file__), '..', '..', 'extension', 'config_loader.py')
+            config_loader_path = os.path.abspath(config_loader_path)
+            
+            if os.path.exists(config_loader_path):
+                result = subprocess.run([sys.executable, config_loader_path], 
+                                       capture_output=True, text=True, timeout=30)
+                if result.returncode == 0:
+                    self.show_toast("✅ Config exported to extension!", "success")
+                    self.activity_feed.add_activity("📤 Extension config exported", "success")
+                else:
+                    self.show_toast(f"⚠️ Export error: {result.stderr[:100]}", "warning")
+            else:
+                self.show_toast("⚠️ Config loader not found!", "warning")
+        except Exception as e:
+            self.show_toast(f"❌ Export failed: {str(e)[:50]}", "danger")
+    
+    def _reload_extension_manifest(self):
+        """Show instructions to reload extension in Chrome."""
+        import tkinter.messagebox as messagebox
+        messagebox.showinfo(
+            "Reload Extension",
+            "To reload the extension:\n\n"
+            "1. Open Chrome and go to: chrome://extensions/\n"
+            "2. Enable 'Developer mode' (top right)\n"
+            "3. Click 'Load unpacked' and select:\n"
+            f"   {os.path.abspath('extension')}\n"
+            "4. If already loaded, click the refresh icon\n\n"
+            "The extension will detect forms on any job portal!"
+        )
+        self.activity_feed.add_activity("📋 Extension reload instructions shown", "info")
+    
+    # ============================================
+    # PILOT MODE & SCHEDULING SECTION (TOP PRIORITY)
+    # ============================================
+    def _create_pilot_scheduling_section(self, parent):
+        """Create the Pilot Mode & Scheduling section at the TOP of settings."""
+        
+        # ========== MASTER CONTAINER FOR PILOT & SCHEDULING ==========
+        pilot_master = ttkb.Frame(parent)
+        pilot_master.pack(fill=tk.X, padx=3, pady=3)
+        
+        # --- HEADER BANNER ---
+        header_frame = ttkb.Frame(pilot_master)
+        header_frame.pack(fill=tk.X, pady=(0, 4))
+        
+        header_label = ttkb.Label(header_frame, 
+            text="🚀 AUTOMATION CONTROL CENTER",
+            font=("Segoe UI", 12, "bold"),
+            foreground="#4ade80")
+        header_label.pack(side=tk.LEFT)
+        
+        # Status indicator
+        self.automation_status_indicator = ttkb.Label(header_frame, 
+            text="⬤ MANUAL MODE",
+            font=("Segoe UI", 10, "bold"),
+            foreground="#888888")
+        self.automation_status_indicator.pack(side=tk.RIGHT)
+        
+        # ========== QUICK START BUTTONS ROW ==========
+        quick_start_frame = ttkb.Frame(pilot_master)
+        quick_start_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        # Pilot Mode Quick Start Button (Large, prominent)
+        self.pilot_start_btn = ttkb.Button(quick_start_frame,
+            text="🚀 START PILOT MODE",
+            command=self._quick_start_pilot,
+            bootstyle="success",
+            width=20)
+        self.pilot_start_btn.pack(side=tk.LEFT, padx=(0, 8), ipady=4)
+        
+        # Schedule Quick Start Button (Large, prominent)
+        self.schedule_start_btn = ttkb.Button(quick_start_frame,
+            text="📅 START SCHEDULED RUN",
+            command=self._quick_start_scheduled,
+            bootstyle="primary",
+            width=20)
+        self.schedule_start_btn.pack(side=tk.LEFT, padx=(0, 8), ipady=4)
+        
+        # Normal Mode Button
+        self.normal_mode_btn = ttkb.Button(quick_start_frame,
+            text="🔧 NORMAL MODE",
+            command=self._switch_to_normal_mode,
+            bootstyle="secondary-outline",
+            width=14)
+        self.normal_mode_btn.pack(side=tk.LEFT, ipady=4)
+        
+        # ========== PILOT MODE SETTINGS ==========
+        pilot_frame = ttkb.Labelframe(pilot_master, 
+            text="✈️ PILOT MODE - Fully Automated", 
+            bootstyle="success")
+        pilot_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        pilot_inner = ttkb.Frame(pilot_frame)
+        pilot_inner.pack(fill=tk.X, padx=8, pady=5)
+        
+        # Info banner
+        pilot_info = ttkb.Label(pilot_inner, 
+            text="🤖 Runs completely hands-free • Auto-applies to jobs • No confirmation dialogs",
+            font=("Segoe UI", 8), foreground="#4ade80")
+        pilot_info.pack(anchor=tk.W, pady=(0, 5))
+        
+        # Row 1: Enable toggle + Resume Mode
+        pilot_row1 = ttkb.Frame(pilot_inner)
+        pilot_row1.pack(fill=tk.X, pady=2)
+        
+        ttkb.Checkbutton(pilot_row1, text="✈️ Pilot Mode Enabled", 
+            variable=self.qs_pilot_mode,
+            bootstyle="success-round-toggle", 
+            command=self._on_pilot_mode_changed).pack(side=tk.LEFT, padx=(0, 20))
+        
+        ttkb.Label(pilot_row1, text="📄 Resume:", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        
+        pilot_resume_combo = ttkb.Combobox(pilot_row1, 
+            textvariable=self.qs_pilot_resume_mode,
+            values=["tailored", "default", "preselected", "skip"],
+            state="readonly", width=12)
+        pilot_resume_combo.pack(side=tk.LEFT, padx=(5, 0))
+        pilot_resume_combo.bind(EVENT_COMBOBOX_SELECTED, lambda e: self._save_quick_settings())
+        
+        # Resume mode info tooltip
+        resume_mode_info = ttkb.Label(pilot_row1, 
+            text="ℹ️", font=("Segoe UI", 9), foreground="#60a5fa", cursor="hand2")
+        resume_mode_info.pack(side=tk.LEFT, padx=(5, 0))
+        resume_mode_info.bind(EVENT_ENTER, lambda e: self._show_resume_mode_tooltip(e, resume_mode_info))
+        resume_mode_info.bind(EVENT_LEAVE, lambda e: self._hide_tooltip())
+        
+        # Row 2: Delay + Max Apps + Continue on Error
+        pilot_row2 = ttkb.Frame(pilot_inner)
+        pilot_row2.pack(fill=tk.X, pady=2)
+        
+        ttkb.Label(pilot_row2, text="⏱️ Delay (sec):", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        ttkb.Spinbox(pilot_row2, from_=1, to=30, width=5, textvariable=self.qs_pilot_delay,
+            command=self._save_quick_settings).pack(side=tk.LEFT, padx=(5, 15))
+        
+        ttkb.Label(pilot_row2, text="📊 Max Apps (0=∞):", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        ttkb.Spinbox(pilot_row2, from_=0, to=500, width=6, textvariable=self.qs_pilot_max_apps,
+            command=self._save_quick_settings).pack(side=tk.LEFT, padx=(5, 15))
+        
+        ttkb.Checkbutton(pilot_row2, text="🔄 Continue on Errors", 
+            variable=self.qs_pilot_continue_error,
+            bootstyle="info-round-toggle", 
+            command=self._save_quick_settings).pack(side=tk.LEFT)
+        
+        # ========== AUTOPILOT FORM PRE-FILL SETTINGS ==========
+        # These settings are used to automatically fill common form questions in pilot mode
+        prefill_frame = ttkb.Labelframe(pilot_master, 
+            text="📝 AUTOPILOT FORM PRE-FILL - Common Question Answers", 
+            bootstyle="warning")
+        prefill_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        prefill_inner = ttkb.Frame(prefill_frame)
+        prefill_inner.pack(fill=tk.X, padx=8, pady=5)
+        
+        # Info banner
+        prefill_info = ttkb.Label(prefill_inner, 
+            text="🔧 Pre-configure answers for common job application questions (used in Pilot Mode)",
+            font=("Segoe UI", 8), foreground="#f59e0b")
+        prefill_info.pack(anchor=tk.W, pady=(0, 5))
+        
+        # Row 1: Visa, Work Authorization, Willing to Relocate
+        prefill_row1 = ttkb.Frame(prefill_inner)
+        prefill_row1.pack(fill=tk.X, pady=2)
+        
+        ttkb.Label(prefill_row1, text="🛂 Visa/Sponsorship:", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        ttkb.Combobox(prefill_row1, textvariable=self.qs_autopilot_visa_required,
+            values=["Yes", "No"], state="readonly", width=5).pack(side=tk.LEFT, padx=(5, 15))
+        
+        ttkb.Label(prefill_row1, text="🏛️ Work Auth:", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        ttkb.Combobox(prefill_row1, textvariable=self.qs_autopilot_work_authorization,
+            values=["Yes", "No"], state="readonly", width=5).pack(side=tk.LEFT, padx=(5, 15))
+        
+        ttkb.Label(prefill_row1, text="🚚 Relocate:", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        ttkb.Combobox(prefill_row1, textvariable=self.qs_autopilot_willing_relocate,
+            values=["Yes", "No"], state="readonly", width=5).pack(side=tk.LEFT, padx=(5, 0))
+        
+        # Row 2: Remote, Start Immediately, Background Check, Commute
+        prefill_row2 = ttkb.Frame(prefill_inner)
+        prefill_row2.pack(fill=tk.X, pady=2)
+        
+        ttkb.Label(prefill_row2, text="🏠 Remote OK:", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        ttkb.Combobox(prefill_row2, textvariable=self.qs_autopilot_remote_preference,
+            values=["Yes", "No"], state="readonly", width=5).pack(side=tk.LEFT, padx=(5, 15))
+        
+        ttkb.Label(prefill_row2, text="⏰ Start Now:", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        ttkb.Combobox(prefill_row2, textvariable=self.qs_autopilot_start_immediately,
+            values=["Yes", "No"], state="readonly", width=5).pack(side=tk.LEFT, padx=(5, 15))
+        
+        ttkb.Label(prefill_row2, text="🔍 BG Check:", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        ttkb.Combobox(prefill_row2, textvariable=self.qs_autopilot_background_check,
+            values=["Yes", "No"], state="readonly", width=5).pack(side=tk.LEFT, padx=(5, 15))
+        
+        ttkb.Label(prefill_row2, text="🚗 Commute:", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        ttkb.Combobox(prefill_row2, textvariable=self.qs_autopilot_commute_ok,
+            values=["Yes", "No"], state="readonly", width=5).pack(side=tk.LEFT, padx=(5, 0))
+        
+        # Row 3: Chrome wait time for stability
+        prefill_row3 = ttkb.Frame(prefill_inner)
+        prefill_row3.pack(fill=tk.X, pady=2)
+        
+        ttkb.Label(prefill_row3, text="⏳ Chrome Wait (sec):", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        ttkb.Spinbox(prefill_row3, from_=5, to=30, width=5, textvariable=self.qs_autopilot_chrome_wait_time,
+            command=self._save_quick_settings).pack(side=tk.LEFT, padx=(5, 15))
+        ttkb.Label(prefill_row3, text="(Increase if Chrome opens inconsistently)", 
+            font=("Segoe UI", 8), foreground="#888888").pack(side=tk.LEFT)
+        
+        # ========== SCHEDULING SETTINGS ==========
+        sched_frame = ttkb.Labelframe(pilot_master, 
+            text="📅 SCHEDULING - Auto-Run on Timer", 
+            bootstyle="primary")
+        sched_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        sched_inner = ttkb.Frame(sched_frame)
+        sched_inner.pack(fill=tk.X, padx=8, pady=5)
+        
+        # Info banner
+        sched_info = ttkb.Label(sched_inner, 
+            text="⏰ Run job applications automatically on a schedule • No dashboard needed",
+            font=("Segoe UI", 8), foreground="#60a5fa")
+        sched_info.pack(anchor=tk.W, pady=(0, 5))
+        
+        # Row 1: Enable toggle + Schedule Type
+        sched_row1 = ttkb.Frame(sched_inner)
+        sched_row1.pack(fill=tk.X, pady=2)
+        
+        ttkb.Checkbutton(sched_row1, text="📅 Scheduling Enabled", 
+            variable=self.qs_schedule_enabled,
+            bootstyle="primary-round-toggle", 
+            command=self._on_schedule_changed).pack(side=tk.LEFT, padx=(0, 20))
+        
+        ttkb.Label(sched_row1, text="Type:", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        
+        sched_type_combo = ttkb.Combobox(sched_row1, 
+            textvariable=self.qs_schedule_type,
+            values=["interval", "daily", "weekly"],
+            state="readonly", width=10)
+        sched_type_combo.pack(side=tk.LEFT, padx=(5, 15))
+        sched_type_combo.bind(EVENT_COMBOBOX_SELECTED, lambda e: self._save_quick_settings())
+        
+        ttkb.Label(sched_row1, text="⏱️ Interval (hrs):", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        ttkb.Spinbox(sched_row1, from_=1, to=24, width=5, textvariable=self.qs_schedule_interval,
+            command=self._save_quick_settings).pack(side=tk.LEFT, padx=(5, 0))
+        
+        # Row 2: Max Runtime + Max Apps + Status
+        sched_row2 = ttkb.Frame(sched_inner)
+        sched_row2.pack(fill=tk.X, pady=2)
+        
+        ttkb.Label(sched_row2, text="⏳ Max Runtime (min):", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        ttkb.Spinbox(sched_row2, from_=10, to=480, width=5, textvariable=self.qs_schedule_max_runtime,
+            command=self._save_quick_settings).pack(side=tk.LEFT, padx=(5, 15))
+        
+        ttkb.Label(sched_row2, text="📊 Max Apps:", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        ttkb.Spinbox(sched_row2, from_=0, to=200, width=6, textvariable=self.qs_schedule_max_apps,
+            command=self._save_quick_settings).pack(side=tk.LEFT, padx=(5, 15))
+        
+        # Status indicator
+        self.schedule_status_label = ttkb.Label(sched_row2, 
+            text="⏸️ Stopped", font=("Segoe UI", 9, "bold"), foreground="#888888")
+        self.schedule_status_label.pack(side=tk.RIGHT)
+        
+        # Row 3: Next run info
+        sched_row3 = ttkb.Frame(sched_inner)
+        sched_row3.pack(fill=tk.X, pady=(5, 2))
+        
+        self.next_run_label = ttkb.Label(sched_row3, 
+            text="📅 Next run: --", font=("Segoe UI", 8), foreground="#888888")
+        self.next_run_label.pack(side=tk.LEFT)
+        
+        # Scheduler control buttons
+        ttkb.Button(sched_row3, text="⏹️ Stop", 
+            command=self._stop_scheduler,
+            bootstyle="danger-outline", width=8).pack(side=tk.RIGHT, padx=2)
+        ttkb.Button(sched_row3, text="▶️ Start", 
+            command=self._start_scheduler,
+            bootstyle="success-outline", width=8).pack(side=tk.RIGHT, padx=2)
+        
+        # ========== JOB SEARCH SETTINGS ==========
+        search_frame = ttkb.Labelframe(pilot_master, 
+            text="🔍 JOB SEARCH - What & How to Search", 
+            bootstyle="info")
+        search_frame.pack(fill=tk.X, pady=(0, 5))
+        
+        search_inner = ttkb.Frame(search_frame)
+        search_inner.pack(fill=tk.X, padx=8, pady=5)
+        
+        # Info banner
+        search_info = ttkb.Label(search_inner, 
+            text="🎯 Configure job titles, location, and how the bot cycles through searches • Changes apply immediately",
+            font=("Segoe UI", 8), foreground="#22d3ee")
+        search_info.pack(anchor=tk.W, pady=(0, 5))
+        
+        # Row 1: Job Titles (multi-line text box)
+        search_row1 = ttkb.Frame(search_inner)
+        search_row1.pack(fill=tk.X, pady=2)
+        
+        ttkb.Label(search_row1, text="💼 Job Titles to Search:", font=("Segoe UI", 9, "bold")).pack(anchor=tk.W)
+        ttkb.Label(search_row1, text="(Comma-separated list - e.g., \"Software Engineer, Python Developer, Full Stack Developer\")", 
+            font=("Segoe UI", 7), foreground="#888888").pack(anchor=tk.W)
+        
+        # Text entry for job titles with larger area
+        job_titles_frame = ttkb.Frame(search_inner)
+        job_titles_frame.pack(fill=tk.X, pady=2)
+        
+        self.job_titles_text = tk.Text(job_titles_frame, height=3, width=60, 
+            font=("Segoe UI", 9), wrap=tk.WORD)
+        self.job_titles_text.pack(fill=tk.X, side=tk.LEFT, expand=True)
+        self.job_titles_text.insert("1.0", self.qs_search_terms.get())
+        self.job_titles_text.bind("<FocusOut>", self._on_job_titles_changed)
+        
+        # Row 2: Location + Date Posted + Easy Apply
+        search_row2 = ttkb.Frame(search_inner)
+        search_row2.pack(fill=tk.X, pady=(5, 2))
+        
+        ttkb.Label(search_row2, text="📍 Location:", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        location_entry = ttkb.Entry(search_row2, textvariable=self.qs_search_location, width=20)
+        location_entry.pack(side=tk.LEFT, padx=(5, 15))
+        location_entry.bind("<FocusOut>", lambda e: self._save_quick_settings())
+        
+        ttkb.Label(search_row2, text="📅 Date:", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        date_combo = ttkb.Combobox(search_row2, textvariable=self.qs_date_posted,
+            values=["Any time", "Past month", "Past week", "Past 24 hours"],
+            state="readonly", width=12)
+        date_combo.pack(side=tk.LEFT, padx=(5, 15))
+        date_combo.bind(EVENT_COMBOBOX_SELECTED, lambda e: self._save_quick_settings())
+        
+        ttkb.Checkbutton(search_row2, text="⚡ Easy Apply Only", 
+            variable=self.qs_easy_apply_only,
+            bootstyle="info-round-toggle", 
+            command=self._save_quick_settings).pack(side=tk.LEFT)
+        
+        # Row 3: Job Title Switching Behavior (IMPORTANT FOR USER CLARITY)
+        search_row3_header = ttkb.Frame(search_inner)
+        search_row3_header.pack(fill=tk.X, pady=(8, 2))
+        ttkb.Label(search_row3_header, text="🔄 Job Title Switching Behavior:", 
+            font=("Segoe UI", 9, "bold"), foreground="#f59e0b").pack(side=tk.LEFT)
+        
+        search_row3 = ttkb.Frame(search_inner)
+        search_row3.pack(fill=tk.X, pady=2)
+        
+        ttkb.Label(search_row3, text="Mode:", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        mode_combo = ttkb.Combobox(search_row3, textvariable=self.qs_job_search_mode,
+            values=["sequential", "random", "single"],
+            state="readonly", width=10)
+        mode_combo.pack(side=tk.LEFT, padx=(5, 10))
+        mode_combo.bind(EVENT_COMBOBOX_SELECTED, lambda e: self._on_search_mode_changed())
+        
+        ttkb.Label(search_row3, text="Switch after:", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        switch_spin = ttkb.Spinbox(search_row3, from_=1, to=500, width=5, textvariable=self.qs_switch_number,
+            command=self._save_quick_settings)
+        switch_spin.pack(side=tk.LEFT, padx=(5, 3))
+        ttkb.Label(search_row3, text="applications", font=("Segoe UI", 8), foreground="#888888").pack(side=tk.LEFT, padx=(0, 10))
+        
+        # Mode info tooltip  
+        mode_info = ttkb.Label(search_row3, text="ℹ️ What does this mean?", font=("Segoe UI", 8), 
+            foreground="#22d3ee", cursor="hand2")
+        mode_info.pack(side=tk.LEFT, padx=(5, 0))
+        mode_info.bind(EVENT_ENTER, lambda e: self._show_search_mode_tooltip(e, mode_info))
+        mode_info.bind(EVENT_LEAVE, lambda e: self._hide_tooltip())
+        
+        # Mode explanation label (dynamic based on selection)
+        self.mode_explanation_label = ttkb.Label(search_inner, text="", 
+            font=("Segoe UI", 8), foreground="#4ade80", wraplength=500)
+        self.mode_explanation_label.pack(anchor=tk.W, pady=(2, 0))
+        self._update_mode_explanation()  # Set initial explanation
+        
+        # Row 4: Randomize checkbox + Experience
+        search_row4 = ttkb.Frame(search_inner)
+        search_row4.pack(fill=tk.X, pady=(5, 2))
+        
+        ttkb.Checkbutton(search_row4, text="🔀 Shuffle Job Titles List", 
+            variable=self.qs_randomize_search,
+            bootstyle="info-round-toggle", 
+            command=self._save_quick_settings).pack(side=tk.LEFT)
+        ttkb.Label(search_row4, text="(Randomize the order before cycling)", 
+            font=("Segoe UI", 7), foreground="#888888").pack(side=tk.LEFT, padx=(5, 20))
+        
+        ttkb.Label(search_row4, text="📊 Exp (yrs):", font=("Segoe UI", 9)).pack(side=tk.LEFT)
+        ttkb.Spinbox(search_row4, from_=0, to=30, width=4, textvariable=self.qs_current_experience,
+            command=self._save_quick_settings).pack(side=tk.LEFT, padx=(5, 0))
+        
+        # ========== SETTINGS VALIDATION WARNING ==========
+        self.settings_warning_frame = ttkb.Frame(pilot_master)
+        self.settings_warning_frame.pack(fill=tk.X, pady=2)
+        
+        self.settings_warning_label = ttkb.Label(self.settings_warning_frame, 
+            text="", font=("Segoe UI", 8), foreground="#f97316")
+        self.settings_warning_label.pack(anchor=tk.W)
+        
+        # Separator after pilot/scheduling
+        sep = ttkb.Separator(pilot_master, orient='horizontal')
+        sep.pack(fill=tk.X, pady=(10, 5))
+        
+        # Bind mousewheel to all new widgets
+        if hasattr(self, '_bind_settings_mousewheel'):
+            self._bind_settings_mousewheel(pilot_master)
+        
+        # Initial validation
+        self._validate_settings()
+    
+    def _quick_start_pilot_from_header(self):
+        """Quick start pilot mode from header button."""
+        self._quick_start_pilot()
+    
+    def _quick_start_scheduled_from_header(self):
+        """Quick start scheduled mode from header button."""
+        self._quick_start_scheduled()
+    
+    def _quick_start_pilot(self):
+        """Quick start pilot mode - enables pilot and starts the bot."""
+        self.qs_pilot_mode.set(True)
+        self.qs_pause_submit.set(False)  # Disable pause in pilot mode
+        self.qs_safe_mode.set(True)  # Enable safe mode for stability
+        self._save_quick_settings()
+        self._update_automation_status()
+        self.show_toast("🚀 Pilot Mode Enabled! Starting bot...", "success")
+        self.activity_feed.add_activity("🚀 PILOT MODE ACTIVATED", "success")
+        # Start the bot
+        self.start_bot()
+    
+    def _quick_start_scheduled(self):
+        """Quick start scheduled mode - enables scheduling and starts scheduler."""
+        self.qs_schedule_enabled.set(True)
+        self.qs_pilot_mode.set(True)  # Scheduling needs pilot mode
+        self.qs_pause_submit.set(False)  # Disable pause in pilot mode
+        self.qs_safe_mode.set(True)  # Enable safe mode for stability
+        self._save_quick_settings()
+        self._update_automation_status()
+        self._start_scheduler()
+        self.show_toast("📅 Scheduled Run Started!", "success")
+        self.activity_feed.add_activity("📅 SCHEDULED MODE ACTIVATED", "success")
+    
+    def _switch_to_normal_mode(self):
+        """Switch to normal (manual) mode."""
+        self.qs_pilot_mode.set(False)
+        self.qs_schedule_enabled.set(False)
+        self._stop_scheduler()
+        self._save_quick_settings()
+        self._update_automation_status()
+        self.show_toast("🔧 Switched to Normal Mode", "info")
+    
+    def _on_pilot_mode_changed(self):
+        """Handle pilot mode toggle change."""
+        self._save_quick_settings()
+        self._validate_settings()
+        self._update_automation_status()
+    
+    def _on_schedule_changed(self):
+        """Handle schedule toggle change."""
+        self._save_quick_settings()
+        self._validate_settings()
+        self._update_automation_status()
+    
+    def _update_automation_status(self):
+        """Update the automation status indicator."""
+        if hasattr(self, 'automation_status_indicator'):
+            if self.qs_schedule_enabled.get():
+                self.automation_status_indicator.config(
+                    text="⬤ SCHEDULED MODE", foreground="#60a5fa")
+            elif self.qs_pilot_mode.get():
+                self.automation_status_indicator.config(
+                    text="⬤ PILOT MODE", foreground="#4ade80")
+            else:
+                self.automation_status_indicator.config(
+                    text="⬤ MANUAL MODE", foreground="#888888")
+    
+    def _validate_settings(self):
+        """Validate settings and show warnings for conflicts."""
+        warnings = []
+        
+        # Check for conflicting settings
+        if self.qs_pilot_mode.get() and self.qs_pause_submit.get():
+            warnings.append("⚠️ Pilot Mode conflicts with 'Pause Before Submit' - will auto-disable pause")
+            self.qs_pause_submit.set(False)
+        
+        if self.qs_schedule_enabled.get() and not self.qs_pilot_mode.get():
+            warnings.append("ℹ️ Scheduling works best with Pilot Mode enabled")
+        
+        if self.qs_pilot_resume_mode.get() == "skip" and not self.qs_pilot_mode.get():
+            warnings.append("ℹ️ 'Skip' resume mode only applies in Pilot Mode")
+        
+        # Update warning label
+        if hasattr(self, 'settings_warning_label'):
+            if warnings:
+                self.settings_warning_label.config(text=" | ".join(warnings))
+            else:
+                self.settings_warning_label.config(text="")
+    
+    def _show_resume_mode_tooltip(self, event, widget):
+        """Show tooltip for resume mode options."""
+        tooltip_text = """Resume Mode Options:
+• tailored - AI-tailored resume for each job (no confirmations)
+• default - Upload project's default resume file
+• preselected - Use LinkedIn's pre-selected resume (no upload)
+• skip - Don't touch resume at all"""
+        
+        self._tooltip = tk.Toplevel(widget)
+        self._tooltip.wm_overrideredirect(True)
+        self._tooltip.wm_geometry(f"+{event.x_root+10}+{event.y_root+10}")
+        
+        label = ttkb.Label(self._tooltip, text=tooltip_text, 
+            font=("Segoe UI", 9), background="#333333", foreground="#ffffff",
+            padding=(8, 5))
+        label.pack()
+    
+    def _hide_tooltip(self):
+        """Hide the tooltip."""
+        if hasattr(self, '_tooltip') and self._tooltip:
+            self._tooltip.destroy()
+            self._tooltip = None
+    
+    def _show_search_mode_tooltip(self, event, widget):
+        """Show tooltip for job search mode options."""
+        tooltip_text = """🔄 JOB TITLE SWITCHING MODES:
+
+📋 SEQUENTIAL (Recommended)
+   Apply to each job title in your list order.
+   After N applications (set by 'Switch after'), 
+   move to the next job title in the list.
+   Example: 30 apps for "Software Engineer", 
+   then 30 for "Python Developer", etc.
+
+🎲 RANDOM  
+   Randomly pick a different job title for 
+   each search cycle. Good for diverse coverage.
+
+🎯 SINGLE (Stay on One Title)
+   ONLY apply to the FIRST job title in your list.
+   Ignores all other titles until limit is reached.
+   Use this if you want to focus on one specific role."""
+        
+        self._tooltip = tk.Toplevel(widget)
+        self._tooltip.wm_overrideredirect(True)
+        self._tooltip.wm_geometry(f"+{event.x_root+10}+{event.y_root+10}")
+        
+        label = ttkb.Label(self._tooltip, text=tooltip_text, 
+            font=("Segoe UI", 9), background="#333333", foreground="#ffffff",
+            padding=(8, 5))
+        label.pack()
+    
+    def _on_job_titles_changed(self, event=None):
+        """Handle job titles text box change."""
+        if hasattr(self, 'job_titles_text'):
+            text = self.job_titles_text.get("1.0", tk.END).strip()
+            self.qs_search_terms.set(text)
+            self._save_quick_settings()
+    
+    def _on_search_mode_changed(self):
+        """Handle search mode combobox change."""
+        self._save_quick_settings()
+        self._update_mode_explanation()
+    
+    def _update_mode_explanation(self):
+        """Update the mode explanation label based on current selection."""
+        if not hasattr(self, 'mode_explanation_label'):
+            return
+        
+        mode = self.qs_job_search_mode.get()
+        switch_num = self.qs_switch_number.get()
+        
+        explanations = {
+            "sequential": f"✅ SEQUENTIAL: Bot applies to jobs for each title in order. After {switch_num} apps for 'Title A', it moves to 'Title B', then 'Title C', etc.",
+            "random": "🎲 RANDOM: Bot randomly picks a new job title for each search cycle. Useful for diverse applications across all titles.",
+            "single": "🎯 SINGLE: Bot ONLY searches for the FIRST job title in your list until the limit is reached. Other titles are ignored."
+        }
+        
+        explanation = explanations.get(mode, "Select a mode to see explanation")
+        self.mode_explanation_label.config(text=explanation)
+
+    # ============================================
+    # SCHEDULER CONTROL METHODS
+    # ============================================
+    def _start_scheduler(self):
+        """Start the job application scheduler."""
+        try:
+            from modules.scheduler import get_scheduler
+            scheduler = get_scheduler()
+            
+            # Update scheduler config from current settings
+            scheduler.update_config({
+                'enabled': True,
+                'schedule_type': self.qs_schedule_type.get(),
+                'interval_hours': self.qs_schedule_interval.get(),
+                'max_runtime': self.qs_schedule_max_runtime.get(),
+                'max_applications': self.qs_schedule_max_apps.get(),
+                'pilot_mode': self.qs_pilot_mode.get(),
+                'pilot_resume_mode': self.qs_pilot_resume_mode.get(),
+            })
+            
+            scheduler.start()
+            
+            # Update UI
+            if hasattr(self, 'schedule_status_label'):
+                self.schedule_status_label.config(text="▶️ Scheduler: Running", foreground="#4ade80")
+            
+            # Show next run time
+            next_run = scheduler.get_next_run_time()
+            if next_run and hasattr(self, 'next_run_label'):
+                self.next_run_label.config(text=f"Next scheduled run: {next_run.strftime('%Y-%m-%d %H:%M')}")
+            
+            self.show_toast("✅ Scheduler started!", "success")
+            self.activity_feed.add_activity("Scheduler started", "success")
+            
+        except Exception as e:
+            self.show_toast(f"❌ Failed to start scheduler: {str(e)[:40]}", "error")
+            print(f"[Dashboard] Scheduler start error: {e}")
+    
+    def _stop_scheduler(self):
+        """Stop the job application scheduler."""
+        try:
+            from modules.scheduler import stop_scheduler
+            stop_scheduler()
+            
+            # Update UI
+            if hasattr(self, 'schedule_status_label'):
+                self.schedule_status_label.config(text="⏸️ Scheduler: Stopped", foreground="#888888")
+            if hasattr(self, 'next_run_label'):
+                self.next_run_label.config(text="Next scheduled run: --")
+            
+            self.show_toast("⏹️ Scheduler stopped", "info")
+            self.activity_feed.add_activity("Scheduler stopped", "info")
+            
+        except Exception as e:
+            self.show_toast(f"⚠️ Scheduler stop error: {str(e)[:40]}", "warning")
+            print(f"[Dashboard] Scheduler stop error: {e}")
+    
+    def _update_scheduler_status(self):
+        """Update scheduler status display (called periodically)."""
+        try:
+            from modules.scheduler import get_scheduler
+            scheduler = get_scheduler()
+            status = scheduler.get_status()
+            
+            if hasattr(self, 'schedule_status_label'):
+                if status.get('running', False):
+                    self.schedule_status_label.config(text="▶️ Scheduler: Running", foreground="#4ade80")
+                else:
+                    self.schedule_status_label.config(text="⏸️ Scheduler: Stopped", foreground="#888888")
+            
+            next_run = status.get('next_run')
+            if next_run and hasattr(self, 'next_run_label'):
+                self.next_run_label.config(text=f"Next scheduled run: {next_run[:16]}")
+        except Exception:
+            pass
+
     def _refresh_metrics(self):
         data = metrics.get_metrics()
         
@@ -2596,58 +4080,107 @@ GitHub: github.com/surajpanwar26
                 
                 self._log_with_timestamp(msg, msg_type)
                 
-                if msg.startswith('[AI]'):
-                    self.ai_output.insert(tk.END, msg.replace('[AI]', '').strip() + "\n")
-                    self.ai_output.see(tk.END)
+                if hasattr(self, 'ai_output') and msg.startswith('[AI]'):
+                    try:
+                        self.ai_output.insert(tk.END, msg.replace('[AI]', '').strip() + "\n")
+                        self.ai_output.see(tk.END)
+                    except tk.TclError:
+                        pass
         
-        # Update progress bars
+        # Update progress bars - REAL-TIME with smooth animation
         jd = int(data.get("jd_progress", 0))
         rs = int(data.get("resume_progress", 0))
-        self.jd_progress.configure(value=jd)
-        self.jd_progress_label.config(text=f"{jd}%")
-        self.resume_progress.configure(value=rs)
-        self.resume_progress_label.config(text=f"{rs}%")
+        
+        # Update JD Analysis progress (all instances)
+        try:
+            if hasattr(self, 'dash_jd_progress'):
+                self.dash_jd_progress.configure(value=jd)
+            if hasattr(self, 'jd_progress'):
+                self.jd_progress.configure(value=jd)
+            # Update status labels with clear visual feedback
+            if hasattr(self, 'dash_jd_status'):
+                if jd == 0:
+                    self.dash_jd_status.config(text="Idle", foreground="#888888")
+                elif jd < 100:
+                    self.dash_jd_status.config(text=f"Analyzing... {jd}%", foreground="#60a5fa")
+                else:
+                    self.dash_jd_status.config(text="✓ Complete", foreground="#4ade80")
+            if hasattr(self, 'jd_progress_label'):
+                self.jd_progress_label.config(text=f"{jd}%")
+        except tk.TclError:
+            pass
+        
+        # Update Resume Tailoring progress (all instances)
+        try:
+            if hasattr(self, 'dash_resume_progress'):
+                self.dash_resume_progress.configure(value=rs)
+            if hasattr(self, 'resume_progress'):
+                self.resume_progress.configure(value=rs)
+            # Update status labels with clear visual feedback
+            if hasattr(self, 'dash_resume_status'):
+                if rs == 0:
+                    self.dash_resume_status.config(text="Idle", foreground="#888888")
+                elif rs < 100:
+                    self.dash_resume_status.config(text=f"Tailoring... {rs}%", foreground="#fbbf24")
+                else:
+                    self.dash_resume_status.config(text="✓ Complete", foreground="#4ade80")
+            if hasattr(self, 'resume_progress_label'):
+                self.resume_progress_label.config(text=f"{rs}%")
+        except tk.TclError:
+            pass
         
         # Update job count
         self.job_count = data.get("jobs_processed", 0)
         
-        # Update metrics labels
+        # Update dashboard stats if available
+        self._update_dashboard_stats()
+        
+        # Update metrics labels (if they exist)
+        if hasattr(self, 'metric_labels'):
+            try:
+                self.metric_labels["ai_provider"].config(text=str(ai_provider).upper())
+                self.metric_labels["jobs_processed"].config(text=str(data.get("jobs_processed", 0)))
+                self.metric_labels["easy_applied"].config(text=str(data.get("easy_applied", 0)))
+                self.metric_labels["external_jobs"].config(text=str(data.get("external_jobs", 0)))
+                self.metric_labels["jd_analysis_count"].config(text=str(data.get("jd_analysis_count", 0)))
+                self.metric_labels["resume_tailoring_count"].config(text=str(data.get("resume_tailoring_count", 0)))
+                self.metric_labels["jd_analysis_avg"].config(text=f"{data.get('jd_analysis_avg', 0):.2f}")
+                self.metric_labels["resume_tailoring_avg"].config(text=f"{data.get('resume_tailoring_avg', 0):.2f}")
+                self.metric_labels["jd_analysis_last"].config(text=f"{data.get('jd_analysis_last', 0):.2f}")
+                self.metric_labels["resume_last"].config(text=f"{data.get('resume_last', 0):.2f}")
+                
+                eta_seconds = data.get("eta_seconds", 0) or 0
+                eta_minutes = eta_seconds / 60 if eta_seconds else 0
+                self.metric_labels["eta_minutes"].config(text=f"{eta_minutes:.1f}")
+                self.metric_labels["ollama_calls"].config(text=str(data.get("ollama_calls", 0)))
+            except Exception:
+                pass
+        
+        # Update charts (safely)
         try:
-            self.metric_labels["ai_provider"].config(text=str(ai_provider).upper())
-            self.metric_labels["jobs_processed"].config(text=str(data.get("jobs_processed", 0)))
-            self.metric_labels["easy_applied"].config(text=str(data.get("easy_applied", 0)))
-            self.metric_labels["external_jobs"].config(text=str(data.get("external_jobs", 0)))
-            self.metric_labels["jd_analysis_count"].config(text=str(data.get("jd_analysis_count", 0)))
-            self.metric_labels["resume_tailoring_count"].config(text=str(data.get("resume_tailoring_count", 0)))
-            self.metric_labels["jd_analysis_avg"].config(text=f"{data.get('jd_analysis_avg', 0):.2f}")
-            self.metric_labels["resume_tailoring_avg"].config(text=f"{data.get('resume_tailoring_avg', 0):.2f}")
-            self.metric_labels["jd_analysis_last"].config(text=f"{data.get('jd_analysis_last', 0):.2f}")
-            self.metric_labels["resume_last"].config(text=f"{data.get('resume_last', 0):.2f}")
-            
-            eta_seconds = data.get("eta_seconds", 0) or 0
-            eta_minutes = eta_seconds / 60 if eta_seconds else 0
-            self.metric_labels["eta_minutes"].config(text=f"{eta_minutes:.1f}")
-            self.metric_labels["ollama_calls"].config(text=str(data.get("ollama_calls", 0)))
+            self._update_charts(data)
         except Exception:
             pass
         
-        # Update charts
-        self._update_charts(data)
-        
-        # Update stats
-        self.update_stats_display()
+        # Update stats (safely)
+        try:
+            if hasattr(self, 'update_stats_display'):
+                self.update_stats_display()
+        except Exception:
+            pass
         
         # Update analytics panel in right panel
         try:
-            self.update_analytics_stats()
+            if hasattr(self, 'update_analytics_stats'):
+                self.update_analytics_stats()
             # Update overall progress
             total_jobs = data.get("jobs_processed", 0)
-            if total_jobs > 0:
+            if total_jobs > 0 and hasattr(self, 'update_progress'):
                 self.update_progress(self.applied_count, total_jobs, "Processing jobs...")
         except Exception:
             pass
         
-        self.after(1000, self._refresh_metrics)
+        self.after(200, self._refresh_metrics)  # 200ms for real-time progress updates
     
     def _update_charts(self, data):
         try:
@@ -2709,6 +4242,10 @@ GitHub: github.com/surajpanwar26
             pass
     
     def on_close(self):
+        """Handle dashboard close - stops bot and kills ALL Chrome processes."""
+        import subprocess
+        import sys
+        
         try:
             if self.current_status == "Running":
                 if messagebox.askyesno("Confirm Exit", 
@@ -2724,6 +4261,63 @@ GitHub: github.com/surajpanwar26
         except Exception:
             pass
         
+        # ============================================
+        # CLEANUP: Kill Chrome and all related processes
+        # ============================================
+        print("[Dashboard] Cleaning up all processes...")
+        
+        # Step 1: Reset Chrome session via open_chrome module
+        # Use force=True to ensure cleanup happens even during operation
+        try:
+            from modules.open_chrome import reset_chrome_session, set_auto_reset_allowed
+            set_auto_reset_allowed(True)  # Re-enable auto-reset for cleanup
+            reset_chrome_session(force=True)  # Force cleanup with process termination
+            print("[Dashboard] Chrome session reset successfully")
+        except Exception as e:
+            print(f"[Dashboard] Warning: Chrome session reset failed: {e}")
+        
+        # Step 2: Force kill all Chrome-related processes on Windows
+        if sys.platform == 'win32':
+            try:
+                # Kill chromedriver first
+                subprocess.run(
+                    ['taskkill', '/F', '/IM', 'chromedriver.exe'],
+                    capture_output=True, timeout=5
+                )
+            except Exception:
+                pass
+            
+            try:
+                # Kill Chrome browser with all child processes
+                subprocess.run(
+                    ['taskkill', '/F', '/IM', 'chrome.exe', '/T'],
+                    capture_output=True, timeout=5
+                )
+            except Exception:
+                pass
+            
+            # Also try killing any orphaned processes
+            try:
+                subprocess.run(
+                    ['taskkill', '/F', '/IM', 'GoogleCrashHandler.exe'],
+                    capture_output=True, timeout=3
+                )
+                subprocess.run(
+                    ['taskkill', '/F', '/IM', 'GoogleCrashHandler64.exe'],
+                    capture_output=True, timeout=3
+                )
+            except Exception:
+                pass
+        else:
+            # Linux/Mac cleanup
+            try:
+                subprocess.run(['pkill', '-9', '-f', 'chromedriver'], capture_output=True, timeout=5)
+                subprocess.run(['pkill', '-9', '-f', 'chrome'], capture_output=True, timeout=5)
+            except Exception:
+                pass
+        
+        print("[Dashboard] Cleanup complete - all Chrome processes terminated")
+        
         self.destroy()
 
 
@@ -2733,10 +4327,41 @@ class BotController:
         self.runner = runner
 
     def start(self) -> bool:
-        return self.runner.start_bot_thread()
+        """Start the bot. Returns True if started, False if already running."""
+        if hasattr(self.runner, 'start_bot_thread'):
+            return self.runner.start_bot_thread()
+        elif hasattr(self.runner, 'start_bot'):
+            self.runner.start_bot()
+            return True
+        return False
 
     def stop(self) -> None:
-        self.runner.stop_bot()
+        """Stop the bot and clean up."""
+        if hasattr(self.runner, 'stop_bot'):
+            self.runner.stop_bot()
+    
+    def pause(self) -> bool:
+        """Pause/unpause the bot. Returns new pause state."""
+        if hasattr(self.runner, 'pause_bot'):
+            return self.runner.pause_bot()
+        return False
+    
+    def skip(self) -> None:
+        """Skip current job."""
+        if hasattr(self.runner, 'skip_job'):
+            self.runner.skip_job()
+    
+    def is_running(self) -> bool:
+        """Check if bot is running."""
+        if hasattr(self.runner, 'is_running'):
+            return self.runner.is_running()
+        return False
+    
+    def is_paused(self) -> bool:
+        """Check if bot is paused."""
+        if hasattr(self.runner, 'is_paused'):
+            return self.runner.is_paused()
+        return False
 
 
 def run_dashboard(runner):
@@ -2746,3 +4371,5 @@ def run_dashboard(runner):
 
 if __name__ == "__main__":
     print("Run this module from the main application to open the dashboard")
+
+# sonar:on

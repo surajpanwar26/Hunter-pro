@@ -1,15 +1,17 @@
 '''
-Author:     Suraj
+Author:     Sai Vignesh Golla
 LinkedIn:   https://www.linkedin.com/in/saivigneshgolla/
 
-Copyright (C) 2024 Suraj
+Copyright (C) 2024 Sai Vignesh Golla
 
 License:    GNU Affero General Public License
             https://www.gnu.org/licenses/agpl-3.0.en.html
             
 GitHub:     https://github.com/GodsScion/Auto_job_applier_linkedIn
 
-''' 
+Support me: https://github.com/sponsors/GodsScion
+
+'''
 
 
 ############### OLD CONFIG FILE - FOR REFERENCE FOR DEVELOPERS - DO NOT USE #################
@@ -26,7 +28,7 @@ failed_file_name = "all excels/all_failed_applications_history.csv"
 logs_folder_path = "logs/"
 
 # Set the maximum amount of time allowed to wait between each click in secs
-click_gap = 0                      # Enter max allowed secs to wait approximately. (Only Non Negative Integers Eg: 0,1,2,3,....)
+click_gap = 2                      # Enter max allowed secs to wait approximately. (Only Non Negative Integers Eg: 0,1,2,3,....)
 
 # If you want to see Chrome running then set run_in_background as False (May reduce performance). 
 run_in_background = False          # True or False, Note: True or False are case-sensitive ,   If True, this will make pause_at_failed_question, pause_before_submit and run_in_background as False
@@ -280,6 +282,6 @@ As an independent developer, I pour my heart and soul into creating tools like t
 Your support, whether through donations big or small or simply spreading the word, means the world to me and helps keep this project alive and thriving.
 
 Gratefully yours 🙏🏻,
-Suraj
+Sai Vignesh Golla
 '''
 ############################################################################################################

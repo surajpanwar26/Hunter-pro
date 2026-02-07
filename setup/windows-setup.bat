@@ -1,12 +1,12 @@
-:: Author:     Suraj
-:: LinkedIn:   https://www.linkedin.com/in/saivigneshgolla/
+:: Author:     Suraj Panwar
+:: LinkedIn:   https://www.linkedin.com/in/surajpanwar/
 
-:: Copyright (C) 2024 Suraj
+:: Copyright (C) 2024 Suraj Panwar
 
 :: License:    GNU Affero General Public License
 ::             https://www.gnu.org/licenses/agpl-3.0.en.html
 
-:: GitHub:     https://github.com/GodsScion/Auto_job_applier_linkedIn
+:: GitHub:     https://github.com/surajpanwar/Auto_job_applier_linkedIn
 
 
 

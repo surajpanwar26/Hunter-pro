@@ -26,6 +26,7 @@ def gemini_create_client():
     Configures the Gemini client and validates the selected model.
     * Returns a configured Gemini model object or None if an error occurs.
     """
+    global showAiErrorAlerts
     try:
         print_lg("Configuring Gemini client...")
         if not llm_api_key or "YOUR_API_KEY" in llm_api_key:
@@ -67,25 +68,24 @@ def gemini_completion(model, prompt: str, is_json: bool = False) -> dict | str:
         raise ValueError("Gemini client is not available!")
 
     try:
-        # The Gemini API has a 'safety_settings' parameter to control content filtering.
-        # For a job application helper, it's generally safe to set these to a less restrictive level
-        # to avoid blocking legitimate content from resumes or job descriptions.
+        # Safety settings: Use BLOCK_ONLY_HIGH to allow legitimate resume/JD content
+        # while still blocking clearly harmful outputs
         safety_settings = [
             {
                 "category": "HARM_CATEGORY_HARASSMENT",
-                "threshold": "BLOCK_NONE",
+                "threshold": "BLOCK_ONLY_HIGH",
             },
             {
                 "category": "HARM_CATEGORY_HATE_SPEECH",
-                "threshold": "BLOCK_NONE",
+                "threshold": "BLOCK_ONLY_HIGH",
             },
             {
                 "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                "threshold": "BLOCK_NONE",
+                "threshold": "BLOCK_ONLY_HIGH",
             },
             {
                 "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
-                "threshold": "BLOCK_NONE",
+                "threshold": "BLOCK_ONLY_HIGH",
             },
         ]
 

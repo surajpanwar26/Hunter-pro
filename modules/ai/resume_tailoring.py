@@ -6,8 +6,11 @@ import json
 import hashlib
 import textwrap
 import difflib
+import threading
+import queue
 from datetime import datetime
 from typing import Optional, cast
+from concurrent.futures import ThreadPoolExecutor, Future
 
 from config.secrets import ai_provider, llm_api_key, llm_api_url, deepseek_api_key, deepseek_api_url
 from config.secrets import groq_api_key, groq_api_url, groq_model
@@ -17,6 +20,253 @@ from config.personals import first_name
 from modules.ai.prompts import resume_tailor_prompt, resume_tailor_prompt_compact, resume_tailor_paragraphs_prompt
 from modules.ai.prompt_safety import sanitize_prompt_input, wrap_delimited
 from modules.helpers import print_lg, critical_error_log
+
+
+# ============ ASYNC TAILORING SYSTEM ============
+# Background executor for async resume tailoring (1 worker to avoid rate limits)
+_tailoring_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ResumeTailor")
+_pending_tailoring: dict[str, Future] = {}  # Cache key -> Future
+_tailoring_lock = threading.Lock()
+
+
+def queue_async_tailor(
+    job_description: str,
+    job_title: str,
+    resume_path: str,
+    instructions: Optional[str] = None,
+) -> str:
+    """
+    Queue a resume tailoring job to run in background.
+    Returns a cache key that can be used to check/retrieve results.
+    
+    This allows the bot to pre-tailor resumes while showing user other jobs.
+    """
+    from modules.ai.resume_tailoring import _cache_key, _read_resume_text
+    
+    try:
+        resume_text = _read_resume_text(resume_path)
+    except Exception:
+        return ""
+    
+    resolved_provider = (ai_provider or "ollama").lower()
+    cache_key = _cache_key(resume_text, job_description, instructions, resolved_provider, job_title)
+    
+    with _tailoring_lock:
+        # Already queued or processing?
+        if cache_key in _pending_tailoring:
+            return cache_key
+        
+        # Check if already cached
+        cache_dir = os.path.join(generated_resume_path or "all resumes/", "cache")
+        cache_path = os.path.join(cache_dir, f"{cache_key}.json")
+        if os.path.exists(cache_path):
+            return cache_key  # Already done
+        
+        # Queue the tailoring job
+        future = _tailoring_executor.submit(
+            _async_tailor_worker,
+            resume_text=resume_text,
+            job_description=job_description,
+            job_title=job_title,
+            instructions=instructions,
+            cache_key=cache_key,
+        )
+        _pending_tailoring[cache_key] = future
+        print_lg(f"🔄 Background tailoring queued for: {job_title[:40]}...")
+        
+    return cache_key
+
+
+def get_async_tailor_result(cache_key: str, timeout: float = 0.1) -> Optional[dict]:
+    """
+    Check if async tailoring is complete and get result.
+    
+    Args:
+        cache_key: Key from queue_async_tailor()
+        timeout: Max seconds to wait (0.1 = non-blocking check)
+        
+    Returns:
+        dict with paths if ready, None if still processing or failed
+    """
+    if not cache_key:
+        return None
+    
+    with _tailoring_lock:
+        future = _pending_tailoring.get(cache_key)
+        
+    if future is None:
+        # Check cache directly
+        cache_dir = os.path.join(generated_resume_path or "all resumes/", "cache")
+        cache_path = os.path.join(cache_dir, f"{cache_key}.json")
+        if os.path.exists(cache_path):
+            try:
+                with open(cache_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        return None
+    
+    if not future.done():
+        try:
+            # Wait briefly
+            future.result(timeout=timeout)
+        except Exception:
+            return None  # Still processing or timed out
+    
+    try:
+        result = future.result(timeout=0)
+        # Clean up
+        with _tailoring_lock:
+            _pending_tailoring.pop(cache_key, None)
+        return result
+    except Exception:
+        with _tailoring_lock:
+            _pending_tailoring.pop(cache_key, None)
+        return None
+
+
+def _async_tailor_worker(
+    resume_text: str,
+    job_description: str,
+    job_title: str,
+    instructions: Optional[str],
+    cache_key: str,
+) -> dict:
+    """Background worker for async tailoring."""
+    try:
+        from modules.ai.resume_tailoring import tailor_resume_to_files
+        
+        output_dir = os.path.join(generated_resume_path or "all resumes/", "temp")
+        os.makedirs(output_dir, exist_ok=True)
+        
+        result = tailor_resume_to_files(
+            resume_text=resume_text,
+            job_description=job_description,
+            job_title=job_title,
+            instructions=instructions or resume_tailoring_default_instructions,
+            output_dir=output_dir,
+            enable_preview=False,
+        )
+        return result
+    except Exception as e:
+        print_lg(f"❌ Background tailoring failed: {e}")
+        return {}
+
+
+def is_tailoring_pending(cache_key: str) -> bool:
+    """Check if a tailoring job is still in progress."""
+    if not cache_key:
+        return False
+    with _tailoring_lock:
+        future = _pending_tailoring.get(cache_key)
+        if future and not future.done():
+            return True
+    return False
+
+
+def wait_for_tailoring(cache_key: str, timeout: float = 30.0) -> Optional[dict]:
+    """Wait for a specific tailoring job to complete."""
+    return get_async_tailor_result(cache_key, timeout=timeout)
+
+
+def _strip_prompt_markers(text: str) -> str:
+    """
+    CRITICAL: Remove prompt template markers that AI may accidentally include in output.
+    
+    This fixes the bug where AI outputs things like:
+    - "===== MASTER RESUME (COPY THIS FORMAT EXACTLY) ====="
+    - "<<RESUME>>"
+    - "<<END_RESUME>>"
+    - "===== END MASTER RESUME ====="
+    - "===== JOB DESCRIPTION ====="
+    
+    The output should be ONLY the clean resume content, ready for an interviewer.
+    """
+    if not text:
+        return text
+    
+    import re
+    
+    # List of marker patterns to remove (case-insensitive)
+    marker_patterns = [
+        # Section markers
+        r'^={3,}.*?MASTER RESUME.*?={3,}\s*$',
+        r'^={3,}.*?END MASTER RESUME.*?={3,}\s*$',
+        r'^={3,}.*?JOB DESCRIPTION.*?={3,}\s*$',
+        r'^={3,}.*?END JOB DESCRIPTION.*?={3,}\s*$',
+        r'^={3,}.*?PRESERVE THIS FORMAT.*?={3,}\s*$',
+        r'^={3,}.*?COPY THIS FORMAT.*?={3,}\s*$',
+        r'^={3,}.*?EXTRACT KEYWORDS.*?={3,}\s*$',
+        # XML-style markers
+        r'^<<RESUME>>\s*$',
+        r'^<<END_RESUME>>\s*$',
+        r'^<<START_RESUME>>\s*$',
+        r'^<<\/RESUME>>\s*$',
+        r'^<RESUME>\s*$',
+        r'^</RESUME>\s*$',
+        r'^<END_RESUME>\s*$',
+        # Instruction markers
+        r'^OUTPUT:.*?optimized keywords:\s*$',
+        r'^OUTPUT:\s*$',
+        r'^Return ONLY the tailored resume.*$',
+        r'^No explanations.*$',
+        r'^Start directly with.*$',
+        # Triple backticks (code blocks)
+        r'^```.*$',
+        # Common AI artifacts
+        r'^Here is the tailored resume:?\s*$',
+        r'^Here\'s the tailored resume:?\s*$',
+        r'^Tailored Resume:?\s*$',
+        r'^---+\s*$',
+        r'^\*\*\*+\s*$',
+    ]
+    
+    # Process line by line
+    lines = text.split('\n')
+    clean_lines = []
+    
+    for line in lines:
+        stripped = line.strip()
+        should_remove = False
+        
+        for pattern in marker_patterns:
+            if re.match(pattern, stripped, re.IGNORECASE):
+                should_remove = True
+                break
+        
+        # Also check for common marker substrings
+        lower_line = stripped.lower()
+        marker_substrings = [
+            'master resume', 'end master resume', 'copy this format',
+            'preserve this format', 'end job description', '<<resume>>',
+            '<<end_resume>>', 'extract keywords from', '===== end',
+            '===== master', '===== job'
+        ]
+        
+        for marker in marker_substrings:
+            if marker in lower_line and ('=====' in stripped or '<<' in stripped):
+                should_remove = True
+                break
+        
+        if not should_remove:
+            clean_lines.append(line)
+    
+    # Remove leading/trailing empty lines
+    result = '\n'.join(clean_lines).strip()
+    
+    # Final safety check - if the result starts with a marker character, try to find actual content
+    while result and result[0] in '=<-*#':
+        first_newline = result.find('\n')
+        if first_newline > 0:
+            first_line = result[:first_newline].strip().lower()
+            if any(m in first_line for m in ['master resume', 'job description', 'resume>>', 'end_']):
+                result = result[first_newline:].strip()
+            else:
+                break
+        else:
+            break
+    
+    return result
 
 
 def _sanitize_text_for_display(text: str) -> str:
@@ -276,48 +526,216 @@ def _write_docx_from_template(template_path: str, paragraphs: list[str], output_
 
 
 def _write_docx(text: str, output_dir: str, base_name: str) -> str:
+    """
+    Write text to a DOCX file with proper professional formatting.
+    
+    Creates a properly formatted DOCX that LinkedIn accepts (not tiny 3KB files).
+    Uses same formatting logic as _write_pdf for consistency.
+    """
     _ensure_output_dir(output_dir)
     try:
         from docx import Document
+        from docx.shared import Pt, Inches
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
     except Exception as e:
         raise ValueError("python-docx is required to write .docx resumes. Please install it.") from e
+    
     path = os.path.join(output_dir, f"{base_name}.docx")
     # If file exists, add timestamp to avoid overwrite
     if os.path.exists(path):
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         path = os.path.join(output_dir, f"{base_name}_{stamp}.docx")
+    
     doc = Document()
-    for line in text.splitlines():
-        doc.add_paragraph(line)
+    
+    # Set professional margins
+    for section in doc.sections:
+        section.top_margin = Inches(0.5)
+        section.bottom_margin = Inches(0.5)
+        section.left_margin = Inches(0.75)
+        section.right_margin = Inches(0.75)
+    
+    # Add content with proper formatting
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        if not stripped:
+            # Empty line - add spacing
+            p = doc.add_paragraph()
+            p.paragraph_format.space_after = Pt(6)
+        else:
+            p = doc.add_paragraph(stripped)
+            # First line (name) - make it bold and larger, centered
+            if i == 0:
+                for run in p.runs:
+                    run.bold = True
+                    run.font.size = Pt(14)
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            # Second line (contact info) - center it, smaller font
+            elif i == 1:
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                for run in p.runs:
+                    run.font.size = Pt(10)
+            # Section headers (all caps or ending with :)
+            elif stripped.isupper() or stripped.endswith(':'):
+                for run in p.runs:
+                    run.bold = True
+                    run.font.size = Pt(11)
+            else:
+                for run in p.runs:
+                    run.font.size = Pt(10)
+            p.paragraph_format.space_after = Pt(2)
+    
     doc.save(path)
+    
+    # Verify file size is reasonable (not tiny)
+    file_size = os.path.getsize(path)
+    if file_size < 5000:
+        print(f"[DOCX] ⚠️ Warning: DOCX file is small ({file_size} bytes), may have issues")
+    else:
+        print(f"[DOCX] ✅ Created properly formatted DOCX: {file_size} bytes")
+    
     return path
 
 
 def _write_pdf(text: str, output_dir: str, base_name: str) -> str:
+    """
+    Write text to a PDF file. 
+    
+    LinkedIn has strict PDF validation - uses docx2pdf conversion for proper formatting,
+    falling back to reportlab canvas for basic PDF if conversion fails.
+    """
     _ensure_output_dir(output_dir)
-    try:
-        from reportlab.lib.pagesizes import letter  # type: ignore
-        from reportlab.pdfgen import canvas  # type: ignore
-    except Exception as e:
-        raise ValueError("reportlab is required to write .pdf resumes. Please install it.") from e
+    
     path = os.path.join(output_dir, f"{base_name}.pdf")
     # If file exists, add timestamp to avoid overwrite
     if os.path.exists(path):
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         path = os.path.join(output_dir, f"{base_name}_{stamp}.pdf")
+    
+    # METHOD 1: Create DOCX first, then convert to PDF (best quality, LinkedIn-compatible)
+    try:
+        # First create a proper DOCX
+        from docx import Document
+        from docx.shared import Pt, Inches
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+        
+        temp_docx_path = os.path.join(output_dir, f"{base_name}_temp.docx")
+        doc = Document()
+        
+        # Set margins for professional look
+        for section in doc.sections:
+            section.top_margin = Inches(0.5)
+            section.bottom_margin = Inches(0.5)
+            section.left_margin = Inches(0.75)
+            section.right_margin = Inches(0.75)
+        
+        # Add content with proper formatting
+        lines = text.splitlines()
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if not stripped:
+                # Empty line - add spacing
+                p = doc.add_paragraph()
+                p.paragraph_format.space_after = Pt(6)
+            else:
+                p = doc.add_paragraph(stripped)
+                # First line (name) - make it bold and larger
+                if i == 0:
+                    for run in p.runs:
+                        run.bold = True
+                        run.font.size = Pt(14)
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                # Second line (contact) - center it
+                elif i == 1:
+                    p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                    for run in p.runs:
+                        run.font.size = Pt(10)
+                # Section headers (all caps or ending with :)
+                elif stripped.isupper() or stripped.endswith(':'):
+                    for run in p.runs:
+                        run.bold = True
+                        run.font.size = Pt(11)
+                else:
+                    for run in p.runs:
+                        run.font.size = Pt(10)
+                p.paragraph_format.space_after = Pt(2)
+        
+        doc.save(temp_docx_path)
+        
+        # Try to convert DOCX to PDF using docx2pdf (requires MS Word)
+        try:
+            from docx2pdf import convert
+            convert(temp_docx_path, path)
+            
+            # Clean up temp docx
+            try:
+                os.remove(temp_docx_path)
+            except:
+                pass
+            
+            # Verify PDF was created and has reasonable size
+            if os.path.exists(path) and os.path.getsize(path) > 5000:
+                print(f"[PDF] ✅ Created LinkedIn-compatible PDF via docx2pdf: {os.path.getsize(path)} bytes")
+                return path
+        except ImportError:
+            print("[PDF] docx2pdf not available, trying alternative...")
+        except Exception as conv_err:
+            print(f"[PDF] docx2pdf conversion failed: {conv_err}")
+        
+        # Clean up temp docx if still exists
+        try:
+            if os.path.exists(temp_docx_path):
+                os.remove(temp_docx_path)
+        except:
+            pass
+            
+    except Exception as docx_err:
+        print(f"[PDF] DOCX-based PDF creation failed: {docx_err}")
+    
+    # METHOD 2: Fall back to reportlab (basic but functional)
+    print("[PDF] Using reportlab fallback for PDF creation")
+    try:
+        from reportlab.lib.pagesizes import letter
+        from reportlab.pdfgen import canvas
+        from reportlab.lib.units import inch
+        from reportlab.pdfbase import pdfmetrics
+        from reportlab.pdfbase.ttfonts import TTFont
+    except Exception as e:
+        raise ValueError("reportlab is required to write .pdf resumes. Please install it.") from e
+    
     c = canvas.Canvas(path, pagesize=letter)
     width, height = letter
-    x = 50
-    y = height - 50
-    for line in text.splitlines():
-        wrapped = textwrap.wrap(line, width=100) or [""]
+    
+    # Set up better formatting
+    x = 0.75 * inch
+    y = height - 0.5 * inch
+    
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        wrapped = textwrap.wrap(line, width=95) or [""]
         for chunk in wrapped:
-            if y < 50:
+            if y < 0.5 * inch:
                 c.showPage()
-                y = height - 50
-            c.drawString(x, y, chunk)
-            y -= 14
+                y = height - 0.5 * inch
+            
+            # First line (name) - larger font
+            if i == 0 and chunk == line:
+                c.setFont("Helvetica-Bold", 14)
+                # Center the name
+                text_width = c.stringWidth(chunk, "Helvetica-Bold", 14)
+                c.drawString((width - text_width) / 2, y, chunk)
+            # Section headers
+            elif chunk.strip().isupper() or chunk.strip().endswith(':'):
+                c.setFont("Helvetica-Bold", 11)
+                c.drawString(x, y, chunk)
+            else:
+                c.setFont("Helvetica", 10)
+                c.drawString(x, y, chunk)
+            y -= 12
+    
     c.save()
+    print(f"[PDF] Created PDF via reportlab: {os.path.getsize(path)} bytes")
     return path
 
 
@@ -361,6 +779,9 @@ def tailor_resume_text(
         if not result or result.startswith("["):
             # Error occurred
             return result
+        
+        # CRITICAL: Strip any prompt markers the AI accidentally included
+        result = _strip_prompt_markers(result)
         
         # Sanitize and inject keywords
         result = _sanitize_text_for_display(result)
@@ -427,17 +848,29 @@ def _call_ai_provider(provider: str, prompt: str, client: Optional[object] = Non
             return str(gemini_completion(client, prompt, is_json=False))
 
         if provider == "groq":
-            # Groq uses OpenAI-compatible API (FREE!)
+            # Groq uses OpenAI-compatible API (FREE & FAST!)
             from openai import OpenAI
             if client is None:
                 client = OpenAI(base_url=groq_api_url, api_key=groq_api_key)
             client = cast(OpenAI, client)
-            messages = [{"role": "user", "content": prompt}]
+            
+            # ALWAYS use 8b-instant for FAST tailoring (2-3 sec vs 15-20 sec)
+            # The 8b model is optimized for speed while still producing quality results
+            FAST_MODEL = "llama-3.1-8b-instant"  # 3x faster than 70b!
+            
+            messages = [{
+                "role": "system", 
+                "content": "You are an expert ATS resume optimizer. Be concise. Focus on keyword matching."
+            }, {
+                "role": "user", 
+                "content": prompt
+            }]
+            
             response = client.chat.completions.create(
-                model=groq_model,
+                model=FAST_MODEL,
                 messages=messages,
-                temperature=0.7,
-                max_tokens=4000,
+                temperature=0.3,  # Lower temp = faster + more focused
+                max_tokens=2500,  # Reduced for speed
             )
             return response.choices[0].message.content or ""
 
@@ -1116,14 +1549,43 @@ def tailor_resume_to_files(
 ) -> dict:
     """
     Tailor a resume and save it to text, docx, and pdf. Returns a dict of paths.
+    NOW WITH REAL-TIME PROGRESS UPDATES!
     """
+    # Import progress utilities with immediate flush for real-time updates
+    _metrics_module = None
+    _log_module = None
+    try:
+        from modules.dashboard import log_handler as _log_module
+        from modules.dashboard import metrics as _metrics_module
+    except ImportError:
+        pass
+    
+    def update_progress(jd_pct: int, resume_pct: int, status: str = ""):
+        """Update progress with IMMEDIATE flush for real-time dashboard updates."""
+        if _metrics_module:
+            _metrics_module.set_metric('jd_progress', jd_pct)
+            _metrics_module.set_metric('resume_progress', resume_pct)
+        if status and _log_module:
+            _log_module.publish(status, "AI")
+    
+    # Reset progress at start
+    update_progress(0, 0, "")
+    
+    # === STEP 1: Reading resume (0-10%) ===
+    update_progress(5, 5, "📄 Reading resume file...")
+    
     if not resume_text and resume_path:
         resume_text = _read_resume_text(resume_path)
     if not resume_text:
         raise ValueError("Resume text is required for tailoring.")
 
+    update_progress(0, 10, "✅ Resume loaded")
+    
     resolved_provider = (provider or ai_provider or "ollama").lower()
 
+    # === STEP 2: Check cache (10-15%) ===
+    update_progress(5, 15, "🔍 Checking cache...")
+    
     cache_dir = os.path.join(generated_resume_path or "all resumes/", "cache")
     _ensure_output_dir(cache_dir)
     cache_key = _cache_key(resume_text, job_description, instructions, resolved_provider, job_title)
@@ -1132,19 +1594,55 @@ def tailor_resume_to_files(
         try:
             with open(cache_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            if all(os.path.exists(p) for p in data.get("paths", {}).values() if p):
-                return data
-        except Exception:
+            cached_paths = data.get("paths", {})
+            if cached_paths and all(os.path.exists(p) for p in cached_paths.values() if p):
+                update_progress(100, 100, "⚡ Using cached tailored resume!")
+                print_lg(f"DEBUG: Returning cached result with pdf={cached_paths.get('pdf', 'NOT SET')}")
+                # Return in same format as non-cached path (flat dict with paths + metadata)
+                return {
+                    **cached_paths,
+                    "master_text": resume_text,
+                    "tailored_text": "",  # Not cached
+                    "jd_text": job_description,
+                    "job_title": job_title or "Tailored Resume"
+                }
+        except Exception as cache_err:
+            print_lg(f"DEBUG: Cache read error: {cache_err}")
             pass
 
-    tailored = tailor_resume_text(
-        resume_text=resume_text,
-        job_description=job_description,
-        instructions=instructions,
-        provider=provider,
-        client=client,
-    )
+    # === STEP 3: JD Analysis (15-40%) ===
+    update_progress(15, 20, "📋 Analyzing job description...")
+    update_progress(25, 20, "🔑 Extracting keywords from JD...")
+    update_progress(40, 25, "✅ JD analysis complete")
+    
+    # === STEP 4: AI Tailoring (40-80%) ===
+    update_progress(50, 30, f"🤖 Calling {resolved_provider.upper()} AI for tailoring...")
+    update_progress(60, 40, "⏳ AI is optimizing your resume...")
+    
+    print_lg(f"DEBUG: Calling tailor_resume_text with provider={provider or resolved_provider}")
+    print_lg(f"DEBUG: resume_text length={len(resume_text) if resume_text else 0}, jd length={len(job_description) if job_description else 0}")
+    
+    try:
+        tailored = tailor_resume_text(
+            resume_text=resume_text,
+            job_description=job_description,
+            instructions=instructions,
+            provider=provider,
+            client=client,
+        )
+        print_lg(f"DEBUG: tailor_resume_text returned {len(tailored) if tailored else 0} chars")
+        if tailored and tailored.startswith("["):
+            print_lg(f"DEBUG: tailor_resume_text returned ERROR: {tailored[:200]}")
+    except Exception as tailor_err:
+        print_lg(f"DEBUG: tailor_resume_text EXCEPTION: {tailor_err}")
+        import traceback
+        print_lg(f"DEBUG: Traceback: {traceback.format_exc()}")
+        raise
+    
+    update_progress(80, 60, "✅ AI tailoring complete!")
+    
     tailored = _normalize_one_page(tailored)
+    update_progress(85, 65, "📏 Normalized to one page")
 
     target_dir = output_dir or os.path.join(generated_resume_path or "all resumes/", "temp")
 
@@ -1157,11 +1655,14 @@ def tailor_resume_to_files(
     base = f"{cand} - {title_part}"
     base_name = _sanitize_filename(base)
 
+    # === STEP 5: Saving files (80-95%) ===
+    update_progress(90, 70, "💾 Saving text file...")
     txt_path = _save_text(tailored, target_dir, base_name=base_name)
 
     docx_path = ""
     pdf_path = ""
 
+    update_progress(95, 80, "📝 Creating DOCX...")
     if resume_path and resume_path.lower().endswith(".docx"):
         try:
             paragraphs = _read_docx_paragraphs(resume_path)
@@ -1197,21 +1698,43 @@ def tailor_resume_to_files(
     else:
         docx_path = _write_docx(tailored, target_dir, base_name=base_name)
 
+    update_progress(98, 90, "📄 Creating PDF...")
     # Prefer docx->pdf conversion if available to preserve formatting
     try:
         from docx2pdf import convert  # type: ignore
+        print_lg("DEBUG: docx2pdf available, converting...")
         if docx_path:
             convert(docx_path)
             pdf_candidate = os.path.splitext(docx_path)[0] + ".pdf"
             if os.path.exists(pdf_candidate):
                 pdf_path = pdf_candidate
-    except Exception:
-        pdf_path = _write_pdf(tailored, target_dir, base_name=base_name)
+                print_lg(f"DEBUG: PDF created via docx2pdf: {pdf_path}")
+    except ImportError:
+        print_lg("DEBUG: docx2pdf not available, using reportlab fallback...")
+        try:
+            pdf_path = _write_pdf(tailored, target_dir, base_name=base_name)
+            print_lg(f"DEBUG: PDF created via reportlab: {pdf_path}")
+        except Exception as pdf_err:
+            print_lg(f"DEBUG: PDF creation FAILED: {pdf_err}")
+            import traceback
+            print_lg(f"DEBUG: {traceback.format_exc()}")
+    except Exception as conv_err:
+        print_lg(f"DEBUG: docx2pdf conversion failed: {conv_err}, using reportlab...")
+        try:
+            pdf_path = _write_pdf(tailored, target_dir, base_name=base_name)
+            print_lg(f"DEBUG: PDF created via reportlab: {pdf_path}")
+        except Exception as pdf_err:
+            print_lg(f"DEBUG: PDF creation FAILED: {pdf_err}")
+            import traceback
+            print_lg(f"DEBUG: {traceback.format_exc()}")
 
     diff_report = None
     if enable_preview:
         diff_report = generate_preview_report(resume_text, tailored, job_description, target_dir, base_name)
 
+    # === STEP 6: Complete (100%) ===
+    update_progress(100, 100, "✅ Resume tailoring complete!")
+    
     result = {"txt": txt_path, "docx": docx_path, "pdf": pdf_path, "diff": diff_report, 
               "master_text": resume_text, "tailored_text": tailored, "jd_text": job_description,
               "job_title": job_title or "Tailored Resume"}

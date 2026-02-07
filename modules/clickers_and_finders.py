@@ -1,19 +1,19 @@
 '''
-Author:     Suraj
-LinkedIn:   https://www.linkedin.com/in/saivigneshgolla/
+Author:     Suraj Panwar
+LinkedIn:   https://www.linkedin.com/in/surajpanwar/
 
-Copyright (C) 2024 Suraj
+Copyright (C) 2024 Suraj Panwar
 
 License:    GNU Affero General Public License
             https://www.gnu.org/licenses/agpl-3.0.en.html
             
-GitHub:     https://github.com/GodsScion/Auto_job_applier_linkedIn
+GitHub:     https://github.com/surajpanwar/Auto_job_applier_linkedIn
 
-version:    24.12.29.12.30
-''' 
+version:    26.01.20.5.08
+'''
 
 from config.settings import click_gap, smooth_scroll
-from modules.helpers import buffer, print_lg, human_delay
+from modules.helpers import buffer, print_lg, sleep
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
@@ -21,47 +21,9 @@ from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.remote.webelement import WebElement
 from selenium.webdriver.remote.webdriver import WebDriver
 from selenium.webdriver.common.action_chains import ActionChains
-from selenium.common.exceptions import (
-    StaleElementReferenceException, 
-    ElementClickInterceptedException,
-    TimeoutException,
-    NoSuchElementException
-)
-from functools import wraps
-import time
-
-
-def retry_on_stale(max_retries: int = 3, delay: float = 0.5):
-    """
-    Decorator to retry operations that might fail due to stale elements.
-    """
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            last_exception = None
-            for attempt in range(max_retries):
-                try:
-                    return func(*args, **kwargs)
-                except StaleElementReferenceException as e:
-                    last_exception = e
-                    if attempt < max_retries - 1:
-                        time.sleep(delay)
-                        continue
-                    print_lg(f"Stale element after {max_retries} retries in {func.__name__}")
-                except ElementClickInterceptedException as e:
-                    last_exception = e
-                    if attempt < max_retries - 1:
-                        time.sleep(delay)
-                        continue
-                    print_lg(f"Element click intercepted after {max_retries} retries in {func.__name__}")
-            if last_exception:
-                raise last_exception
-        return wrapper
-    return decorator
 
 # Click Functions
-@retry_on_stale(max_retries=3, delay=0.5)
-def wait_span_click(driver: WebDriver, text: str, time: float=5.0, click: bool=True, scroll: bool=True, scrollTop: bool=False) -> WebElement | bool:
+def wait_span_click(driver: WebDriver, text: str, time: float=5.0, click: bool=True, scroll: bool=True, scrollTop: bool=False, max_retries: int = 2) -> WebElement | bool:
     '''
     Finds the span element with the given `text`.
     - Returns `WebElement` if found, else `False` if not found.
@@ -69,25 +31,31 @@ def wait_span_click(driver: WebDriver, text: str, time: float=5.0, click: bool=T
     - Will spend a max of `time` seconds in searching for each element.
     - Will scroll to the element if `scroll = True`.
     - Will scroll to the top if `scrollTop = True`.
+    - max_retries: Number of retry attempts for clicking
     '''
     if text:
-        try:
-            button = WebDriverWait(driver,time).until(EC.presence_of_element_located((By.XPATH, './/span[normalize-space(.)="'+text+'"]')))
-            if scroll:  scroll_to_view(driver, button, scrollTop)
-            if click:
-                try:
-                    button.click()
-                except ElementClickInterceptedException:
-                    # Try JavaScript click as fallback
-                    driver.execute_script("arguments[0].click();", button)
-                buffer(click_gap)
-            return button
-        except (TimeoutException, NoSuchElementException):
-            print_lg("Click Failed! Didn't find '"+text+"'")
-            return False
-        except Exception as e:
-            print_lg(f"Unexpected error in wait_span_click for '{text}': {e}")
-            return False
+        for attempt in range(max_retries):
+            try:
+                button = WebDriverWait(driver,time).until(EC.presence_of_element_located((By.XPATH, './/span[normalize-space(.)="'+text+'"]')))
+                if scroll:  scroll_to_view(driver, button, scrollTop)
+                if click:
+                    try:
+                        button.click()
+                    except Exception:
+                        # Fallback to JavaScript click
+                        driver.execute_script("arguments[0].click();", button)
+                    buffer(click_gap)
+                    # Verify click was successful by checking if element is still interactable
+                    return button
+                return button
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    buffer(0.5)
+                    continue
+                print_lg("Click Failed! Didn't find '"+text+"'")
+                # print_lg(e)
+                return False
+    return False
 
 def multi_sel(driver: WebDriver, texts: list, time: float=5.0) -> None:
     '''
@@ -103,7 +71,7 @@ def multi_sel(driver: WebDriver, texts: list, time: float=5.0) -> None:
             scroll_to_view(driver, button)
             button.click()
             buffer(click_gap)
-        except Exception:
+        except Exception as e:
             print_lg("Click Failed! Didn't find '"+text+"'")
             # print_lg(e)
 
@@ -119,24 +87,128 @@ def multi_sel_noWait(driver: WebDriver, texts: list, actions: ActionChains = Non
             scroll_to_view(driver, button)
             button.click()
             buffer(click_gap)
-        except Exception:
+        except Exception as e:
             if actions: company_search_click(driver,actions,text)
             else:   print_lg("Click Failed! Didn't find '"+text+"'")
             # print_lg(e)
 
-def boolean_button_click(driver: WebDriver, actions: ActionChains, text: str) -> None:
+def boolean_button_click(driver: WebDriver, actions: ActionChains, text: str, max_retries: int = 3) -> bool:
     '''
     Tries to click on the boolean button with the given `text` text.
+    Returns True if successfully toggled ON, False otherwise.
+    Uses retry logic for consistency.
+    '''
+    for attempt in range(max_retries):
+        try:
+            list_container = driver.find_element(By.XPATH, './/h3[normalize-space()="'+text+'"]/ancestor::fieldset')
+            button = list_container.find_element(By.XPATH, './/input[@role="switch"]')
+            scroll_to_view(driver, button)
+            
+            # Check current state before clicking
+            is_checked = button.get_attribute('aria-checked') == 'true' or button.is_selected()
+            
+            if not is_checked:
+                # Not enabled, need to click to enable
+                try:
+                    # Prefer clicking associated label for accurate toggle
+                    label = button.find_element(By.XPATH, './following-sibling::label | ./following-sibling::*[1]')
+                    driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", label)
+                    driver.execute_script("arguments[0].click();", label)
+                except Exception:
+                    # Fallback to JavaScript click on the input itself
+                    driver.execute_script("arguments[0].click();", button)
+                buffer(click_gap)
+                
+                # Verify the toggle was successful
+                from time import sleep as _sleep
+                _sleep(0.3)
+                is_now_checked = button.get_attribute('aria-checked') == 'true' or button.is_selected()
+                if is_now_checked:
+                    print_lg(f'Successfully enabled "{text}" filter')
+                    return True
+                else:
+                    print_lg(f'Attempt {attempt+1}: Toggle "{text}" did not stick, retrying...')
+            else:
+                # Already enabled
+                print_lg(f'Filter "{text}" is already enabled')
+                return True
+                
+        except Exception as e:
+            print_lg(f"Attempt {attempt+1}: Click Failed for '{text}' - {str(e)[:50]}")
+            buffer(0.5)
+    
+    print_lg(f"Failed to enable '{text}' after {max_retries} attempts")
+    return False
+
+
+def verify_filter_state(driver: WebDriver, filter_text: str) -> bool:
+    '''
+    Verify if a boolean filter toggle is currently enabled.
+    Returns True if enabled, False otherwise.
     '''
     try:
-        list_container = driver.find_element(By.XPATH, './/h3[normalize-space()="'+text+'"]/ancestor::fieldset')
+        list_container = driver.find_element(By.XPATH, './/h3[normalize-space()="'+filter_text+'"]/ancestor::fieldset')
         button = list_container.find_element(By.XPATH, './/input[@role="switch"]')
-        scroll_to_view(driver, button)
-        actions.move_to_element(button).click().perform()
-        buffer(click_gap)
+        is_checked = button.get_attribute('aria-checked') == 'true' or button.is_selected()
+        return is_checked
     except Exception:
-        print_lg("Click Failed! Didn't find '"+text+"'")
-        # print_lg(e)
+        return False
+
+
+def robust_span_click(driver: WebDriver, text: str, actions: ActionChains = None, max_retries: int = 3, wait_time: float = 3.0) -> bool:
+    '''
+    Robustly click a span element with retries and verification.
+    Returns True if click was successful.
+    '''
+    if not text:
+        return False
+    
+    for attempt in range(max_retries):
+        try:
+            # Wait for element to be present
+            button = WebDriverWait(driver, wait_time).until(
+                EC.presence_of_element_located((By.XPATH, f'.//span[normalize-space(.)="{text}"]'))
+            )
+            scroll_to_view(driver, button)
+            
+            # Try clicking
+            try:
+                button.click()
+            except Exception:
+                # Try JavaScript click
+                driver.execute_script("arguments[0].click();", button)
+            
+            buffer(0.3)
+            
+            # Check if the element now has 'selected' or 'active' state
+            parent = button.find_element(By.XPATH, '..')
+            parent_classes = parent.get_attribute('class') or ''
+            if 'selected' in parent_classes or 'active' in parent_classes or 'checked' in parent_classes:
+                print_lg(f'Successfully selected "{text}"')
+                return True
+            
+            # For filter options, check aria-checked on parent button
+            try:
+                parent_button = button.find_element(By.XPATH, './ancestor::button')
+                if parent_button.get_attribute('aria-pressed') == 'true':
+                    print_lg(f'Successfully selected "{text}"')
+                    return True
+            except Exception:
+                pass
+            
+            # If we got here without error, assume success
+            print_lg(f'Clicked "{text}" (attempt {attempt+1})')
+            return True
+            
+        except Exception as e:
+            if attempt < max_retries - 1:
+                print_lg(f'Retry {attempt+1} for "{text}"...')
+                buffer(0.5)
+            else:
+                print_lg(f'Failed to click "{text}" after {max_retries} attempts')
+    
+    return False
+
 
 # Find functions
 def find_by_class(driver: WebDriver, class_name: str, time: float=5.0) -> WebElement | Exception:
@@ -153,13 +225,9 @@ def scroll_to_view(driver: WebDriver, element: WebElement, top: bool = False, sm
     - `top` will scroll to the `element` to top of the view.
     '''
     if top:
-        result = driver.execute_script('arguments[0].scrollIntoView();', element)
-        human_delay(0.15, 0.35)  # Small delay after scroll
-        return result
+        return driver.execute_script('arguments[0].scrollIntoView();', element)
     behavior = "smooth" if smooth_scroll else "instant"
-    result = driver.execute_script('arguments[0].scrollIntoView({block: "center", behavior: "'+behavior+'" });', element)
-    human_delay(0.15, 0.4)  # Small delay after scroll
-    return result
+    return driver.execute_script('arguments[0].scrollIntoView({block: "center", behavior: "'+behavior+'" });', element)
 
 # Enter input text functions
 def text_input_by_ID(driver: WebDriver, id: str, value: str, time: float=5.0) -> None | Exception:
@@ -197,21 +265,19 @@ def company_search_click(driver: WebDriver, actions: ActionChains, companyName: 
     wait_span_click(driver,"Add a company",1)
     search = driver.find_element(By.XPATH,"(.//input[@placeholder='Add a company'])[1]")
     search.send_keys(Keys.CONTROL + "a")
-    human_delay(0.3, 0.8)  # Brief pause before typing
     search.send_keys(companyName)
-    human_delay(2.5, 4.0)  # Wait for search results to appear
+    buffer(3)
     actions.send_keys(Keys.DOWN).perform()
-    human_delay(0.2, 0.5)
     actions.send_keys(Keys.ENTER).perform()
     print_lg(f'Tried searching and adding "{companyName}"')
 
 def text_input(actions: ActionChains, textInputEle: WebElement | bool, value: str, textFieldName: str = "Text") -> None | Exception:
     if textInputEle:
-        human_delay(0.5, 1.2)  # Delay before typing like a human
+        sleep(1)
         # actions.key_down(Keys.CONTROL).send_keys("a").key_up(Keys.CONTROL).perform()
         textInputEle.clear()
         textInputEle.send_keys(value.strip())
-        human_delay(1.0, 2.0)  # Delay after typing
+        sleep(2)
         actions.send_keys(Keys.ENTER).perform()
     else:
         print_lg(f'{textFieldName} input was not given!')

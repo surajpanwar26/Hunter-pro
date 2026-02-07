@@ -1,15 +1,17 @@
 '''
 Author:     Suraj Panwar
-LinkedIn:   https://www.linkedin.com/in/surajpanwar26/
+LinkedIn:   https://www.linkedin.com/in/surajpanwar/
 
-Copyright (C) 2024 Suraj Panwar
+Copyright (C) 2024-2026 Suraj Panwar
 
 License:    GNU Affero General Public License
             https://www.gnu.org/licenses/agpl-3.0.en.html
             
-GitHub:     https://github.com/GodsScion/Auto_job_applier_linkedIn
+GitHub:     https://github.com/surajpanwar/Auto_job_applier_linkedIn
 
-version:    24.12.29.12.30
+Modified by: Suraj Panwar
+
+version:    26.01.20.5.08
 '''
 
 
@@ -166,16 +168,14 @@ def validate_secrets() -> None | ValueError | TypeError:
     check_boolean(stream_output, "stream_output")
     
     ##> ------ Yang Li : MARKYangL - Feature ------
-    # Validate AI provider configuration
-    check_string(ai_provider, "ai_provider", ["openai", "deepseek", "gemini", "ollama"])
+    # Validate DeepSeek configuration
+    check_string(ai_provider, "ai_provider", ["openai", "deepseek", "gemini", "groq", "ollama", "huggingface"])
 
     ##> ------ Tim L : tulxoro - Refactor ------
     if ai_provider == "deepseek":
         check_string(llm_model, "deepseek_model", ["deepseek-chat", "deepseek-reasoner"])
-    elif ai_provider == "ollama":
-        check_string(ollama_model, "ollama_model")
-    elif ai_provider == "gemini":
-        check_string(gemini_api_key, "gemini_api_key")
+    elif ai_provider in ["gemini", "groq", "ollama", "huggingface"]:
+        pass  # These providers have their own model configuration
     else:
         check_string(llm_model, "llm_model")
     ##<
@@ -223,109 +223,15 @@ def validate_settings() -> None | ValueError | TypeError:
 def validate_config() -> bool | ValueError | TypeError:
     '''
     Runs all validation functions to validate all variables in the config files.
-    Returns True if all validations pass, raises exception with details on failure.
     '''
-    errors = []
-    
-    try:
-        validate_personals()
-    except (ValueError, TypeError) as e:
-        errors.append(f"personals.py: {e}")
-    
-    try:
-        validate_questions()
-    except (ValueError, TypeError) as e:
-        errors.append(f"questions.py: {e}")
-    
-    try:
-        validate_search()
-    except (ValueError, TypeError) as e:
-        errors.append(f"search.py: {e}")
-    
-    try:
-        validate_secrets()
-    except (ValueError, TypeError) as e:
-        errors.append(f"secrets.py: {e}")
-    
-    try:
-        validate_settings()
-    except (ValueError, TypeError) as e:
-        errors.append(f"settings.py: {e}")
-    
-    if errors:
-        error_message = "Configuration validation failed:\n" + "\n".join(errors)
-        raise ValueError(error_message)
+    validate_personals()
+    validate_questions()
+    validate_search()
+    validate_secrets()
+    validate_settings()
 
     # validate_String(chatGPT_username, "chatGPT_username")
     # validate_String(chatGPT_password, "chatGPT_password")
     # validate_String(chatGPT_resume_chat_title, "chatGPT_resume_chat_title")
     return True
-
-
-def check_file_exists(path: str, var_name: str) -> bool:
-    '''
-    Validates that a file exists at the given path.
-    Returns True if exists, raises ValueError if not.
-    '''
-    import os
-    if not os.path.exists(path):
-        raise ValueError(f'The file specified in "{var_name}" does not exist: "{path}"')
-    return True
-
-
-def check_directory_writable(path: str, var_name: str) -> bool:
-    '''
-    Validates that a directory exists and is writable.
-    Returns True if writable, raises ValueError if not.
-    '''
-    import os
-    
-    # Get directory from path (in case it's a file path)
-    dir_path = os.path.dirname(path) if os.path.basename(path) else path
-    
-    if not dir_path:
-        dir_path = '.'
-    
-    if not os.path.exists(dir_path):
-        try:
-            os.makedirs(dir_path, exist_ok=True)
-        except (PermissionError, OSError) as e:
-            raise ValueError(f'Cannot create directory for "{var_name}": {e}')
-    
-    if not os.access(dir_path, os.W_OK):
-        raise ValueError(f'Directory is not writable for "{var_name}": "{dir_path}"')
-    
-    return True
-
-
-def validate_environment() -> dict:
-    '''
-    Validates the runtime environment and returns a status dictionary.
-    '''
-    import sys
-    import os
-    
-    status = {
-        "python_version": sys.version,
-        "platform": sys.platform,
-        "working_directory": os.getcwd(),
-        "checks": {}
-    }
-    
-    # Check Python version
-    if sys.version_info < (3, 9):
-        status["checks"]["python_version"] = "Warning: Python 3.9+ recommended"
-    else:
-        status["checks"]["python_version"] = "OK"
-    
-    # Check for required modules
-    required_modules = ["selenium", "pyautogui", "flask"]
-    for module in required_modules:
-        try:
-            __import__(module)
-            status["checks"][module] = "OK"
-        except ImportError:
-            status["checks"][module] = "Missing"
-    
-    return status
 

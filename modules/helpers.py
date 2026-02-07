@@ -97,6 +97,26 @@ def find_default_profile_directory() -> str | None:
             return path_str
             
     return None
+
+
+def get_default_temp_profile() -> str:
+    '''
+    Returns a temp directory path for Chrome profile when no user profile is found.
+    Creates the directory if it doesn't exist.
+    '''
+    if sys.platform.startswith('win'):
+        temp_profile = r"C:\temp\auto-job-apply-profile"
+    else:
+        temp_profile = os.path.join(pathlib.Path.home(), ".auto-job-apply-profile")
+    
+    # Create directory if it doesn't exist
+    if not os.path.exists(temp_profile):
+        try:
+            os.makedirs(temp_profile, exist_ok=True)
+        except Exception as e:
+            print(f"Warning: Could not create temp profile directory: {e}")
+    
+    return temp_profile
 #>
 
 
@@ -166,6 +186,14 @@ def print_lg(*msgs: str | dict, end: str = "\n", pretty: bool = False, flush: bo
                     pass
         except Exception as e:
             trail = f'Skipped saving this message: "{msgs}" to log.txt!' if from_critical else "We'll try one more time to log..."
+            # Check if pilot mode is enabled - skip alerts in pilot mode
+            try:
+                from config.settings import pilot_mode_enabled
+                if pilot_mode_enabled:
+                    print(f"[PILOT MODE] Log file issue (skipping alert): {e}")
+                    return
+            except ImportError:
+                pass
             try:
                 alert(f"log.txt in {logs_folder_path} is open or is occupied by another program! Please close it! {trail}", "Failed Logging")
             except Exception:
@@ -175,9 +203,14 @@ def print_lg(*msgs: str | dict, end: str = "\n", pretty: bool = False, flush: bo
 #>
 
 
-# Bot speed control - adjust these for speed vs human-like behavior
-BOT_SLOW_MODE = True  # Set to True for slower, more human-like behavior
-BASE_DELAY_MULTIPLIER = 1.0  # Multiplier for all delays (1.0 = normal speed, 1.5 = slower)
+# Bot speed control - load from settings
+try:
+    from config.settings import form_fill_fast_mode, form_fill_delay_multiplier
+    BOT_SLOW_MODE = not form_fill_fast_mode  # Invert: fast_mode=True means slow_mode=False
+    BASE_DELAY_MULTIPLIER = form_fill_delay_multiplier
+except ImportError:
+    BOT_SLOW_MODE = False  # Default to fast mode
+    BASE_DELAY_MULTIPLIER = 0.5  # Default to 50% delays for speed
 
 
 def buffer(speed: int=0) -> None:

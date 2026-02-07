@@ -24,11 +24,17 @@ COLORS = {
     'border': '#333',
 }
 
+# UI constants
+UI_FONT = "Segoe UI"
+FIELD_API_URL = "API URL"
+FIELD_API_KEY = "API Key"
+API_KEY_NOT_SET = "API key not set"
+
 
 class APIConfigDialog(tk.Toplevel):
     """Dialog for configuring and testing API keys for all providers."""
     
-    def __init__(self, parent: tk.Tk):
+    def __init__(self, parent: tk.Misc):
         super().__init__(parent)
         self.title("🔑 AI Provider Configuration")
         self.geometry("900x750")
@@ -102,7 +108,7 @@ class APIConfigDialog(tk.Toplevel):
         tk.Label(
             header_frame,
             text="🔑 AI Provider Configuration",
-            font=("Segoe UI", 18, "bold"),
+            font=(UI_FONT, 18, "bold"),
             fg=COLORS['accent'],
             bg=COLORS['bg']
         ).pack(side=tk.LEFT)
@@ -110,7 +116,7 @@ class APIConfigDialog(tk.Toplevel):
         tk.Label(
             header_frame,
             text="Configure and test your API keys",
-            font=("Segoe UI", 10),
+            font=(UI_FONT, 10),
             fg=COLORS['text_secondary'],
             bg=COLORS['bg']
         ).pack(side=tk.LEFT, padx=20)
@@ -143,30 +149,30 @@ class APIConfigDialog(tk.Toplevel):
         self._build_provider_section(scrollable_frame, "openai", "OpenAI", "🤖",
                                      ["api_url", "api_key", "model"],
                                      {
-                                         'api_url': 'API URL',
-                                         'api_key': 'API Key',
+                                         'api_url': FIELD_API_URL,
+                                         'api_key': FIELD_API_KEY,
                                          'model': 'Model (e.g., gpt-4o-mini, gpt-4o)'
                                      })
         
         self._build_provider_section(scrollable_frame, "deepseek", "DeepSeek", "🧠",
                                      ["api_url", "api_key", "model"],
                                      {
-                                         'api_url': 'API URL',
-                                         'api_key': 'API Key',
+                                         'api_url': FIELD_API_URL,
+                                         'api_key': FIELD_API_KEY,
                                          'model': 'Model (deepseek-chat, deepseek-reasoner)'
                                      })
         
         self._build_provider_section(scrollable_frame, "gemini", "Google Gemini", "✨",
                                      ["api_key", "model"],
                                      {
-                                         'api_key': 'API Key',
+                                         'api_key': FIELD_API_KEY,
                                          'model': 'Model (gemini-1.5-flash, gemini-1.5-pro)'
                                      })
         
         self._build_provider_section(scrollable_frame, "groq", "Groq (FREE & Fast!)", "⚡",
                                      ["api_url", "api_key", "model"],
                                      {
-                                         'api_url': 'API URL',
+                                         'api_url': FIELD_API_URL,
                                          'api_key': 'API Key (FREE at console.groq.com)',
                                          'model': 'Model (llama-3.3-70b-versatile, llama-3.1-8b-instant)'
                                      },
@@ -175,7 +181,7 @@ class APIConfigDialog(tk.Toplevel):
         self._build_provider_section(scrollable_frame, "huggingface", "Hugging Face (FREE)", "🤗",
                                      ["api_url", "api_key", "model"],
                                      {
-                                         'api_url': 'API URL',
+                                         'api_url': FIELD_API_URL,
                                          'api_key': 'API Key (FREE at huggingface.co)',
                                          'model': 'Model (mistralai/Mistral-7B-Instruct-v0.3)'
                                      })
@@ -243,7 +249,7 @@ class APIConfigDialog(tk.Toplevel):
         tk.Label(
             header,
             text=f"{icon} {provider_name}",
-            font=("Segoe UI", 14, "bold"),
+            font=(UI_FONT, 14, "bold"),
             fg=COLORS['text'],
             bg=frame_color
         ).pack(side=tk.LEFT)
@@ -252,7 +258,7 @@ class APIConfigDialog(tk.Toplevel):
         status_label = tk.Label(
             header,
             text="⚫ Not tested",
-            font=("Segoe UI", 10),
+            font=(UI_FONT, 10),
             fg=COLORS['text_secondary'],
             bg=frame_color
         )
@@ -278,32 +284,7 @@ class APIConfigDialog(tk.Toplevel):
             field_frame.pack(fill=tk.X, padx=15, pady=5)
             
             label_text = field_labels.get(field, field)
-            tk.Label(
-                field_frame,
-                text=label_text + ":",
-                font=("Segoe UI", 9),
-                fg=COLORS['text'],
-                bg=frame_color,
-                width=40,
-                anchor='w'
-            ).pack(side=tk.TOP, anchor='w')
-            
-            # Entry or Text widget
-            if field == 'api_key' or 'url' in field.lower():
-                entry_width = 70
-            else:
-                entry_width = 50
-            
-            entry = tk.Entry(
-                field_frame,
-                font=("Consolas", 9),
-                bg='#0d1b2a',
-                fg=COLORS['text'],
-                insertbackground='white',
-                width=entry_width,
-                show='*' if field == 'api_key' else None
-            )
-            entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            entry = self._create_field_entry(field_frame, frame_color, field, label_text)
             
             # Load current value
             current_value = self.provider_configs.get(provider_id, {}).get(field, '')
@@ -311,19 +292,45 @@ class APIConfigDialog(tk.Toplevel):
                 entry.insert(0, current_value)
             
             self.entry_widgets[provider_id][field] = entry
+
+    def _create_field_entry(self, field_frame: tk.Frame, frame_color: str, field: str, label_text: str) -> tk.Entry:
+        tk.Label(
+            field_frame,
+            text=label_text + ":",
+            font=(UI_FONT, 9),
+            fg=COLORS['text'],
+            bg=frame_color,
+            width=40,
+            anchor='w'
+        ).pack(side=tk.TOP, anchor='w')
+
+        entry_width = 70 if field == 'api_key' or 'url' in field.lower() else 50
+
+        entry = tk.Entry(
+            field_frame,
+            font=("Consolas", 9),
+            bg='#0d1b2a',
+            fg=COLORS['text'],
+            insertbackground='white',
+            width=entry_width,
+            show='*' if field == 'api_key' else None
+        )
+        entry.pack(side=tk.LEFT, fill=tk.X, expand=True)
             
-            # Show/Hide button for API keys
-            if field == 'api_key':
-                def toggle_visibility(e=entry):
-                    e.config(show='' if e.cget('show') == '*' else '*')
-                
-                ttkb.Button(
-                    field_frame,
-                    text="👁️",
-                    command=toggle_visibility,
-                    bootstyle="secondary-outline",
-                    width=3
-                ).pack(side=tk.LEFT, padx=5)
+        # Show/Hide button for API keys
+        if field == 'api_key':
+            def toggle_visibility(e=entry):
+                e.config(show='' if e.cget('show') == '*' else '*')
+            
+            ttkb.Button(
+                field_frame,
+                text="👁️",
+                command=toggle_visibility,
+                bootstyle="secondary-outline",
+                width=3
+            ).pack(side=tk.LEFT, padx=5)
+        
+        return entry
         
         # Spacer
         tk.Frame(provider_frame, bg=frame_color, height=8).pack()
@@ -376,10 +383,10 @@ class APIConfigDialog(tk.Toplevel):
             model = config.get('model', 'gpt-4o-mini')
             
             if not api_key or 'your_' in api_key.lower():
-                return False, "API key not set"
+                return False, API_KEY_NOT_SET
             
             client = OpenAI(api_key=api_key, base_url=api_url)
-            response = client.chat.completions.create(
+            client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": "Hello"}],
                 max_tokens=5
@@ -399,10 +406,10 @@ class APIConfigDialog(tk.Toplevel):
             model = config.get('model', 'deepseek-chat')
             
             if not api_key or 'your_' in api_key.lower():
-                return False, "API key not set"
+                return False, API_KEY_NOT_SET
             
             client = OpenAI(api_key=api_key, base_url=api_url)
-            response = client.chat.completions.create(
+            client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": "Hello"}],
                 max_tokens=5
@@ -421,11 +428,11 @@ class APIConfigDialog(tk.Toplevel):
             model = config.get('model', 'gemini-1.5-flash')
             
             if not api_key or 'your_' in api_key.lower():
-                return False, "API key not set"
+                return False, API_KEY_NOT_SET
             
             genai.configure(api_key=api_key)
             model_obj = genai.GenerativeModel(model)
-            response = model_obj.generate_content("Hello")
+            model_obj.generate_content("Hello")
             
             return True, f"✅ Connected | Model: {model}"
         except Exception as e:
@@ -441,10 +448,10 @@ class APIConfigDialog(tk.Toplevel):
             model = config.get('model', 'llama-3.3-70b-versatile')
             
             if not api_key or 'your_' in api_key.lower():
-                return False, "API key not set"
+                return False, API_KEY_NOT_SET
             
             client = OpenAI(api_key=api_key, base_url=api_url)
-            response = client.chat.completions.create(
+            client.chat.completions.create(
                 model=model,
                 messages=[{"role": "user", "content": "Hello"}],
                 max_tokens=5
@@ -454,7 +461,7 @@ class APIConfigDialog(tk.Toplevel):
         except Exception as e:
             error_msg = str(e)
             if "decommissioned" in error_msg.lower():
-                return False, f"❌ Model deprecated. Try: llama-3.3-70b-versatile"
+                return False, "❌ Model deprecated. Try: llama-3.3-70b-versatile"
             return False, f"❌ Failed: {error_msg[:50]}"
     
     def _test_huggingface(self, config: dict) -> Tuple[bool, str]:
@@ -465,7 +472,7 @@ class APIConfigDialog(tk.Toplevel):
             model = config.get('model', 'mistralai/Mistral-7B-Instruct-v0.3')
             
             if not api_key or 'your_' in api_key.lower():
-                return False, "API key not set"
+                return False, API_KEY_NOT_SET
             
             url = f"{api_url}/{model}"
             headers = {"Authorization": f"Bearer {api_key}"}
@@ -473,7 +480,7 @@ class APIConfigDialog(tk.Toplevel):
             
             req = urllib.request.Request(url, data=data, headers=headers, method="POST")
             with urllib.request.urlopen(req, timeout=10) as response:
-                result = json.loads(response.read().decode('utf-8'))
+                json.loads(response.read().decode('utf-8'))
             
             return True, f"✅ Connected | Model: {model.split('/')[-1]}"
         except Exception as e:
@@ -522,6 +529,35 @@ class APIConfigDialog(tk.Toplevel):
     def _save_configuration(self):
         """Save configurations to secrets.py file."""
         try:
+            var_mapping = {
+                ('openai', 'api_key'): 'llm_api_key',
+                ('openai', 'api_url'): 'llm_api_url',
+                ('openai', 'model'): 'llm_model',
+                ('deepseek', 'api_key'): 'deepseek_api_key',
+                ('deepseek', 'api_url'): 'deepseek_api_url',
+                ('deepseek', 'model'): 'deepseek_model',
+                ('gemini', 'api_key'): 'gemini_api_key',
+                ('gemini', 'model'): 'gemini_model',
+                ('groq', 'api_key'): 'groq_api_key',
+                ('groq', 'api_url'): 'groq_api_url',
+                ('groq', 'model'): 'groq_model',
+                ('huggingface', 'api_key'): 'huggingface_api_key',
+                ('huggingface', 'api_url'): 'huggingface_api_url',
+                ('huggingface', 'model'): 'huggingface_model',
+                ('ollama', 'api_url'): 'ollama_api_url',
+                ('ollama', 'model'): 'ollama_model',
+            }
+
+            values_by_var = {}
+            for provider_id, fields in self.entry_widgets.items():
+                for field, entry in fields.items():
+                    value = entry.get().strip()
+                    if not value:
+                        continue
+                    var_name = var_mapping.get((provider_id, field))
+                    if var_name:
+                        values_by_var[var_name] = value
+
             # Read current secrets.py
             secrets_path = "config/secrets.py"
             with open(secrets_path, 'r', encoding='utf-8') as f:
@@ -531,45 +567,15 @@ class APIConfigDialog(tk.Toplevel):
             updated_lines = []
             for line in lines:
                 updated_line = line
-                
-                # Update each provider's configuration
-                for provider_id, fields in self.entry_widgets.items():
-                    for field, entry in fields.items():
-                        value = entry.get().strip()
-                        if not value:
-                            continue
-                        
-                        # Match variable names in secrets.py
-                        var_mapping = {
-                            ('openai', 'api_key'): 'llm_api_key',
-                            ('openai', 'api_url'): 'llm_api_url',
-                            ('openai', 'model'): 'llm_model',
-                            ('deepseek', 'api_key'): 'deepseek_api_key',
-                            ('deepseek', 'api_url'): 'deepseek_api_url',
-                            ('deepseek', 'model'): 'deepseek_model',
-                            ('gemini', 'api_key'): 'gemini_api_key',
-                            ('gemini', 'model'): 'gemini_model',
-                            ('groq', 'api_key'): 'groq_api_key',
-                            ('groq', 'api_url'): 'groq_api_url',
-                            ('groq', 'model'): 'groq_model',
-                            ('huggingface', 'api_key'): 'huggingface_api_key',
-                            ('huggingface', 'api_url'): 'huggingface_api_url',
-                            ('huggingface', 'model'): 'huggingface_model',
-                            ('ollama', 'api_url'): 'ollama_api_url',
-                            ('ollama', 'model'): 'ollama_model',
-                        }
-                        
-                        var_name = var_mapping.get((provider_id, field))
-                        if var_name and f'{var_name} =' in line:
-                            # Replace the value
-                            if '=' in line:
-                                indent = line[:line.index(var_name)]
-                                comment = ''
-                                if '#' in line:
-                                    comment_start = line.index('#')
-                                    comment = ' ' + line[comment_start:].rstrip()
-                                updated_line = f'{indent}{var_name} = "{value}"{comment}\n'
-                
+                for var_name, value in values_by_var.items():
+                    if line.lstrip().startswith(f"{var_name} ="):
+                        indent = line[:line.index(var_name)]
+                        comment = ''
+                        if '#' in line:
+                            comment_start = line.index('#')
+                            comment = ' ' + line[comment_start:].rstrip()
+                        updated_line = f'{indent}{var_name} = "{value}"{comment}\n'
+                        break
                 updated_lines.append(updated_line)
             
             # Write back to file
@@ -655,7 +661,7 @@ class APIConfigDialog(tk.Toplevel):
         ).pack(pady=10)
 
 
-def open_api_config_dialog(parent: tk.Tk):
+def open_api_config_dialog(parent: tk.Misc):
     """Open the API configuration dialog."""
     dialog = APIConfigDialog(parent)
     dialog.grab_set()
