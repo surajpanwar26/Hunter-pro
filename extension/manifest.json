@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Universal Job Auto-Fill Pro",
-  "version": "3.0.0",
+  "version": "3.0.1",
   "description": "AI-powered auto-fill assistant for ALL job portals - LinkedIn, Indeed, Glassdoor, Workday, Greenhouse & more. Detects JDs, tailors resumes, and learns from your inputs.",
   "permissions": [
     "activeTab",
