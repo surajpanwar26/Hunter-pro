@@ -1,17 +1,25 @@
-__pycache__
-.vscode
+__pycache__/
+.vscode/
+.venv/
 
-all excels
-all resumes
-logs
+all excels/
+all resumes/
+logs/
+old/
+data/
 
-old
+node_modules/
 
-secrets.py
+config/secrets.py
 config/personals.py
-.venv
 apikeys.py
 .env
+
 chrome_profile/
 chrome_profile_pilot/
+chrome_profile_test/
+
 extension/user_config.json
+
+# Ignore local assistant instruction artifacts
+.github/instructions/

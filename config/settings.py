@@ -35,7 +35,7 @@ Note: Will be treated as False if `run_in_background = False`
 
 # Settings for processing multiple jobs (not single job)
 run_non_stop = True                # Ensure continuous run for multiple jobs
-max_jobs_to_process = 0            # 0 means unlimited jobs
+max_jobs_to_process = 2            # 0 means unlimited jobs
 alternate_sortby = False            # Alternate between sorting options (Most Recent/Most Relevant)
 cycle_date_posted = True           # Cycle through date posted for more jobs
 stop_date_cycle_at_24hr = True     # Stop cycling at 24hr if needed
@@ -272,7 +272,7 @@ pause_before_submit = False         # True = Ask for confirmation before submitt
 pause_at_failed_question = False    # True = Pause when question can't be answered, False = Skip/fail
 
 # If you want to disable extensions then set disable_extensions as True (Better for performance)
-disable_extensions = False          # True or False, Note: True or False are case-sensitive
+disable_extensions = True           # True or False, Note: True or False are case-sensitive
 
 # Run in safe mode. Set this true if chrome is taking too long to open or if you have multiple profiles in browser. This will open chrome in guest profile!
 safe_mode = False                   # True or False, Note: True or False are case-sensitive (Set False to use existing profile with login)

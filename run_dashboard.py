@@ -15,11 +15,32 @@ def acquire_single_instance_lock():
     global _lock_socket
     try:
         _lock_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        _lock_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         _lock_socket.bind(('127.0.0.1', LOCK_PORT))
         _lock_socket.listen(1)
         return True
     except socket.error:
-        return False
+        # If bind fails, verify whether another instance is actually listening.
+        # On some systems, stale socket states can cause false-positive lock failures.
+        probe = None
+        try:
+            probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            probe.settimeout(0.25)
+            result = probe.connect_ex(('127.0.0.1', LOCK_PORT))
+            # result == 0 means another process is listening (real running instance)
+            if result == 0:
+                return False
+            # No listener found; treat as stale lock and allow startup.
+            return True
+        except Exception:
+            return False
+        finally:
+            if probe:
+                try:
+                    probe.close()
+                except Exception:
+                    pass
+            _lock_socket = None
 
 def release_lock():
     """Release the single instance lock."""
@@ -64,11 +85,17 @@ if __name__ == "__main__":
             print("ERROR: Dashboard is already running in another window!")
         sys.exit(1)
     
-    # Import dashboard module (does NOT start Chrome)
-    from modules.dashboard.dashboard import BotDashboard, BotController
-    
-    import threading
-    import subprocess
+    try:
+        # Import dashboard module (does NOT start Chrome)
+        from modules.dashboard.dashboard import BotDashboard, BotController
+        
+        import threading
+        import subprocess
+    except Exception as e:
+        import traceback
+        print(f"ERROR: Failed to initialize dashboard modules: {e}")
+        traceback.print_exc()
+        sys.exit(1)
     
     # Create a lazy bot runner that only imports runAiBot when needed
     class LazyBotRunner:
@@ -296,8 +323,14 @@ if __name__ == "__main__":
                 print(f"🎯 Reached pilot mode limit: {self._applications_count} applications")
                 self.stop_bot()
     
-    # Create controller and dashboard
-    runner = LazyBotRunner()
-    controller = BotController(runner)
-    dashboard = BotDashboard(controller)
-    dashboard.mainloop()
+    try:
+        # Create controller and dashboard
+        runner = LazyBotRunner()
+        controller = BotController(runner)
+        dashboard = BotDashboard(controller)
+        dashboard.mainloop()
+    except Exception as e:
+        import traceback
+        print(f"ERROR: Dashboard startup failed: {e}")
+        traceback.print_exc()
+        sys.exit(1)

@@ -31,18 +31,18 @@ except ImportError:
 
 # Modern Color Scheme
 COLORS = {
-    'bg_dark': '#1a1a2e',
-    'bg_medium': '#16213e',
-    'bg_light': '#0f3460',
-    'accent': '#e94560',
-    'success': '#00d26a',
-    'warning': '#ffb302',
-    'danger': '#ff4757',
-    'info': '#3498db',
-    'text_primary': '#ffffff',
-    'text_secondary': '#a0a0a0',
-    'card_bg': '#252540',
-    'border': '#3a3a5c'
+    'bg_dark': '#0b1020',
+    'bg_medium': '#111a33',
+    'bg_light': '#1a2650',
+    'accent': '#7c5cff',
+    'success': '#22c55e',
+    'warning': '#f59e0b',
+    'danger': '#ef4444',
+    'info': '#38bdf8',
+    'text_primary': '#f8fafc',
+    'text_secondary': '#94a3b8',
+    'card_bg': '#121a30',
+    'border': '#24314f'
 }
 
 # ===== UI Constants (reduces SonarQube duplicate string warnings) =====
@@ -51,6 +51,11 @@ UI_FONT_EMOJI = "Segoe UI Emoji"
 STYLE_CARD_FRAME = 'Card.TFrame'
 STYLE_HEADER_FRAME = 'Header.TFrame'
 STYLE_HEADER_LABEL = 'Header.TLabel'
+STYLE_SURFACE_FRAME = 'Surface.TFrame'
+STYLE_SURFACE_ALT_FRAME = 'SurfaceAlt.TFrame'
+STYLE_STAT_CARD_FRAME = 'StatCard.TFrame'
+STYLE_SECTION_FRAME = 'Section.TLabelframe'
+STYLE_SECTION_LABEL = 'Section.TLabelframe.Label'
 EVENT_MOUSEWHEEL = "<MouseWheel>"
 EVENT_ENTER = "<Enter>"
 EVENT_LEAVE = "<Leave>"
@@ -376,8 +381,8 @@ class BotDashboard(ttkb.Window):
         toast.after(2500, toast.destroy)
 
     def __init__(self, controller):
-        # Use ttkbootstrap theme - cyborg for dark modern look
-        super().__init__(themename="cyborg")
+        # Use ttkbootstrap theme - modern dark neon look
+        super().__init__(themename="superhero")
         self.title("🤖 AI Job Hunter Pro - Control Center")
         self.geometry("1500x900")
         self.state('zoomed')
@@ -387,88 +392,93 @@ class BotDashboard(ttkb.Window):
         # Configure styles
         self._app_style = ttkb.Style()
         self._app_style.configure(STYLE_CARD_FRAME, background=COLORS['card_bg'])
-        self._app_style.configure(STYLE_HEADER_FRAME, background='#1a1a2e')
-        self._app_style.configure(STYLE_HEADER_LABEL, background='#1a1a2e')
+        self._app_style.configure(STYLE_SURFACE_FRAME, background=COLORS['bg_dark'])
+        self._app_style.configure(STYLE_SURFACE_ALT_FRAME, background=COLORS['bg_medium'])
+        self._app_style.configure(STYLE_STAT_CARD_FRAME, background=COLORS['card_bg'], relief=tk.FLAT)
+        self._app_style.configure(STYLE_HEADER_FRAME, background=COLORS['bg_dark'])
+        self._app_style.configure(STYLE_HEADER_LABEL, background=COLORS['bg_dark'], foreground=COLORS['text_primary'])
+        self._app_style.configure(STYLE_SECTION_FRAME, background=COLORS['card_bg'], bordercolor=COLORS['border'], relief=tk.FLAT)
+        self._app_style.configure(STYLE_SECTION_LABEL, background=COLORS['card_bg'], foreground=COLORS['text_primary'], font=(UI_FONT, 10, 'bold'))
         self._app_style.configure('Clean.TLabel', background='')  # Transparent background
-        self._app_style.configure('Tab.TButton', font=('Segoe UI', 11), padding=(20, 10))
-        self._app_style.configure('ActiveTab.TButton', font=('Segoe UI', 11, 'bold'))
+        self._app_style.configure('Tab.TButton', font=(UI_FONT, 10, 'bold'), padding=(16, 8))
+        self._app_style.configure('ActiveTab.TButton', font=(UI_FONT, 10, 'bold'))
+        self._app_style.configure('HeroTitle.TLabel', background=COLORS['bg_dark'], foreground=COLORS['text_primary'], font=(UI_FONT, 16, 'bold'))
+        self._app_style.configure('HeroSubTitle.TLabel', background=COLORS['bg_dark'], foreground=COLORS['text_secondary'], font=(UI_FONT, 9))
+        self._app_style.configure('StatValue.TLabel', background=COLORS['card_bg'], foreground=COLORS['text_primary'], font=(UI_FONT, 14, 'bold'))
+        self._app_style.configure('StatLabel.TLabel', background=COLORS['card_bg'], foreground=COLORS['text_secondary'], font=(UI_FONT, 8))
         
         # ========== MODERN TABULAR LAYOUT (NO SIDEBAR) ==========
-        main_frame = ttkb.Frame(self)
+        main_frame = ttkb.Frame(self, style=STYLE_SURFACE_FRAME)
         main_frame.pack(fill=tk.BOTH, expand=True)
         
         # ===== TOP HEADER BAR (ROW 1: Logo + Status + Main Controls) =====
         header = ttkb.Frame(main_frame, style=STYLE_HEADER_FRAME)
-        header.pack(fill=tk.X)
+        header.pack(fill=tk.X, padx=12, pady=(10, 6))
         
         # Left: Logo & Title
         logo_frame = ttkb.Frame(header, style=STYLE_HEADER_FRAME)
-        logo_frame.pack(side=tk.LEFT, padx=15, pady=8)
+        logo_frame.pack(side=tk.LEFT, padx=(10, 12), pady=10)
         
-        ttkb.Label(logo_frame, text="🤖", font=("Segoe UI Emoji", 24), 
+        ttkb.Label(logo_frame, text="🤖", font=("Segoe UI Emoji", 26), 
                   style=STYLE_HEADER_LABEL).pack(side=tk.LEFT)
         title_stack = ttkb.Frame(logo_frame, style=STYLE_HEADER_FRAME)
         title_stack.pack(side=tk.LEFT, padx=(8, 0))
-        ttkb.Label(title_stack, text="AI Job Hunter Pro", 
-                  font=("Segoe UI", 14, "bold"), foreground="#ffffff",
-                  style=STYLE_HEADER_LABEL).pack(anchor=tk.W)
-        ttkb.Label(title_stack, text="LinkedIn Auto Apply Bot", 
-                  font=("Segoe UI", 8), foreground="#888888",
-                  style=STYLE_HEADER_LABEL).pack(anchor=tk.W)
+        ttkb.Label(title_stack, text="AI Job Hunter Pro", style='HeroTitle.TLabel').pack(anchor=tk.W)
+        ttkb.Label(title_stack, text="Advanced Command Center • Real-time Automation • Pilot + Scheduler", style='HeroSubTitle.TLabel').pack(anchor=tk.W)
         
         # Center: Status indicator (clearly visible)
         status_center = ttkb.Frame(header, style=STYLE_HEADER_FRAME)
-        status_center.pack(side=tk.LEFT, padx=30)
+        status_center.pack(side=tk.LEFT, padx=16)
         
         self.status_indicator = ttkb.Label(status_center, text="●", 
-                                          foreground="#ff4757", font=("Arial", 20),
+                                                        foreground=COLORS['danger'], font=("Arial", 18),
                                           style=STYLE_HEADER_LABEL)
         self.status_indicator.pack(side=tk.LEFT)
         self.status_label = ttkb.Label(status_center, text="STOPPED", 
-                                       font=("Segoe UI", 12, "bold"), foreground="#ff4757",
+                                                    font=(UI_FONT, 11, "bold"), foreground=COLORS['danger'],
                                        style=STYLE_HEADER_LABEL)
         self.status_label.pack(side=tk.LEFT, padx=(5, 0))
         
         # Right: Main Control Buttons (START, STOP, PAUSE, LIVE PANEL)
         controls_frame = ttkb.Frame(header, style=STYLE_HEADER_FRAME)
-        controls_frame.pack(side=tk.RIGHT, padx=15, pady=8)
+        controls_frame.pack(side=tk.RIGHT, padx=(10, 12), pady=8)
         
         # Control buttons - compact but visible
         self.start_btn = ttkb.Button(controls_frame, text="▶ START", 
-                                     command=self.start_bot, bootstyle="success-outline",
-                                     width=10)
-        self.start_btn.pack(side=tk.LEFT, padx=3)
+                                     command=self.start_bot, bootstyle="success",
+                                     width=11)
+        self.start_btn.pack(side=tk.LEFT, padx=4)
         
         self.stop_btn = ttkb.Button(controls_frame, text="⏹ STOP", 
                                     command=self.stop_bot, state=tk.DISABLED,
-                                    bootstyle="danger-outline", width=10)
-        self.stop_btn.pack(side=tk.LEFT, padx=3)
+                                    bootstyle="danger", width=10)
+        self.stop_btn.pack(side=tk.LEFT, padx=4)
         
         self.pause_btn = ttkb.Button(controls_frame, text="⏸ PAUSE", 
                                      command=self.toggle_pause, state=tk.DISABLED,
-                                     bootstyle="warning-outline", width=10)
-        self.pause_btn.pack(side=tk.LEFT, padx=3)
+                                     bootstyle="warning", width=11)
+        self.pause_btn.pack(side=tk.LEFT, padx=4)
         
         # Separator
         ttkb.Separator(controls_frame, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8, pady=3)
         
         # LIVE PANEL button
         self.side_panel_mode = False
-        self.side_panel_btn = ttkb.Button(controls_frame, text="📺 LIVE", 
+        self.side_panel_btn = ttkb.Button(controls_frame, text="📺 LIVE PANEL", 
                                           command=self.toggle_side_panel_mode,
-                                          bootstyle="info-outline", width=8)
-        self.side_panel_btn.pack(side=tk.LEFT, padx=(0, 3))
+                          bootstyle="info", width=13)
+        self.side_panel_btn.pack(side=tk.LEFT, padx=(2, 3))
         
         # ===== TAB NAVIGATION BAR (ROW 2: Separate row for tabs) =====
-        tab_bar = ttkb.Frame(main_frame)
-        tab_bar.pack(fill=tk.X, padx=15, pady=(5, 0))
+        tab_bar = ttkb.Frame(main_frame, style=STYLE_SURFACE_ALT_FRAME)
+        tab_bar.pack(fill=tk.X, padx=12, pady=(0, 8), ipady=6)
         
         self.current_tab = "dashboard"
         self.tab_buttons = {}
         
         # Tab frame for navigation buttons
-        self.tab_frame = ttkb.Frame(tab_bar)
-        self.tab_frame.pack(side=tk.LEFT)
+        self.tab_frame = ttkb.Frame(tab_bar, style=STYLE_SURFACE_ALT_FRAME)
+        self.tab_frame.pack(side=tk.LEFT, padx=10)
         
         tabs = [
             ("🏠 Dashboard", "dashboard", self.show_dashboard),
@@ -482,21 +492,21 @@ class BotDashboard(ttkb.Window):
         for text, tab_id, cmd in tabs:
             btn = ttkb.Button(self.tab_frame, text=text, 
                              command=lambda t=tab_id, c=cmd: self._switch_tab(t, c),
-                             bootstyle="dark-outline" if tab_id != "dashboard" else "info",
-                             padding=(8, 4), width=11)
-            btn.pack(side=tk.LEFT, padx=1)
+                             bootstyle="secondary-outline" if tab_id != "dashboard" else "primary",
+                             style='Tab.TButton', width=12)
+            btn.pack(side=tk.LEFT, padx=3)
             self.tab_buttons[tab_id] = btn
         
         # Right side of tab bar: Quick actions
-        quick_actions = ttkb.Frame(tab_bar)
-        quick_actions.pack(side=tk.RIGHT)
+        quick_actions = ttkb.Frame(tab_bar, style=STYLE_SURFACE_ALT_FRAME)
+        quick_actions.pack(side=tk.RIGHT, padx=10)
         
         ttkb.Button(quick_actions, text="📂 Logs", 
                    command=lambda: __import__('webbrowser').open(f'file:///{os.path.abspath("logs")}'),
-                   bootstyle="secondary-outline", width=8).pack(side=tk.LEFT, padx=2)
+                   bootstyle="dark-outline", width=10).pack(side=tk.LEFT, padx=3)
         ttkb.Button(quick_actions, text=BTN_REFRESH, 
                    command=self._refresh_all if hasattr(self, '_refresh_all') else lambda: None,
-                   bootstyle="secondary-outline", width=8).pack(side=tk.LEFT, padx=2)
+                   bootstyle="info-outline", width=10).pack(side=tk.LEFT, padx=3)
         
         # Add tooltip-like help text for Live Panel
         self.side_panel_help = ttkb.Label(tab_bar, text="", font=("Segoe UI", 1))
@@ -506,11 +516,11 @@ class BotDashboard(ttkb.Window):
         self.status_frame = status_center
         
         # ===== QUICK STATS BAR (Below Tabs) =====
-        stats_bar = ttkb.Frame(main_frame, style=STYLE_CARD_FRAME)
-        stats_bar.pack(fill=tk.X, padx=0, pady=0)
+        stats_bar = ttkb.Frame(main_frame, style=STYLE_SURFACE_FRAME)
+        stats_bar.pack(fill=tk.X, padx=12, pady=(0, 8))
         
-        stats_inner = ttkb.Frame(stats_bar)
-        stats_inner.pack(fill=tk.X, padx=10, pady=6)
+        stats_inner = ttkb.Frame(stats_bar, style=STYLE_SURFACE_FRAME)
+        stats_inner.pack(fill=tk.X, padx=0, pady=0)
         
         # Stats items in a row
         self.quick_stat_labels = {}
@@ -525,12 +535,12 @@ class BotDashboard(ttkb.Window):
         ]
         
         for icon, label, key, color in quick_stats:
-            stat_frame = ttkb.Frame(stats_inner)
-            stat_frame.pack(side=tk.LEFT, padx=10, fill=tk.X, expand=True)
+            stat_frame = ttkb.Frame(stats_inner, style=STYLE_STAT_CARD_FRAME, padding=(10, 8))
+            stat_frame.pack(side=tk.LEFT, padx=4, fill=tk.X, expand=True)
             
-            ttkb.Label(stat_frame, text=icon, font=("Segoe UI Emoji", 12)).pack(side=tk.LEFT)
+            ttkb.Label(stat_frame, text=icon, font=("Segoe UI Emoji", 13), style='StatValue.TLabel').pack(side=tk.LEFT)
             
-            val_frame = ttkb.Frame(stat_frame)
+            val_frame = ttkb.Frame(stat_frame, style=STYLE_STAT_CARD_FRAME)
             val_frame.pack(side=tk.LEFT, padx=(5, 0))
             
             if key == "provider":
@@ -545,12 +555,12 @@ class BotDashboard(ttkb.Window):
             val.pack(anchor=tk.W)
             
             ttkb.Label(val_frame, text=label, font=("Segoe UI", 7),
-                      foreground="#888888").pack(anchor=tk.W)
+                      foreground=COLORS['text_secondary']).pack(anchor=tk.W)
             
             self.quick_stat_labels[key] = val
         
         # ===== MAIN CONTENT AREA =====
-        self.main_panel = ttkb.Frame(main_frame)
+        self.main_panel = ttkb.Frame(main_frame, style=STYLE_SURFACE_FRAME)
         self.main_panel.pack(fill=tk.BOTH, expand=True)
         
         # Initialize state variables BEFORE status bar (needed by _update_time)
@@ -605,9 +615,9 @@ class BotDashboard(ttkb.Window):
         self.current_tab = tab_id
         for tid, btn in self.tab_buttons.items():
             if tid == tab_id:
-                btn.configure(bootstyle="info")
+                btn.configure(bootstyle="primary")
             else:
-                btn.configure(bootstyle="dark-outline")
+                btn.configure(bootstyle="secondary-outline")
         cmd()
     
     def _update_runtime(self):
@@ -636,32 +646,36 @@ class BotDashboard(ttkb.Window):
         self.clear_main_panel()
         
         # Configure main panel background
-        self.main_panel.configure(style=STYLE_CARD_FRAME)
+        self.main_panel.configure(style=STYLE_SURFACE_FRAME)
         
         # ===== TOP SECTION: TITLE ONLY (Stats removed - already in global quick stats bar) =====
-        top_section = ttkb.Frame(self.main_panel)
-        top_section.pack(fill=tk.X, padx=10, pady=(4, 2))
+        top_section = ttkb.Frame(self.main_panel, style=STYLE_SURFACE_ALT_FRAME)
+        top_section.pack(fill=tk.X, padx=10, pady=(2, 8), ipady=6)
         
         # Title row
-        title_row = ttkb.Frame(top_section)
+        title_row = ttkb.Frame(top_section, style=STYLE_SURFACE_ALT_FRAME)
         title_row.pack(fill=tk.X, pady=(0, 4))
         
-        ttkb.Label(title_row, text="🏠 Dashboard - Settings & Control", 
-                  font=("Segoe UI", 16, "bold")).pack(side=tk.LEFT)
+        ttkb.Label(
+            title_row,
+            text="🏠 Mission Control • Settings + Live Automation",
+            font=(UI_FONT, 15, "bold"),
+            foreground=COLORS['text_primary']
+        ).pack(side=tk.LEFT)
         
         # Runtime display
-        runtime_frame = ttkb.Frame(title_row)
+        runtime_frame = ttkb.Frame(title_row, style=STYLE_SURFACE_ALT_FRAME)
         runtime_frame.pack(side=tk.RIGHT)
         ttkb.Label(runtime_frame, text="⏱️ Runtime:", 
-                  font=("Segoe UI", 10), foreground="#888888").pack(side=tk.LEFT)
+              font=(UI_FONT, 10), foreground=COLORS['text_secondary']).pack(side=tk.LEFT)
         self.runtime_label = ttkb.Label(runtime_frame, text="00:00:00", 
-                                        font=("Consolas", 11, "bold"), foreground="#00d26a")
+                        font=("Consolas", 11, "bold"), foreground=COLORS['success'])
         self.runtime_label.pack(side=tk.LEFT, padx=(5, 0))
         
         # NOTE: Duplicate stats row REMOVED - stats are already shown in the global quick stats bar above tabs
         
         # ===== MAIN CONTENT: TWO COLUMN LAYOUT =====
-        content_frame = ttkb.Frame(self.main_panel)
+        content_frame = ttkb.Frame(self.main_panel, style=STYLE_SURFACE_FRAME)
         content_frame.pack(fill=tk.BOTH, expand=True, padx=6, pady=2)
         
         # Use PanedWindow for resizable columns
@@ -669,7 +683,7 @@ class BotDashboard(ttkb.Window):
         content_paned.pack(fill=tk.BOTH, expand=True)
         
         # ===== LEFT COLUMN: ALL SETTINGS (PRIMARY FOCUS - 80% width for wider settings) =====
-        left_col = ttkb.Frame(content_paned, width=1000)
+        left_col = ttkb.Frame(content_paned, width=1000, style=STYLE_SURFACE_FRAME)
         left_col.pack_propagate(False)  # Prevent children from shrinking the frame
         content_paned.add(left_col, weight=8)
         
@@ -679,17 +693,17 @@ class BotDashboard(ttkb.Window):
         # ============================================
         # ALL SETTINGS PANEL (MAIN FOCUS - At Top)
         # ============================================
-        settings_frame = ttkb.Labelframe(left_col, text="⚙️ All Settings (Change & Run)", bootstyle="info")
+        settings_frame = ttkb.Labelframe(left_col, text="⚙️ All Settings (Change & Run)", style=STYLE_SECTION_FRAME)
         settings_frame.pack(fill=tk.BOTH, expand=True)
         
         # Restart warning banner
-        restart_banner = ttkb.Frame(settings_frame)
+        restart_banner = ttkb.Frame(settings_frame, style=STYLE_CARD_FRAME)
         restart_banner.pack(fill=tk.X, padx=5, pady=(5, 0))
         ttkb.Label(restart_banner, text="⚠️ Browser settings (🔒) require bot restart | Runtime settings (⚡) apply immediately",
-                  font=("Segoe UI", 8), foreground="#f59e0b").pack(anchor=tk.W)
+              font=(UI_FONT, 8), foreground=COLORS['warning']).pack(anchor=tk.W, padx=8, pady=4)
         
         # Create scrollable canvas for settings
-        settings_canvas = tk.Canvas(settings_frame, bg=COLORS['card_bg'], highlightthickness=0)
+        settings_canvas = tk.Canvas(settings_frame, bg=COLORS['card_bg'], highlightthickness=0, bd=0)
         settings_scrollbar = ttkb.Scrollbar(settings_frame, orient="vertical", command=settings_canvas.yview)
         settings_scrollable = ttkb.Frame(settings_canvas)
         
@@ -722,7 +736,7 @@ class BotDashboard(ttkb.Window):
         self._create_pilot_scheduling_section(settings_scrollable)
         
         # ========== SECTION 1: Bot Behavior ==========
-        sec1 = ttkb.Labelframe(settings_scrollable, text="🤖 Bot Behavior", bootstyle="info")
+        sec1 = ttkb.Labelframe(settings_scrollable, text="🤖 Bot Behavior", style=STYLE_SECTION_FRAME)
         sec1.pack(fill=tk.X, padx=5, pady=(5, 3))
         
         sec1_inner = ttkb.Frame(sec1)
@@ -768,7 +782,7 @@ class BotDashboard(ttkb.Window):
         sec2_3_row.columnconfigure(1, weight=1)
         
         # -- Form Filling (left) --
-        sec2 = ttkb.Labelframe(sec2_3_row, text="📝 Form Filling", bootstyle="warning")
+        sec2 = ttkb.Labelframe(sec2_3_row, text="📝 Form Filling", style=STYLE_SECTION_FRAME)
         sec2.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
         
         sec2_inner = ttkb.Frame(sec2)
@@ -787,7 +801,7 @@ class BotDashboard(ttkb.Window):
         self.qs_delay_spin.pack(side=tk.LEFT, padx=(5, 0))
         
         # -- Resume Tailoring (right) --
-        sec3 = ttkb.Labelframe(sec2_3_row, text="📄 Resume Tailoring", bootstyle="success")
+        sec3 = ttkb.Labelframe(sec2_3_row, text="📄 Resume Tailoring", style=STYLE_SECTION_FRAME)
         sec3.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
         
         sec3_inner = ttkb.Frame(sec3)
@@ -818,7 +832,7 @@ class BotDashboard(ttkb.Window):
         sec4_5_row.columnconfigure(1, weight=1)
         
         # -- Browser & UI (left) --
-        sec4 = ttkb.Labelframe(sec4_5_row, text="🖥️ Browser & UI 🔒", bootstyle="primary")
+        sec4 = ttkb.Labelframe(sec4_5_row, text="🖥️ Browser & UI 🔒", style=STYLE_SECTION_FRAME)
         sec4.grid(row=0, column=0, sticky="nsew", padx=(0, 5))
         
         sec4_inner = ttkb.Frame(sec4)
@@ -841,7 +855,7 @@ class BotDashboard(ttkb.Window):
                         bootstyle="dark-round-toggle", command=self._save_quick_settings).pack(anchor=tk.W, pady=2)
         
         # -- Control & Alerts (right) --
-        sec5 = ttkb.Labelframe(sec4_5_row, text="🎛️ Control & Alerts ⚡", bootstyle="danger")
+        sec5 = ttkb.Labelframe(sec4_5_row, text="🎛️ Control & Alerts ⚡", style=STYLE_SECTION_FRAME)
         sec5.grid(row=0, column=1, sticky="nsew", padx=(5, 0))
         
         sec5_inner = ttkb.Frame(sec5)
@@ -855,7 +869,7 @@ class BotDashboard(ttkb.Window):
                         bootstyle="info-round-toggle", command=self._save_quick_settings).pack(anchor=tk.W, pady=2)
         
         # ========== SECTION 6: Chrome Extension & Universal Form Filler ⚡ ==========
-        sec6 = ttkb.Labelframe(settings_scrollable, text="🧩 Extension & Form Filler ⚡", bootstyle="success")
+        sec6 = ttkb.Labelframe(settings_scrollable, text="🧩 Extension & Form Filler ⚡", style=STYLE_SECTION_FRAME)
         sec6.pack(fill=tk.X, padx=5, pady=3)
         
         sec6_inner = ttkb.Frame(sec6)
@@ -1007,15 +1021,15 @@ class BotDashboard(ttkb.Window):
     
     def _create_dashboard_stat(self, parent, col, icon, label, attr_name, color):
         """Create a stat card for the main dashboard matching side panel style"""
-        frame = ttkb.Frame(parent)
+        frame = ttkb.Frame(parent, style=STYLE_STAT_CARD_FRAME)
         frame.grid(row=0, column=col, padx=4, pady=3, sticky="nsew")
         
         # Card inner with subtle border
-        inner = ttkb.Frame(frame, padding=8)
+        inner = ttkb.Frame(frame, padding=8, style=STYLE_STAT_CARD_FRAME)
         inner.pack(fill=tk.BOTH, expand=True)
         
         # Icon and value row
-        top_row = ttkb.Frame(inner)
+        top_row = ttkb.Frame(inner, style=STYLE_STAT_CARD_FRAME)
         top_row.pack(fill=tk.X)
         
         ttkb.Label(top_row, text=icon, font=("Segoe UI Emoji", 16)).pack(side=tk.LEFT)
@@ -1027,7 +1041,7 @@ class BotDashboard(ttkb.Window):
         
         # Label
         ttkb.Label(inner, text=label, font=("Segoe UI", 8),
-                  foreground="#888888").pack(anchor=tk.W, pady=(3, 0))
+                  foreground=COLORS['text_secondary']).pack(anchor=tk.W, pady=(3, 0))
         
         # Store reference
         setattr(self, attr_name, val_label)
@@ -1074,28 +1088,28 @@ class BotDashboard(ttkb.Window):
         self.clear_main_panel()
         
         # Main container
-        main_container = ttkb.Frame(self.main_panel)
+        main_container = ttkb.Frame(self.main_panel, style=STYLE_SURFACE_FRAME)
         main_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
         
         # Header
-        header = ttkb.Frame(main_container)
+        header = ttkb.Frame(main_container, style=STYLE_SURFACE_ALT_FRAME)
         header.pack(fill=tk.X, pady=(0, 12))
         
         ttkb.Label(header, text="✨ Resume Tailoring Center", 
-                  font=("Segoe UI", 16, "bold")).pack(side=tk.LEFT)
+                  font=("Segoe UI", 16, "bold"), foreground=COLORS['text_primary']).pack(side=tk.LEFT, padx=8, pady=8)
         
         ttkb.Button(header, text="📖 Guide", bootstyle="info-outline",
                    command=lambda: webbrowser.open("ENHANCED_RESUME_QUICK_START.md")).pack(side=tk.RIGHT)
         
         # Two column layout
-        content = ttkb.Frame(main_container)
+        content = ttkb.Frame(main_container, style=STYLE_SURFACE_FRAME)
         content.pack(fill=tk.BOTH, expand=True)
         content.columnconfigure(0, weight=1)
         content.columnconfigure(1, weight=1)
         content.rowconfigure(0, weight=1)
         
         # LEFT: Input section
-        left_frame = ttkb.Labelframe(content, text="📄 Input", bootstyle="info")
+        left_frame = ttkb.Labelframe(content, text="📄 Input", style=STYLE_SECTION_FRAME)
         left_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10))
         
         input_inner = ttkb.Frame(left_frame)
@@ -1132,7 +1146,7 @@ class BotDashboard(ttkb.Window):
         self.tailor_instr_entry.insert(0, "Focus on technical skills and achievements")
         
         # RIGHT: Actions & Preview
-        right_frame = ttkb.Labelframe(content, text="🚀 Actions", bootstyle="success")
+        right_frame = ttkb.Labelframe(content, text="🚀 Actions", style=STYLE_SECTION_FRAME)
         right_frame.grid(row=0, column=1, sticky="nsew", padx=(10, 0))
         
         right_inner = ttkb.Frame(right_frame)
@@ -1165,7 +1179,7 @@ class BotDashboard(ttkb.Window):
                    bootstyle="info-outline", width=22).pack(fill=tk.X, pady=3)
         
         # Tips section
-        tips_frame = ttkb.Labelframe(right_inner, text="💡 Tips", bootstyle="warning")
+        tips_frame = ttkb.Labelframe(right_inner, text="💡 Tips", style=STYLE_SECTION_FRAME)
         tips_frame.pack(fill=tk.X, pady=(15, 0))
         
         tips_inner = ttkb.Frame(tips_frame)
@@ -1179,7 +1193,7 @@ class BotDashboard(ttkb.Window):
         ]
         for tip in tips:
             ttkb.Label(tips_inner, text=tip, font=("Segoe UI", 9),
-                      foreground="#aaaaaa").pack(anchor=tk.W, pady=1)
+                      foreground=COLORS['text_secondary']).pack(anchor=tk.W, pady=1)
 
     def _browse_file(self, entry_widget):
         path = filedialog.askopenfilename(
@@ -1194,15 +1208,15 @@ class BotDashboard(ttkb.Window):
         """Show Application History with modern tabular UI and real data"""
         self.clear_main_panel()
         
-        main_container = ttkb.Frame(self.main_panel)
+        main_container = ttkb.Frame(self.main_panel, style=STYLE_SURFACE_FRAME)
         main_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
         
         # Header with actions
-        header = ttkb.Frame(main_container)
+        header = ttkb.Frame(main_container, style=STYLE_SURFACE_ALT_FRAME)
         header.pack(fill=tk.X, pady=(0, 10))
         
         ttkb.Label(header, text="📜 Application History", 
-                  font=("Segoe UI", 16, "bold")).pack(side=tk.LEFT)
+                  font=("Segoe UI", 16, "bold"), foreground=COLORS['text_primary']).pack(side=tk.LEFT, padx=8, pady=8)
         
         # Action buttons
         btn_frame = ttkb.Frame(header)
@@ -1218,7 +1232,7 @@ class BotDashboard(ttkb.Window):
                    command=self.show_history, width=10).pack(side=tk.LEFT, padx=3)
         
         # Stats summary cards
-        stats_frame = ttkb.Frame(main_container)
+        stats_frame = ttkb.Frame(main_container, style=STYLE_SURFACE_FRAME)
         stats_frame.pack(fill=tk.X, pady=(0, 15))
         
         for i in range(5):
@@ -1233,7 +1247,7 @@ class BotDashboard(ttkb.Window):
         self._create_history_stat(stats_frame, 4, "📈", LBL_SUCCESS_RATE, f"{rate:.1f}%", "#9b59b6")
         
         # Filter bar
-        filter_frame = ttkb.Frame(main_container)
+        filter_frame = ttkb.Frame(main_container, style=STYLE_SURFACE_ALT_FRAME)
         filter_frame.pack(fill=tk.X, pady=(0, 10))
         
         ttkb.Label(filter_frame, text=LBL_FILTER, font=("Segoe UI", 10)).pack(side=tk.LEFT)
@@ -1251,13 +1265,13 @@ class BotDashboard(ttkb.Window):
         self.history_search.bind('<KeyRelease>', lambda e: self._filter_history())
         
         # Table Frame with Treeview
-        table_frame = ttkb.Labelframe(main_container, text="📋 Application Records", bootstyle="info")
+        table_frame = ttkb.Labelframe(main_container, text="📋 Application Records", style=STYLE_SECTION_FRAME)
         table_frame.pack(fill=tk.BOTH, expand=True)
         
         # Create Treeview table
         columns = ("timestamp", "job_title", "company", "location", "status", "ai_score", "action")
         self.history_tree = ttkb.Treeview(table_frame, columns=columns, show="headings", 
-                                          bootstyle="dark", height=15)
+                          bootstyle="info", height=15)
         
         # Define columns
         self.history_tree.heading("timestamp", text="⏰ Time", anchor=tk.W)
@@ -1488,11 +1502,11 @@ class BotDashboard(ttkb.Window):
     
     def _create_history_stat(self, parent, col, icon, label, value, color):
         """Create a stat card for history page"""
-        frame = ttkb.Frame(parent, padding=6)
+        frame = ttkb.Frame(parent, padding=8, style=STYLE_STAT_CARD_FRAME)
         frame.grid(row=0, column=col, padx=3, sticky="nsew")
         
         ttkb.Label(frame, text=f"{icon} {label}", font=("Segoe UI", 9),
-                  foreground="#888888").pack(anchor=tk.W)
+                  foreground=COLORS['text_secondary']).pack(anchor=tk.W)
         ttkb.Label(frame, text=value, font=("Segoe UI", 18, "bold"),
                   foreground=color).pack(anchor=tk.W)
     
@@ -1521,21 +1535,21 @@ class BotDashboard(ttkb.Window):
         """Show Analytics Dashboard with charts and insights"""
         self.clear_main_panel()
         
-        main_container = ttkb.Frame(self.main_panel)
+        main_container = ttkb.Frame(self.main_panel, style=STYLE_SURFACE_FRAME)
         main_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
         
         # Header
-        header = ttkb.Frame(main_container)
+        header = ttkb.Frame(main_container, style=STYLE_SURFACE_ALT_FRAME)
         header.pack(fill=tk.X, pady=(0, 10))
         
         ttkb.Label(header, text="📊 Analytics & Insights", 
-                  font=("Segoe UI", 16, "bold")).pack(side=tk.LEFT)
+                  font=("Segoe UI", 16, "bold"), foreground=COLORS['text_primary']).pack(side=tk.LEFT, padx=8, pady=8)
         
         ttkb.Button(header, text="📥 Export Report", bootstyle="success-outline",
                    command=self._export_analytics_report).pack(side=tk.RIGHT)
         
         # Main content - Two columns
-        content = ttkb.Frame(main_container)
+        content = ttkb.Frame(main_container, style=STYLE_SURFACE_FRAME)
         content.pack(fill=tk.BOTH, expand=True)
         content.columnconfigure(0, weight=1)
         content.columnconfigure(1, weight=1)
@@ -1543,7 +1557,7 @@ class BotDashboard(ttkb.Window):
         content.rowconfigure(1, weight=1)
         
         # ===== TOP LEFT: Application Status Breakdown =====
-        status_frame = ttkb.Labelframe(content, text="📈 Application Status", bootstyle="info")
+        status_frame = ttkb.Labelframe(content, text="📈 Application Status", style=STYLE_SECTION_FRAME)
         status_frame.grid(row=0, column=0, sticky="nsew", padx=(0, 10), pady=(0, 10))
         
         status_inner = ttkb.Frame(status_frame)
@@ -1580,7 +1594,7 @@ class BotDashboard(ttkb.Window):
             ttkb.Label(status_inner, text=f"Chart error: {e}", foreground="#ff6b6b").pack()
         
         # ===== TOP RIGHT: Performance Metrics =====
-        perf_frame = ttkb.Labelframe(content, text="🎯 Performance Metrics", bootstyle="success")
+        perf_frame = ttkb.Labelframe(content, text="🎯 Performance Metrics", style=STYLE_SECTION_FRAME)
         perf_frame.grid(row=0, column=1, sticky="nsew", padx=(10, 0), pady=(0, 10))
         
         perf_inner = ttkb.Frame(perf_frame)
@@ -1605,7 +1619,7 @@ class BotDashboard(ttkb.Window):
                       foreground=color).pack(side=tk.RIGHT)
         
         # ===== BOTTOM LEFT: AI Processing Stats =====
-        ai_frame = ttkb.Labelframe(content, text="🤖 AI Processing Statistics", bootstyle="primary")
+        ai_frame = ttkb.Labelframe(content, text="🤖 AI Processing Statistics", style=STYLE_SECTION_FRAME)
         ai_frame.grid(row=1, column=0, sticky="nsew", padx=(0, 10), pady=(10, 0))
         
         ai_inner = ttkb.Frame(ai_frame)
@@ -1627,7 +1641,7 @@ class BotDashboard(ttkb.Window):
                       foreground="#00d26a").pack(side=tk.RIGHT)
         
         # ===== BOTTOM RIGHT: Session Info =====
-        session_frame = ttkb.Labelframe(content, text="📅 Session Information", bootstyle="warning")
+        session_frame = ttkb.Labelframe(content, text="📅 Session Information", style=STYLE_SECTION_FRAME)
         session_frame.grid(row=1, column=1, sticky="nsew", padx=(10, 0), pady=(10, 0))
         
         session_inner = ttkb.Frame(session_frame)
@@ -1706,19 +1720,19 @@ class BotDashboard(ttkb.Window):
         """Show Settings with modern UI"""
         self.clear_main_panel()
         
-        main_container = ttkb.Frame(self.main_panel)
+        main_container = ttkb.Frame(self.main_panel, style=STYLE_SURFACE_FRAME)
         main_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
         
         # Header
         ttkb.Label(main_container, text="⚙️ Settings & Configuration", 
-                  font=("Segoe UI", 16, "bold")).pack(anchor=tk.W, pady=(0, 12))
+                  font=("Segoe UI", 16, "bold"), foreground=COLORS['text_primary']).pack(anchor=tk.W, pady=(0, 12))
         
         # Settings sections in scrollable frame
-        settings_frame = ttkb.Frame(main_container)
+        settings_frame = ttkb.Frame(main_container, style=STYLE_SURFACE_FRAME)
         settings_frame.pack(fill=tk.BOTH, expand=True)
         
         # AI Configuration
-        ai_frame = ttkb.Labelframe(settings_frame, text="🤖 AI Configuration", bootstyle="info")
+        ai_frame = ttkb.Labelframe(settings_frame, text="🤖 AI Configuration", style=STYLE_SECTION_FRAME)
         ai_frame.pack(fill=tk.X, pady=(0, 15))
         
         ai_inner = ttkb.Frame(ai_frame)
@@ -1734,7 +1748,7 @@ class BotDashboard(ttkb.Window):
                    command=self._open_api_config).pack(side=tk.RIGHT)
         
         # Application Settings
-        app_frame = ttkb.Labelframe(settings_frame, text="📋 Application Settings", bootstyle="warning")
+        app_frame = ttkb.Labelframe(settings_frame, text="📋 Application Settings", style=STYLE_SECTION_FRAME)
         app_frame.pack(fill=tk.X, pady=(0, 15))
         
         app_inner = ttkb.Frame(app_frame)
@@ -1772,10 +1786,10 @@ class BotDashboard(ttkb.Window):
         warn_frame = ttkb.Frame(app_inner)
         warn_frame.pack(fill=tk.X, pady=(10, 0))
         ttkb.Label(warn_frame, text="⚠️ Changes apply immediately to runtime but require bot restart to take full effect",
-                  font=("Segoe UI", 9), foreground="#f59e0b").pack(anchor=tk.W)
+                  font=("Segoe UI", 9), foreground=COLORS['warning']).pack(anchor=tk.W)
         
         # File paths
-        paths_frame = ttkb.Labelframe(settings_frame, text="📁 File Paths", bootstyle="secondary")
+        paths_frame = ttkb.Labelframe(settings_frame, text="📁 File Paths", style=STYLE_SECTION_FRAME)
         paths_frame.pack(fill=tk.X)
         
         paths_inner = ttkb.Frame(paths_frame)
@@ -1814,15 +1828,15 @@ class BotDashboard(ttkb.Window):
         """Show Help with modern UI"""
         self.clear_main_panel()
         
-        main_container = ttkb.Frame(self.main_panel)
+        main_container = ttkb.Frame(self.main_panel, style=STYLE_SURFACE_FRAME)
         main_container.pack(fill=tk.BOTH, expand=True, padx=15, pady=10)
         
         # Header
         ttkb.Label(main_container, text="❓ Help & Documentation", 
-                  font=("Segoe UI", 16, "bold")).pack(anchor=tk.W, pady=(0, 12))
+                  font=("Segoe UI", 16, "bold"), foreground=COLORS['text_primary']).pack(anchor=tk.W, pady=(0, 12))
         
         # Quick links
-        links_frame = ttkb.Labelframe(main_container, text="🔗 Quick Links", bootstyle="info")
+        links_frame = ttkb.Labelframe(main_container, text="🔗 Quick Links", style=STYLE_SECTION_FRAME)
         links_frame.pack(fill=tk.X, pady=(0, 15))
         
         links_inner = ttkb.Frame(links_frame)
@@ -1841,7 +1855,7 @@ class BotDashboard(ttkb.Window):
             btn.pack(side=tk.LEFT, padx=(0, 10))
         
         # Keyboard shortcuts
-        shortcuts_frame = ttkb.Labelframe(main_container, text="⌨️ Keyboard Shortcuts", bootstyle="warning")
+        shortcuts_frame = ttkb.Labelframe(main_container, text="⌨️ Keyboard Shortcuts", style=STYLE_SECTION_FRAME)
         shortcuts_frame.pack(fill=tk.X, pady=(0, 15))
         
         shortcuts_inner = ttkb.Frame(shortcuts_frame)
@@ -1859,10 +1873,10 @@ class BotDashboard(ttkb.Window):
             row = ttkb.Frame(shortcuts_inner)
             row.pack(fill=tk.X, pady=2)
             ttkb.Label(row, text=key, font=("Consolas", 10, "bold"), width=10).pack(side=tk.LEFT)
-            ttkb.Label(row, text=desc, font=("Segoe UI", 10), foreground="#aaaaaa").pack(side=tk.LEFT)
+            ttkb.Label(row, text=desc, font=("Segoe UI", 10), foreground=COLORS['text_secondary']).pack(side=tk.LEFT)
         
         # About section
-        about_frame = ttkb.Labelframe(main_container, text="ℹ️ About", bootstyle="secondary")
+        about_frame = ttkb.Labelframe(main_container, text="ℹ️ About", style=STYLE_SECTION_FRAME)
         about_frame.pack(fill=tk.X)
         
         about_inner = ttkb.Frame(about_frame)
@@ -1871,9 +1885,9 @@ class BotDashboard(ttkb.Window):
         ttkb.Label(about_inner, text="🤖 AI Job Hunter Pro", 
                   font=("Segoe UI", 14, "bold")).pack(anchor=tk.W)
         ttkb.Label(about_inner, text="Automated LinkedIn Job Application System", 
-                  font=("Segoe UI", 10), foreground="#888888").pack(anchor=tk.W, pady=(5, 10))
+                  font=("Segoe UI", 10), foreground=COLORS['text_secondary']).pack(anchor=tk.W, pady=(5, 10))
         ttkb.Label(about_inner, text="Version 2.0 | Built with ❤️ by Suraj Panwar", 
-                  font=("Segoe UI", 9), foreground="#666666").pack(anchor=tk.W)
+                  font=("Segoe UI", 9), foreground=COLORS['text_secondary']).pack(anchor=tk.W)
     
     # NOTE: Dead code block removed (create_top_bar, create_stat_cards, create_tabs_section,
     # create_statistics_tab, create_jobs_tab, create_settings_tab, create_right_panel,
@@ -2067,46 +2081,47 @@ class BotDashboard(ttkb.Window):
     
     def create_status_bar(self, parent):
         """Create the bottom status bar with prominent Live Monitor button"""
-        status_bar = ttkb.Frame(parent)
+        status_bar = ttkb.Frame(parent, style=STYLE_SURFACE_ALT_FRAME)
         status_bar.pack(fill=tk.X, side=tk.BOTTOM)
         
         # Left - Connection status
-        left_frame = ttkb.Frame(status_bar)
+        left_frame = ttkb.Frame(status_bar, style=STYLE_SURFACE_ALT_FRAME)
         left_frame.pack(side=tk.LEFT, padx=10, pady=5)
         
         self.connection_indicator = ttkb.Label(left_frame, text="●", 
                                               foreground=COLORS['success'])
         self.connection_indicator.pack(side=tk.LEFT)
         ttkb.Label(left_frame, text="System Ready", 
-                  font=("Segoe UI", 9)).pack(side=tk.LEFT, padx=(5, 0))
+                  font=("Segoe UI", 9), foreground=COLORS['text_secondary']).pack(side=tk.LEFT, padx=(5, 0))
         
         # ===== PROMINENT LIVE MONITOR BUTTON IN STATUS BAR =====
-        monitor_btn_frame = ttkb.Frame(status_bar)
+        monitor_btn_frame = ttkb.Frame(status_bar, style=STYLE_SURFACE_ALT_FRAME)
         monitor_btn_frame.pack(side=tk.LEFT, padx=20)
         
         self.status_bar_monitor_btn = AnimatedButton(
             monitor_btn_frame, 
             text="📺 SIDE PANEL", 
             command=self.toggle_side_panel_mode,
-            bootstyle="success",
+            bootstyle="primary",
             width=22,
             padding=(10, 5)
         )
         self.status_bar_monitor_btn.pack(side=tk.LEFT)
         
         # Center - Quick stats
-        center_frame = ttkb.Frame(status_bar)
+        center_frame = ttkb.Frame(status_bar, style=STYLE_SURFACE_ALT_FRAME)
         center_frame.pack(side=tk.LEFT, expand=True)
         
         self.quick_stats_label = ttkb.Label(
             center_frame, 
             text="📊 Jobs: 0 | ✅ Applied: 0 | ❌ Failed: 0 | ⏭️ Skipped: 0",
-            font=("Segoe UI", 9)
+            font=("Segoe UI", 9),
+            foreground=COLORS['text_secondary']
         )
         self.quick_stats_label.pack()
         
         # Right - Time
-        right_frame = ttkb.Frame(status_bar)
+        right_frame = ttkb.Frame(status_bar, style=STYLE_SURFACE_ALT_FRAME)
         right_frame.pack(side=tk.RIGHT, padx=10, pady=5)
         
         self.time_label = ttkb.Label(right_frame, text="", font=("Consolas", 9))
@@ -2236,7 +2251,7 @@ class BotDashboard(ttkb.Window):
         self.side_panel_window.title("📊 Live Monitor")
         self.side_panel_window.geometry(f"{panel_width}x{panel_height}+{x_pos}+{y_pos}")
         self.side_panel_window.attributes('-topmost', True)
-        self.side_panel_window.configure(bg='#1a1a2e')
+        self.side_panel_window.configure(bg=COLORS['bg_dark'])
         self.side_panel_window.resizable(True, True)
         self.side_panel_window.minsize(280, 400)
         
@@ -2244,29 +2259,29 @@ class BotDashboard(ttkb.Window):
         self.side_panel_window.protocol("WM_DELETE_WINDOW", self._close_side_panel)
         
         # Main container with padding
-        main_frame = ttkb.Frame(self.side_panel_window)
+        main_frame = ttkb.Frame(self.side_panel_window, style=STYLE_SURFACE_FRAME)
         main_frame.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
         
         # ===== HEADER =====
-        header = ttkb.Frame(main_frame)
+        header = ttkb.Frame(main_frame, style=STYLE_SURFACE_ALT_FRAME)
         header.pack(fill=tk.X, pady=(0, 10))
         
         ttkb.Label(header, text="🤖 AI Job Hunter", 
-                  font=("Segoe UI", 14, "bold")).pack(side=tk.LEFT)
+                  font=("Segoe UI", 14, "bold"), foreground=COLORS['text_primary']).pack(side=tk.LEFT, padx=8, pady=6)
         
         # Status indicator in header
-        self.sp_status_frame = ttkb.Frame(header)
+        self.sp_status_frame = ttkb.Frame(header, style=STYLE_SURFACE_ALT_FRAME)
         self.sp_status_frame.pack(side=tk.RIGHT)
         
         self.sp_status_dot = ttkb.Label(self.sp_status_frame, text="●", 
-                                        foreground="#ff6b6b", font=("Arial", 14))
+                                        foreground=COLORS['danger'], font=("Arial", 14))
         self.sp_status_dot.pack(side=tk.LEFT)
         self.sp_status_text = ttkb.Label(self.sp_status_frame, text="STOPPED",
                                          font=("Segoe UI", 10, "bold"))
         self.sp_status_text.pack(side=tk.LEFT, padx=(5, 0))
         
         # ===== QUICK STATS ROW =====
-        stats_frame = ttkb.Frame(main_frame)
+        stats_frame = ttkb.Frame(main_frame, style=STYLE_SURFACE_FRAME)
         stats_frame.pack(fill=tk.X, pady=(0, 10))
         
         # Create 4 mini stat boxes
@@ -2283,22 +2298,22 @@ class BotDashboard(ttkb.Window):
         self._create_mini_stat(stats_frame, 3, "⏭️", "Skip", "sp_skipped_val")
         
         # ===== NEXT STEP SECTION (NEW!) =====
-        next_frame = ttkb.Frame(main_frame)
+        next_frame = ttkb.Frame(main_frame, style=STYLE_STAT_CARD_FRAME, padding=(8, 8))
         next_frame.pack(fill=tk.X, pady=(0, 8))
         
-        next_header = ttkb.Frame(next_frame)
+        next_header = ttkb.Frame(next_frame, style=STYLE_STAT_CARD_FRAME)
         next_header.pack(fill=tk.X)
         ttkb.Label(next_header, text="➡️ NEXT STEP:", 
-                  font=("Segoe UI", 9, "bold"), foreground="#00d26a").pack(side=tk.LEFT)
+              font=("Segoe UI", 9, "bold"), foreground=COLORS['success']).pack(side=tk.LEFT)
         
         self.sp_next_step = ttkb.Label(next_frame, text="⏳ Waiting for bot to start...",
                                        font=("Segoe UI", 10, "bold"),
-                                       foreground="#fbbf24",
+                                       foreground=COLORS['warning'],
                                        wraplength=300)
         self.sp_next_step.pack(anchor=tk.W, pady=(3, 0))
         
         # ===== CURRENT JOB SECTION =====
-        job_frame = ttkb.Labelframe(main_frame, text="💼 Current Job", bootstyle="info")
+        job_frame = ttkb.Labelframe(main_frame, text="💼 Current Job", style=STYLE_SECTION_FRAME)
         job_frame.pack(fill=tk.X, pady=(0, 10))
         
         job_inner = ttkb.Frame(job_frame)
@@ -2311,16 +2326,16 @@ class BotDashboard(ttkb.Window):
         
         self.sp_job_company = ttkb.Label(job_inner, text="",
                                          font=("Segoe UI", 9),
-                                         foreground="#aaaaaa")
+                                         foreground=COLORS['text_secondary'])
         self.sp_job_company.pack(anchor=tk.W)
         
         self.sp_job_status = ttkb.Label(job_inner, text="⏳ Idle",
                                         font=("Segoe UI", 9),
-                                        foreground="#ffd93d")
+                                        foreground=COLORS['warning'])
         self.sp_job_status.pack(anchor=tk.W, pady=(5, 0))
         
         # ===== AI PROGRESS SECTION =====
-        ai_frame = ttkb.Labelframe(main_frame, text="🤖 AI Processing", bootstyle="primary")
+        ai_frame = ttkb.Labelframe(main_frame, text="🤖 AI Processing", style=STYLE_SECTION_FRAME)
         ai_frame.pack(fill=tk.X, pady=(0, 10))
         
         ai_inner = ttkb.Frame(ai_frame)
@@ -2332,7 +2347,7 @@ class BotDashboard(ttkb.Window):
         ttkb.Label(jd_header, text="📋 JD Analysis:", 
                   font=("Segoe UI", 9)).pack(side=tk.LEFT)
         self.sp_jd_status = ttkb.Label(jd_header, text="Idle",
-                                       font=("Segoe UI", 8), foreground="#888888")
+                                       font=("Segoe UI", 8), foreground=COLORS['text_secondary'])
         self.sp_jd_status.pack(side=tk.RIGHT)
         
         self.sp_jd_progress = ttkb.Progressbar(ai_inner, mode='determinate',
@@ -2345,7 +2360,7 @@ class BotDashboard(ttkb.Window):
         ttkb.Label(resume_header, text="📝 Resume Tailoring:", 
                   font=("Segoe UI", 9)).pack(side=tk.LEFT)
         self.sp_resume_status = ttkb.Label(resume_header, text="Idle",
-                                           font=("Segoe UI", 8), foreground="#888888")
+                                           font=("Segoe UI", 8), foreground=COLORS['text_secondary'])
         self.sp_resume_status.pack(side=tk.RIGHT)
         
         self.sp_resume_progress = ttkb.Progressbar(ai_inner, mode='determinate',
@@ -2353,7 +2368,7 @@ class BotDashboard(ttkb.Window):
         self.sp_resume_progress.pack(fill=tk.X, pady=(3, 0))
         
         # ===== OVERALL PROGRESS BAR =====
-        progress_frame = ttkb.Frame(main_frame)
+        progress_frame = ttkb.Frame(main_frame, style=STYLE_SURFACE_ALT_FRAME)
         progress_frame.pack(fill=tk.X, pady=(0, 10))
         
         ttkb.Label(progress_frame, text="📊 Overall Progress:", 
@@ -2366,12 +2381,12 @@ class BotDashboard(ttkb.Window):
         self.sp_progress_label.pack(anchor=tk.E)
         
         # ===== LIVE LOG =====
-        log_frame = ttkb.Labelframe(main_frame, text="📋 Live Log", bootstyle="secondary")
+        log_frame = ttkb.Labelframe(main_frame, text="📋 Live Log", style=STYLE_SECTION_FRAME)
         log_frame.pack(fill=tk.BOTH, expand=True, pady=(0, 10))
         
         self.sp_log_text = scrolledtext.ScrolledText(
             log_frame, wrap=tk.WORD, font=("Consolas", 8),
-            bg='#0f0f23', fg='#00ff88', height=12,
+            bg='#0b1220', fg='#86efac', height=12,
             insertbackground='white'
         )
         self.sp_log_text.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
@@ -2384,12 +2399,12 @@ class BotDashboard(ttkb.Window):
         self.sp_log_text.tag_configure("timestamp", foreground="#6b7280")
         
         # ===== CONTROL BUTTONS =====
-        btn_frame = ttkb.Frame(main_frame)
+        btn_frame = ttkb.Frame(main_frame, style=STYLE_SURFACE_FRAME)
         btn_frame.pack(fill=tk.X)
         
         self.sp_start_btn = ttkb.Button(btn_frame, text="▶ Start", 
                                         command=self.start_bot,
-                                        bootstyle="success", width=10)
+                                        bootstyle="primary", width=10)
         self.sp_start_btn.pack(side=tk.LEFT, padx=(0, 5))
         
         self.sp_stop_btn = ttkb.Button(btn_frame, text="⏹ Stop",
@@ -2408,17 +2423,17 @@ class BotDashboard(ttkb.Window):
     
     def _create_mini_stat(self, parent, col, icon, label, attr_name):
         """Create a mini stat box for the side panel"""
-        frame = ttkb.Frame(parent)
+        frame = ttkb.Frame(parent, style=STYLE_STAT_CARD_FRAME)
         frame.grid(row=0, column=col, padx=2, pady=2, sticky="nsew")
         
-        inner = ttkb.Frame(frame)
+        inner = ttkb.Frame(frame, style=STYLE_STAT_CARD_FRAME)
         inner.pack(fill=tk.BOTH, expand=True, padx=1, pady=1)
         
         ttkb.Label(inner, text=icon, font=("Segoe UI Emoji", 12)).pack()
         val_label = ttkb.Label(inner, text="0", font=("Segoe UI", 12, "bold"))
         val_label.pack()
         ttkb.Label(inner, text=label, font=("Segoe UI", 7),
-                  foreground="#888888").pack()
+                  foreground=COLORS['text_secondary']).pack()
         
         # Store reference
         setattr(self, attr_name, val_label)
@@ -2559,6 +2574,10 @@ class BotDashboard(ttkb.Window):
             self._log_with_timestamp("🚀 Starting bot...", "info")
             self._log_with_timestamp("📂 Loading configuration...", "info")
             self.activity_feed.add_activity("Starting bot...", "info")
+            
+            # CRITICAL: Sync all current UI settings to runtime config before starting
+            # This ensures pilot mode, disable_extensions, safe_mode etc. match the UI state
+            self._save_quick_settings()
             
             ok = self.controller.start()
             if not ok:
@@ -3456,28 +3475,28 @@ GitHub: github.com/surajpanwar26
         """Create the Pilot Mode & Scheduling section at the TOP of settings."""
         
         # ========== MASTER CONTAINER FOR PILOT & SCHEDULING ==========
-        pilot_master = ttkb.Frame(parent)
+        pilot_master = ttkb.Frame(parent, style=STYLE_SURFACE_FRAME)
         pilot_master.pack(fill=tk.X, padx=3, pady=3)
         
         # --- HEADER BANNER ---
-        header_frame = ttkb.Frame(pilot_master)
+        header_frame = ttkb.Frame(pilot_master, style=STYLE_SURFACE_ALT_FRAME)
         header_frame.pack(fill=tk.X, pady=(0, 4))
         
         header_label = ttkb.Label(header_frame, 
             text="🚀 AUTOMATION CONTROL CENTER",
             font=("Segoe UI", 12, "bold"),
-            foreground="#4ade80")
-        header_label.pack(side=tk.LEFT)
+            foreground=COLORS['success'])
+        header_label.pack(side=tk.LEFT, padx=8, pady=6)
         
         # Status indicator
         self.automation_status_indicator = ttkb.Label(header_frame, 
             text="⬤ MANUAL MODE",
             font=("Segoe UI", 10, "bold"),
-            foreground="#888888")
-        self.automation_status_indicator.pack(side=tk.RIGHT)
+            foreground=COLORS['text_secondary'])
+        self.automation_status_indicator.pack(side=tk.RIGHT, padx=8)
         
         # ========== QUICK START BUTTONS ROW ==========
-        quick_start_frame = ttkb.Frame(pilot_master)
+        quick_start_frame = ttkb.Frame(pilot_master, style=STYLE_SURFACE_FRAME)
         quick_start_frame.pack(fill=tk.X, pady=(0, 5))
         
         # Pilot Mode Quick Start Button (Large, prominent)
@@ -3485,29 +3504,29 @@ GitHub: github.com/surajpanwar26
             text="🚀 START PILOT MODE",
             command=self._quick_start_pilot,
             bootstyle="success",
-            width=20)
+            width=22)
         self.pilot_start_btn.pack(side=tk.LEFT, padx=(0, 8), ipady=4)
         
         # Schedule Quick Start Button (Large, prominent)
         self.schedule_start_btn = ttkb.Button(quick_start_frame,
             text="📅 START SCHEDULED RUN",
             command=self._quick_start_scheduled,
-            bootstyle="primary",
-            width=20)
+            bootstyle="info",
+            width=22)
         self.schedule_start_btn.pack(side=tk.LEFT, padx=(0, 8), ipady=4)
         
         # Normal Mode Button
         self.normal_mode_btn = ttkb.Button(quick_start_frame,
             text="🔧 NORMAL MODE",
             command=self._switch_to_normal_mode,
-            bootstyle="secondary-outline",
+            bootstyle="dark-outline",
             width=14)
         self.normal_mode_btn.pack(side=tk.LEFT, ipady=4)
         
         # ========== PILOT MODE SETTINGS ==========
         pilot_frame = ttkb.Labelframe(pilot_master, 
             text="✈️ PILOT MODE - Fully Automated", 
-            bootstyle="success")
+            style=STYLE_SECTION_FRAME)
         pilot_frame.pack(fill=tk.X, pady=(0, 5))
         
         pilot_inner = ttkb.Frame(pilot_frame)
@@ -3516,7 +3535,7 @@ GitHub: github.com/surajpanwar26
         # Info banner
         pilot_info = ttkb.Label(pilot_inner, 
             text="🤖 Runs completely hands-free • Auto-applies to jobs • No confirmation dialogs",
-            font=("Segoe UI", 8), foreground="#4ade80")
+            font=("Segoe UI", 8), foreground=COLORS['success'])
         pilot_info.pack(anchor=tk.W, pady=(0, 5))
         
         # Row 1: Enable toggle + Resume Mode
@@ -3565,7 +3584,7 @@ GitHub: github.com/surajpanwar26
         # These settings are used to automatically fill common form questions in pilot mode
         prefill_frame = ttkb.Labelframe(pilot_master, 
             text="📝 AUTOPILOT FORM PRE-FILL - Common Question Answers", 
-            bootstyle="warning")
+            style=STYLE_SECTION_FRAME)
         prefill_frame.pack(fill=tk.X, pady=(0, 5))
         
         prefill_inner = ttkb.Frame(prefill_frame)
@@ -3574,7 +3593,7 @@ GitHub: github.com/surajpanwar26
         # Info banner
         prefill_info = ttkb.Label(prefill_inner, 
             text="🔧 Pre-configure answers for common job application questions (used in Pilot Mode)",
-            font=("Segoe UI", 8), foreground="#f59e0b")
+            font=("Segoe UI", 8), foreground=COLORS['warning'])
         prefill_info.pack(anchor=tk.W, pady=(0, 5))
         
         # Row 1: Visa, Work Authorization, Willing to Relocate
@@ -3621,12 +3640,12 @@ GitHub: github.com/surajpanwar26
         ttkb.Spinbox(prefill_row3, from_=5, to=30, width=5, textvariable=self.qs_autopilot_chrome_wait_time,
             command=self._save_quick_settings).pack(side=tk.LEFT, padx=(5, 15))
         ttkb.Label(prefill_row3, text="(Increase if Chrome opens inconsistently)", 
-            font=("Segoe UI", 8), foreground="#888888").pack(side=tk.LEFT)
+            font=("Segoe UI", 8), foreground=COLORS['text_secondary']).pack(side=tk.LEFT)
         
         # ========== SCHEDULING SETTINGS ==========
         sched_frame = ttkb.Labelframe(pilot_master, 
             text="📅 SCHEDULING - Auto-Run on Timer", 
-            bootstyle="primary")
+            style=STYLE_SECTION_FRAME)
         sched_frame.pack(fill=tk.X, pady=(0, 5))
         
         sched_inner = ttkb.Frame(sched_frame)
@@ -3635,7 +3654,7 @@ GitHub: github.com/surajpanwar26
         # Info banner
         sched_info = ttkb.Label(sched_inner, 
             text="⏰ Run job applications automatically on a schedule • No dashboard needed",
-            font=("Segoe UI", 8), foreground="#60a5fa")
+            font=("Segoe UI", 8), foreground=COLORS['info'])
         sched_info.pack(anchor=tk.W, pady=(0, 5))
         
         # Row 1: Enable toggle + Schedule Type
@@ -3674,7 +3693,7 @@ GitHub: github.com/surajpanwar26
         
         # Status indicator
         self.schedule_status_label = ttkb.Label(sched_row2, 
-            text="⏸️ Stopped", font=("Segoe UI", 9, "bold"), foreground="#888888")
+            text="⏸️ Stopped", font=("Segoe UI", 9, "bold"), foreground=COLORS['text_secondary'])
         self.schedule_status_label.pack(side=tk.RIGHT)
         
         # Row 3: Next run info
@@ -3682,7 +3701,7 @@ GitHub: github.com/surajpanwar26
         sched_row3.pack(fill=tk.X, pady=(5, 2))
         
         self.next_run_label = ttkb.Label(sched_row3, 
-            text="📅 Next run: --", font=("Segoe UI", 8), foreground="#888888")
+            text="📅 Next run: --", font=("Segoe UI", 8), foreground=COLORS['text_secondary'])
         self.next_run_label.pack(side=tk.LEFT)
         
         # Scheduler control buttons
@@ -3696,7 +3715,7 @@ GitHub: github.com/surajpanwar26
         # ========== JOB SEARCH SETTINGS ==========
         search_frame = ttkb.Labelframe(pilot_master, 
             text="🔍 JOB SEARCH - What & How to Search", 
-            bootstyle="info")
+            style=STYLE_SECTION_FRAME)
         search_frame.pack(fill=tk.X, pady=(0, 5))
         
         search_inner = ttkb.Frame(search_frame)
@@ -3829,7 +3848,9 @@ GitHub: github.com/surajpanwar26
         self.qs_pilot_mode.set(True)
         self.qs_pause_submit.set(False)  # Disable pause in pilot mode
         self.qs_safe_mode.set(True)  # Enable safe mode for stability
+        self.qs_disable_extensions.set(True)  # Disable extensions to avoid redirect
         self._save_quick_settings()
+        self._apply_quick_settings()  # Persist to disk for future sessions
         self._update_automation_status()
         self.show_toast("🚀 Pilot Mode Enabled! Starting bot...", "success")
         self.activity_feed.add_activity("🚀 PILOT MODE ACTIVATED", "success")
@@ -3842,7 +3863,9 @@ GitHub: github.com/surajpanwar26
         self.qs_pilot_mode.set(True)  # Scheduling needs pilot mode
         self.qs_pause_submit.set(False)  # Disable pause in pilot mode
         self.qs_safe_mode.set(True)  # Enable safe mode for stability
+        self.qs_disable_extensions.set(True)  # Disable extensions to avoid redirect
         self._save_quick_settings()
+        self._apply_quick_settings()  # Persist to disk for future sessions
         self._update_automation_status()
         self._start_scheduler()
         self.show_toast("📅 Scheduled Run Started!", "success")
