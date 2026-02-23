@@ -60,8 +60,15 @@ const elements = {
     portalName: document.getElementById('portalName'),
     portalStatus: document.getElementById('portalStatus'),
     
+    // Autopilot
+    autopilotToggle: document.getElementById('autopilotToggle'),
+    apStatus: document.getElementById('apStatus'),
+    statApplied: document.getElementById('statApplied'),
+    statQueue: document.getElementById('statQueue'),
+    statFailed: document.getElementById('statFailed'),
+    statRate: document.getElementById('statRate'),
+    
     // JD Section
-    jdSection: document.getElementById('jdSection'),
     btnDetectJD: document.getElementById('btnDetectJD'),
     jdContent: document.getElementById('jdContent'),
     jdPreview: document.getElementById('jdPreview'),
@@ -69,6 +76,11 @@ const elements = {
     skillTags: document.getElementById('skillTags'),
     jdActions: document.getElementById('jdActions'),
     btnTailorResume: document.getElementById('btnTailorResume'),
+    jdPlaceholder: document.getElementById('jdPlaceholder'),
+    companyAvatar: document.getElementById('companyAvatar'),
+    companyName: document.getElementById('companyName'),
+    jobRole: document.getElementById('jobRole'),
+    metaGrid: document.getElementById('metaGrid'),
     
     // ATS Section
     atsSection: document.getElementById('atsSection'),
@@ -81,33 +93,9 @@ const elements = {
     btnDownloadDocx: document.getElementById('btnDownloadDocx'),
     btnDownloadPdf: document.getElementById('btnDownloadPdf'),
     
-    // Tabs
-    tabs: document.querySelectorAll('.tab'),
-    tabPanels: document.querySelectorAll('.tab-panel'),
-    
-    // Profile Form
-    profileForm: document.getElementById('profileForm'),
-    firstName: document.getElementById('firstName'),
-    lastName: document.getElementById('lastName'),
-    email: document.getElementById('email'),
-    phone: document.getElementById('phone'),
-    currentCity: document.getElementById('currentCity'),
-    currentCompany: document.getElementById('currentCompany'),
-    currentTitle: document.getElementById('currentTitle'),
-    yearsExperience: document.getElementById('yearsExperience'),
-    expectedSalary: document.getElementById('expectedSalary'),
-    noticePeriod: document.getElementById('noticePeriod'),
-    linkedinUrl: document.getElementById('linkedinUrl'),
-    portfolioUrl: document.getElementById('portfolioUrl'),
-    githubUrl: document.getElementById('githubUrl'),
-    workAuthorization: document.getElementById('workAuthorization'),
-    sponsorship: document.getElementById('sponsorship'),
-    remoteWork: document.getElementById('remoteWork'),
-    willingToRelocate: document.getElementById('willingToRelocate'),
-    degree: document.getElementById('degree'),
-    major: document.getElementById('major'),
-    school: document.getElementById('school'),
-    graduationYear: document.getElementById('graduationYear'),
+    // Navigation
+    navBtns: document.querySelectorAll('.nav-btn[data-panel]'),
+    panels: document.querySelectorAll('.panel'),
     
     // Settings
     autoDetect: document.getElementById('autoDetect'),
@@ -460,7 +448,6 @@ async function loadUserData() {
         const result = await chrome.storage.sync.get(STORAGE_KEY);
         if (result[STORAGE_KEY] && Object.keys(result[STORAGE_KEY]).length > 0) {
             userData = result[STORAGE_KEY];
-            populateProfileForm();
             console.log('✓ Loaded profile from Chrome storage');
         } else {
             // First time - try to auto-load bundled config
@@ -469,7 +456,6 @@ async function loadUserData() {
             const bundledConfig = await loadBundledConfig();
             if (bundledConfig) {
                 userData = bundledConfig;
-                populateProfileForm();
                 await saveUserData();  // Save to storage for future loads
                 showToast('✓ Auto-loaded profile from project config!', 'success');
                 console.log('✓ Auto-loaded and saved bundled config');
@@ -541,32 +527,7 @@ async function saveHistory() {
 // ================================
 // FORM POPULATION
 // ================================
-function populateProfileForm() {
-    elements.firstName.value = userData.firstName || '';
-    elements.lastName.value = userData.lastName || '';
-    elements.email.value = userData.email || '';
-    elements.phone.value = userData.phone || '';
-    elements.currentCity.value = userData.currentCity || '';
-    elements.currentCompany.value = userData.currentCompany || '';
-    elements.currentTitle.value = userData.currentTitle || '';
-    elements.yearsExperience.value = userData.yearsExperience || '';
-    elements.expectedSalary.value = userData.expectedSalary || '';
-    elements.noticePeriod.value = userData.noticePeriod || '';
-    elements.linkedinUrl.value = userData.linkedinUrl || '';
-    elements.portfolioUrl.value = userData.portfolioUrl || '';
-    elements.githubUrl.value = userData.githubUrl || '';
-    elements.workAuthorization.value = userData.workAuthorization || 'yes';
-    elements.sponsorship.value = userData.sponsorship || 'no';
-    elements.remoteWork.value = userData.remoteWork || 'yes';
-    elements.willingToRelocate.value = userData.willingToRelocate || 'yes';
-    
-    if (userData.education) {
-        elements.degree.value = userData.education.degree || '';
-        elements.major.value = userData.education.major || '';
-        elements.school.value = userData.education.school || '';
-        elements.graduationYear.value = userData.education.graduationYear || '';
-    }
-}
+// populateProfileForm removed — profile managed via config import only
 
 function populateSettingsForm() {
     elements.autoDetect.checked = settings.autoDetect;
@@ -577,34 +538,42 @@ function populateSettingsForm() {
     elements.maxRetries.value = settings.maxRetries;
 }
 
-function collectProfileData() {
-    return {
-        firstName: elements.firstName.value.trim(),
-        lastName: elements.lastName.value.trim(),
-        email: elements.email.value.trim(),
-        phone: elements.phone.value.trim(),
-        currentCity: elements.currentCity.value.trim(),
-        currentCompany: elements.currentCompany.value.trim(),
-        currentTitle: elements.currentTitle.value.trim(),
-        yearsExperience: elements.yearsExperience.value.trim(),
-        expectedSalary: elements.expectedSalary.value.trim(),
-        noticePeriod: elements.noticePeriod.value.trim(),
-        linkedinUrl: elements.linkedinUrl.value.trim(),
-        portfolioUrl: elements.portfolioUrl.value.trim(),
-        githubUrl: elements.githubUrl.value.trim(),
-        workAuthorization: elements.workAuthorization.value,
-        sponsorship: elements.sponsorship.value,
-        remoteWork: elements.remoteWork.value,
-        willingToRelocate: elements.willingToRelocate.value,
-        education: {
-            degree: elements.degree.value.trim(),
-            major: elements.major.value.trim(),
-            school: elements.school.value.trim(),
-            graduationYear: elements.graduationYear.value.trim()
-        },
-        skills: userData.skills || [],
-        customAnswers: userData.customAnswers || {}
-    };
+// collectProfileData removed — profile managed via config import only
+
+/**
+ * Populate the structured JD card in the UI.
+ * Hides placeholder, shows company/role/metadata/skills.
+ */
+function displayStructuredJD(jd) {
+    const placeholder = document.getElementById('jdPlaceholder');
+    if (placeholder) placeholder.style.display = 'none';
+    if (elements.jdContent) elements.jdContent.style.display = 'block';
+
+    const company = jd.company || '';
+    const title = jd.title || 'Position';
+
+    if (elements.companyAvatar) elements.companyAvatar.textContent = (company || title || '?')[0].toUpperCase();
+    if (elements.companyName) elements.companyName.textContent = company || 'Unknown Company';
+    if (elements.jobRole) elements.jobRole.textContent = title;
+
+    if (elements.metaGrid) {
+        const meta = [];
+        if (jd.location)      meta.push({ icon: '📍', val: jd.location });
+        if (jd.salary)        meta.push({ icon: '💰', val: jd.salary });
+        if (jd.jobType)       meta.push({ icon: '🕐', val: jd.jobType });
+        if (jd.postedDate)    meta.push({ icon: '📅', val: jd.postedDate });
+        if (jd.yearsRequired) meta.push({ icon: '👤', val: jd.yearsRequired + '+ yrs' });
+        if (jd.portal)        meta.push({ icon: '🌐', val: jd.portal });
+        if (jd.source === 'manual') meta.push({ icon: '✏️', val: 'Manual' });
+        elements.metaGrid.innerHTML = meta.length
+            ? meta.map(m => `<div class="meta-item"><span class="meta-icon">${m.icon}</span><span class="meta-val">${escapeHtml(String(m.val))}</span></div>`).join('')
+            : '';
+    }
+
+    if (jd.skills && jd.skills.length > 0 && elements.jdSkills && elements.skillTags) {
+        elements.jdSkills.style.display = 'block';
+        elements.skillTags.innerHTML = jd.skills.map(s => `<span class="skill-tag">${escapeHtml(s)}</span>`).join('');
+    }
 }
 
 function collectSettings() {
@@ -753,20 +722,57 @@ function truncate(str, length) {
 // EVENT HANDLERS
 // ================================
 
-// Tab switching
-elements.tabs.forEach(tab => {
-    tab.addEventListener('click', () => {
-        // Update active tab
-        elements.tabs.forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-        
-        // Update active panel
-        const targetId = tab.getAttribute('data-tab');
-        elements.tabPanels.forEach(panel => {
+// Sidebar navigation
+elements.navBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+        elements.navBtns.forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        const targetId = btn.getAttribute('data-panel');
+        elements.panels.forEach(panel => {
             panel.classList.toggle('active', panel.id === targetId);
         });
     });
 });
+
+// Sidebar quick-action buttons
+const sidebarDetect = document.getElementById('sidebarDetect');
+if (sidebarDetect) {
+    sidebarDetect.addEventListener('click', () => {
+        document.querySelector('.nav-btn[data-panel="home"]')?.click();
+        setTimeout(() => elements.btnDetectJD?.click(), 100);
+    });
+}
+const sidebarResume = document.getElementById('sidebarResume');
+if (sidebarResume) {
+    sidebarResume.addEventListener('click', () => {
+        document.querySelector('.nav-btn[data-panel="home"]')?.click();
+        setTimeout(() => elements.btnTailorResume?.click(), 100);
+    });
+}
+
+// Autopilot toggle
+const autopilotToggle = document.getElementById('autopilotToggle');
+if (autopilotToggle) {
+    autopilotToggle.addEventListener('change', async () => {
+        const isOn = autopilotToggle.checked;
+        const apStatusEl = document.getElementById('apStatus');
+        const apBar = document.querySelector('.autopilot-bar');
+        if (apStatusEl) apStatusEl.textContent = isOn ? 'ACTIVE' : 'OFF';
+        if (apBar) apBar.classList.toggle('active', isOn);
+        settings.autopilot = isOn;
+        await saveSettings();
+        try {
+            if (apiServerAvailable || await checkAPIServer()) {
+                await callAPI('/api/autopilot', { enabled: isOn });
+                showToast(isOn ? '🤖 Autopilot activated!' : 'Autopilot paused', isOn ? 'success' : 'info');
+            } else {
+                showToast(isOn ? '🤖 Autopilot enabled locally' : 'Autopilot off', 'info');
+            }
+        } catch (e) {
+            showToast('Autopilot toggled (API offline)', 'info');
+        }
+    });
+}
 
 // Fill Form button
 elements.btnFillForm.addEventListener('click', async () => {
@@ -811,18 +817,7 @@ elements.btnAnalyze.addEventListener('click', async () => {
     }
 });
 
-// Profile form submit
-elements.profileForm.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    try {
-        userData = collectProfileData();
-        await saveUserData();
-        showToast('Profile saved successfully!');
-    } catch (e) {
-        showToast('Failed to save profile', 'error');
-    }
-});
+// (Profile form removed – managed via config import)
 
 // Settings change handlers
 [elements.autoDetect, elements.autoFill, elements.showNotifications, elements.debugMode].forEach(el => {
@@ -893,7 +888,6 @@ if (btnRefreshFromConfig) {
                 const bundledConfig = await loadBundledConfig();
                 if (bundledConfig) {
                     userData = bundledConfig;
-                    populateProfileForm();
                     await saveUserData();
                     console.log('✓ Loaded from user_config.json');
                     hideLoading();
@@ -904,7 +898,7 @@ if (btnRefreshFromConfig) {
                 }
                 
                 // Refresh UI
-                populateSettingsForm();
+                if (typeof populateSettingsForm === 'function') populateSettingsForm();
                 updateHistoryUI();
                 
             } catch (e) {
@@ -1134,25 +1128,8 @@ if (btnAnalyzeManualJD) {
                 source: 'manual'
             };
             
-            // Show JD content
-            if (elements.jdContent) elements.jdContent.style.display = 'block';
-            
-            // Display JD preview
-            const truncatedJD = jdText.length > 500 ? jdText.substring(0, 500) + '...' : jdText;
-            if (elements.jdPreview) {
-                elements.jdPreview.innerHTML = `
-                    <p><strong>${escapeHtml(title)}</strong> <span style="color: #6b7280; font-size: 11px;">(manually entered)</span></p>
-                    <p class="jd-text">${escapeHtml(truncatedJD)}</p>
-                `;
-            }
-            
-            // Show extracted skills
-            if (foundSkills.length > 0 && elements.jdSkills && elements.skillTags) {
-                elements.jdSkills.style.display = 'block';
-                elements.skillTags.innerHTML = foundSkills.map(skill => 
-                    `<span class="skill-tag">${escapeHtml(skill)}</span>`
-                ).join('');
-            }
+            // Populate structured JD card
+            displayStructuredJD(currentJD);
             
             // Show resume source and actions
             if (resumeSource) resumeSource.style.display = 'block';
@@ -1197,25 +1174,8 @@ if (elements.btnDetectJD) {
             if (response && response.success && response.jd) {
                 currentJD = response.jd;
                 
-                // Show JD content
-                elements.jdContent.style.display = 'block';
-                
-                // Display JD preview (truncated) - HTML escaped to prevent XSS
-                const truncatedJD = response.jd.description.length > 500 
-                    ? response.jd.description.substring(0, 500) + '...'
-                    : response.jd.description;
-                elements.jdPreview.innerHTML = `
-                    <p><strong>${escapeHtml(response.jd.title) || 'Job Title'}</strong></p>
-                    <p class="jd-text">${escapeHtml(truncatedJD)}</p>
-                `;
-                
-                // Show extracted skills
-                if (response.jd.skills && response.jd.skills.length > 0) {
-                    elements.jdSkills.style.display = 'block';
-                    elements.skillTags.innerHTML = response.jd.skills.map(skill => 
-                        `<span class="skill-tag">${escapeHtml(skill)}</span>`
-                    ).join('');
-                }
+                // Populate structured JD card
+                displayStructuredJD(response.jd);
                 
                 // Show resume source and tailor button
                 if (resumeSource) resumeSource.style.display = 'block';
