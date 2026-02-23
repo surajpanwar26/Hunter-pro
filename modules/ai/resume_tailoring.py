@@ -240,19 +240,13 @@ def _strip_prompt_markers(text: str) -> str:
             'master resume', 'end master resume', 'copy this format',
             'preserve this format', 'end job description', '<<resume>>',
             '<<end_resume>>', 'extract keywords from', '===== end',
-            '===== master', '===== job',
+            '===== master', '===== job'
         ]
         
         for marker in marker_substrings:
-            if marker in lower_line and ('=====' in stripped or '<<' in stripped or stripped.startswith('[') and stripped.endswith(']')):
+            if marker in lower_line and ('=====' in stripped or '<<' in stripped):
                 should_remove = True
                 break
-        
-        # Also catch bracket-style markers: [MASTER RESUME ...], [END MASTER RESUME], etc.
-        if not should_remove and stripped.startswith('[') and stripped.endswith(']'):
-            inner = stripped[1:-1].lower()
-            if any(m in inner for m in ['master resume', 'end master', 'job description', 'end job']):
-                should_remove = True
         
         if not should_remove:
             clean_lines.append(line)
@@ -300,17 +294,8 @@ def _sanitize_text_for_display(text: str) -> str:
     }
     for old, new in replacements.items():
         text = text.replace(old, new)
-    # Only strip true control characters, PRESERVE accented chars (é, ñ, ü, etc.)
-    import unicodedata
-    cleaned = []
-    for ch in text:
-        cat = unicodedata.category(ch)
-        # Keep everything except control chars (Cc) and unassigned (Cn),
-        # but always keep newlines/tabs/spaces
-        if cat.startswith('C') and ch not in ('\n', '\r', '\t'):
-            continue
-        cleaned.append(ch)
-    return ''.join(cleaned)
+    # Encode to ASCII with replacement for any remaining problematic chars
+    return text.encode('ascii', 'replace').decode('ascii').replace('?', '')
 
 
 def _extract_jd_keywords(job_description: str) -> set[str]:
@@ -353,15 +338,7 @@ def _extract_jd_keywords(job_description: str) -> set[str]:
 
 
 def _inject_missing_keywords(resume_text: str, jd_keywords: set[str]) -> str:
-    """Inject missing keywords into the skills section of the resume.
-    
-    Strategy:
-    1. First look for an explicit SKILLS/TECHNICAL SKILLS section header
-    2. Then look for a line that's clearly a skills list (commas + tech terms)
-    3. Fallback: append as 'Additional Skills' section
-    
-    Only injects top 8 missing keywords to avoid bloating.
-    """
+    """Inject missing keywords into the skills section of the resume."""
     resume_lower = resume_text.lower()
     
     # Find missing keywords
@@ -387,10 +364,6 @@ def _inject_missing_keywords(resume_text: str, jd_keywords: set[str]) -> str:
         'agile': 'Agile', 'scrum': 'Scrum', 'devops': 'DevOps',
         'spring boot': 'Spring Boot', 'flask': 'Flask', 'django': 'Django',
         'microservices': 'Microservices', 'cloud architecture': 'Cloud Architecture',
-        'node.js': 'Node.js', 'react': 'React', 'angular': 'Angular', 'vue': 'Vue',
-        '.net': '.NET', 'html': 'HTML', 'css': 'CSS',
-        'machine learning': 'Machine Learning', 'ml': 'ML', 'ai': 'AI',
-        'data science': 'Data Science', 'tdd': 'TDD', 'bdd': 'BDD',
     }
     
     formatted_missing = []
@@ -401,42 +374,31 @@ def _inject_missing_keywords(resume_text: str, jd_keywords: set[str]) -> str:
     if not formatted_missing:
         return resume_text
     
-    # Strategy 1: Find SKILLS section header and inject after the NEXT skills list line
+    # Try to find and enhance SKILLS section
     lines = resume_text.split('\n')
     new_lines = []
     skills_enhanced = False
-    in_skills_section = False
     
     for i, line in enumerate(lines):
         new_lines.append(line)
         line_lower = line.lower().strip()
         
-        # Detect skills section header (various common formats)
-        if not skills_enhanced and re.match(r'^(technical\s+)?skills\s*:?\s*$', line_lower):
-            in_skills_section = True
-            continue
+        # Detect skills section header
+        if not skills_enhanced and ('skills' in line_lower and len(line_lower) < 20):
+            # Next non-empty line should be the skills list
+            for j in range(i + 1, min(i + 3, len(lines))):
+                if lines[j].strip():
+                    # This is likely the skills line - we'll enhance it after the loop
+                    break
         
-        # If we're in the skills section, find the first skills list line
-        if not skills_enhanced and in_skills_section and line.strip():
-            if ',' in line or '|' in line or '\t' in line:
-                # This is a skills list line — append missing keywords
-                additions = ', ' + ', '.join(formatted_missing)
-                new_lines[-1] = line.rstrip() + additions
-                skills_enhanced = True
-                in_skills_section = False
-                continue
-        
-        # Reset if we hit another section header while looking for skills content
-        if in_skills_section and line_lower and line_lower == line_lower.upper() and len(line_lower) > 2:
-            in_skills_section = False
-        
-        # Strategy 2: Detect a skills list line anywhere (contains commas and tech terms)
-        if not skills_enhanced and ',' in line and any(tech in line_lower for tech in ['python', 'java', 'aws', 'docker', 'sql', 'api', 'git', 'react', 'node']):
+        # Detect a skills list line (contains commas and tech terms)
+        if not skills_enhanced and ',' in line and any(tech in line_lower for tech in ['python', 'java', 'aws', 'docker', 'sql', 'api', 'git']):
+            # Append missing keywords to this line
             additions = ', ' + ', '.join(formatted_missing)
             new_lines[-1] = line.rstrip() + additions
             skills_enhanced = True
     
-    # Strategy 3: Fallback — append as new section before EDUCATION if possible
+    # If no skills section found, append at the end
     if not skills_enhanced and formatted_missing:
         new_lines.append('')
         new_lines.append('Additional Skills: ' + ', '.join(formatted_missing))
@@ -867,10 +829,7 @@ def _call_ai_provider(provider: str, prompt: str, client: Optional[object] = Non
             if client is None:
                 client = OpenAI(base_url=llm_api_url, api_key=llm_api_key)
             client = cast(OpenAI, client)
-            messages = [
-                {"role": "system", "content": "You are an expert ATS resume optimizer. Preserve format exactly. Focus on keyword matching."},
-                {"role": "user", "content": prompt},
-            ]
+            messages = [{"role": "user", "content": prompt}]
             return str(ai_completion(client, messages, response_format=None, stream=False))
 
         if provider == "deepseek":
@@ -879,17 +838,17 @@ def _call_ai_provider(provider: str, prompt: str, client: Optional[object] = Non
             if client is None:
                 client = OpenAI(base_url=deepseek_api_url, api_key=deepseek_api_key)
             client = cast(OpenAI, client)
-            messages = [
-                {"role": "system", "content": "You are an expert ATS resume optimizer. Preserve format exactly. Focus on keyword matching."},
-                {"role": "user", "content": prompt},
-            ]
+            messages = [{"role": "user", "content": prompt}]
             return str(deepseek_completion(client, messages, response_format={}, stream=False))
 
         if provider == "gemini":
             from modules.ai.geminiConnections import gemini_completion, gemini_create_client
             if client is None:
                 client = gemini_create_client()
-            return str(gemini_completion(client, prompt, is_json=False))
+            result = gemini_completion(client, prompt, is_json=False)
+            if isinstance(result, dict) and "error" in result:
+                raise ValueError(f"Gemini API error: {result['error']}")
+            return str(result)
 
         if provider == "groq":
             # Groq uses OpenAI-compatible API (FREE & FAST!)
@@ -898,22 +857,23 @@ def _call_ai_provider(provider: str, prompt: str, client: Optional[object] = Non
                 client = OpenAI(base_url=groq_api_url, api_key=groq_api_key)
             client = cast(OpenAI, client)
             
-            # Use configured model from secrets.py, fall back to fast model only if not set
-            model = groq_model or "llama-3.3-70b-versatile"
+            # ALWAYS use 8b-instant for FAST tailoring (2-3 sec vs 15-20 sec)
+            # The 8b model is optimized for speed while still producing quality results
+            FAST_MODEL = "llama-3.1-8b-instant"  # 3x faster than 70b!
             
             messages = [{
                 "role": "system", 
-                "content": "You are an expert ATS resume optimizer. Be concise. Focus on keyword matching and format preservation."
+                "content": "You are an expert ATS resume optimizer. Be concise. Focus on keyword matching."
             }, {
                 "role": "user", 
                 "content": prompt
             }]
             
             response = client.chat.completions.create(
-                model=model,
+                model=FAST_MODEL,
                 messages=messages,
-                temperature=0.3,  # Lower temp = more focused
-                max_tokens=4000,
+                temperature=0.3,  # Lower temp = faster + more focused
+                max_tokens=2500,  # Reduced for speed
             )
             return response.choices[0].message.content or ""
 
@@ -989,6 +949,8 @@ def _tailor_paragraphs_with_ai(
             if client is None:
                 client = gemini_create_client()
             result = gemini_completion(client, prompt, is_json=True)
+            if isinstance(result, dict) and "error" in result:
+                raise ValueError(f"Gemini API error: {result['error']}")
             return json.loads(str(result))
 
         if provider == "groq":
@@ -1576,57 +1538,6 @@ def open_preview(paths: dict, diff_report: str | None = None, master_text: str =
         print(f"  DOCX: {paths['docx']}")
     if diff_report:
         print(f"  Diff Report: {diff_report}")
-
-
-def _save_tailored_files(
-    tailored_text: str,
-    output_dir: str,
-    job_title: str = "Tailored Resume",
-) -> dict:
-    """Save already-tailored text to .txt, .docx, .pdf files.
-    
-    Used by /api/tailor to persist the iteratively-improved result
-    WITHOUT re-running the AI (avoids double AI call bug).
-    """
-    _ensure_output_dir(output_dir)
-    
-    cand = _candidate_name() or "Candidate"
-    title_part = job_title or "Tailored Resume"
-    if len(title_part) > 50:
-        title_part = title_part[:50].rsplit(' ', 1)[0]
-    base_name = _sanitize_filename(f"{cand} - {title_part}")
-    
-    # Normalize to one page
-    tailored_text = _normalize_one_page(tailored_text)
-    
-    # Save text file
-    txt_path = _save_text(tailored_text, output_dir, base_name=base_name)
-    
-    # Save DOCX
-    docx_path = _write_docx(tailored_text, output_dir, base_name=base_name)
-    
-    # Save PDF  
-    pdf_path = ""
-    try:
-        from docx2pdf import convert  # type: ignore
-        if docx_path:
-            convert(docx_path)
-            pdf_candidate = os.path.splitext(docx_path)[0] + ".pdf"
-            if os.path.exists(pdf_candidate):
-                pdf_path = pdf_candidate
-    except ImportError:
-        try:
-            pdf_path = _write_pdf(tailored_text, output_dir, base_name=base_name)
-        except Exception:
-            pass
-    except Exception:
-        try:
-            pdf_path = _write_pdf(tailored_text, output_dir, base_name=base_name)
-        except Exception:
-            pass
-    
-    print_lg(f"Saved tailored files: txt={txt_path}, docx={docx_path}, pdf={pdf_path}")
-    return {"txt": txt_path, "docx": docx_path, "pdf": pdf_path}
 
 
 def tailor_resume_to_files(

@@ -14,10 +14,11 @@ Modified by: Suraj Panwar
 version:    26.01.20.5.08
 '''
 
-import os
 from modules.helpers import get_default_temp_profile, make_directories
 from config.settings import run_in_background, stealth_mode, disable_extensions, safe_mode, file_name, failed_file_name, logs_folder_path, generated_resume_path
 from config.questions import default_resume_path
+
+import os
 
 # Import pilot mode setting to skip alerts
 try:
@@ -42,13 +43,6 @@ def createChromeSession(isRetry: bool = False):
     if run_in_background:   options.add_argument("--headless")
     if disable_extensions:  options.add_argument("--disable-extensions")
     
-    # === AUTO-LOAD OUR CHROME EXTENSION ===
-    # Side-load the "Universal Job Auto-Fill Pro" extension so it's available in every session
-    _extension_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "extension")
-    if not disable_extensions and os.path.isdir(_extension_dir):
-        options.add_argument(f"--load-extension={_extension_dir}")
-        print_lg(f"[Chrome] Loading extension from: {_extension_dir}")
-    
     # Performance optimizations for faster startup
     options.add_argument("--disable-gpu")  # Reduces startup time
     options.add_argument("--no-sandbox")  # Faster startup (safe in controlled env)
@@ -64,9 +58,9 @@ def createChromeSession(isRetry: bool = False):
     
     # === ENHANCED ANTI-DETECTION OPTIONS ===
     # These help bypass LinkedIn's automation detection
-    options.add_argument("--disable-web-security")  # May help with CSP issues
-    options.add_argument("--allow-running-insecure-content")
-    options.add_argument("--disable-features=IsolateOrigins,site-per-process")
+    # Removed --disable-web-security (security risk: disables Same-Origin Policy)
+    # Removed --allow-running-insecure-content (security risk)
+    # Removed --disable-features=IsolateOrigins,site-per-process (security risk)
     # Set realistic window size
     options.add_argument("--window-size=1920,1080")
     # Add language to appear more human
@@ -79,11 +73,28 @@ def createChromeSession(isRetry: bool = False):
         options.add_experimental_option('useAutomationExtension', False)
 
     print_lg("IF YOU HAVE MORE THAN 10 TABS OPENED, PLEASE CLOSE OR BOOKMARK THEM! Or it's highly likely that application will just open browser and not do anything!")
+    
+    # Profile selection priority:
+    # 1. If retry → guest/temp profile
+    # 2. If system profile available and not safe_mode → use system profile
+    #    (undetected_chromedriver copies it, so no conflict with user's Chrome)
+    # 3. If pilot_mode and project chrome_profile_pilot exists → use that
+    # 4. Otherwise → guest/temp profile
     profile_dir = find_default_profile_directory()
     if isRetry:
         print_lg("Will login with a guest profile, browsing history will not be saved in the browser!")
+        options.add_argument(f"--user-data-dir={get_default_temp_profile()}")
     elif profile_dir and not safe_mode:
         options.add_argument(f"--user-data-dir={profile_dir}")
+    elif pilot_mode_enabled:
+        # In pilot/scheduler mode, try the project-local chrome_profile_pilot directory
+        pilot_profile = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "chrome_profile_pilot")
+        if os.path.exists(pilot_profile):
+            print_lg(f"Using pilot Chrome profile: {pilot_profile}")
+            options.add_argument(f"--user-data-dir={pilot_profile}")
+        else:
+            print_lg("Logging in with a guest profile, Web history will not be saved!")
+            options.add_argument(f"--user-data-dir={get_default_temp_profile()}")
     else:
         print_lg("Logging in with a guest profile, Web history will not be saved!")
         options.add_argument(f"--user-data-dir={get_default_temp_profile()}")
@@ -148,9 +159,6 @@ def createChromeSession(isRetry: bool = False):
             fresh_options.add_argument("--disable-blink-features=AutomationControlled")
             fresh_options.add_argument("--window-size=1920,1080")
             fresh_options.add_argument(f"--user-data-dir={get_default_temp_profile()}")
-            # Re-add extension in fallback path
-            if not disable_extensions and os.path.isdir(_extension_dir):
-                fresh_options.add_argument(f"--load-extension={_extension_dir}")
             driver = uc.Chrome(options=fresh_options, use_subprocess=True)
     else: driver = webdriver.Chrome(options=options) #, service=Service(executable_path="C:\\Program Files\\Google\\Chrome\\chromedriver-win64\\chromedriver.exe"))
     

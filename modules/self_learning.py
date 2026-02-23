@@ -42,18 +42,6 @@ _SUFFIX_RE = re.compile(
     r"(ization|isation|ation|ized|ised|ing|ed|es|s)$", re.IGNORECASE
 )
 
-# Words that should NEVER be stemmed because stripping suffixes
-# creates false collisions or destroys meaning
-_STEM_PROTECTED = frozenset({
-    "authorized", "authorised", "address", "glasses", "business",
-    "process", "success", "access", "unless", "express", "status",
-    "campus", "bonus", "series", "species", "basis", "analysis",
-    "thesis", "crisis", "diabetes", "previous", "various",
-    "serious", "religious", "services", "resources", "experiences",
-    "languages", "references", "ages", "wages", "stages", "changes",
-    "charges", "ranges", "manages", "technologies", "companies",
-})
-
 
 def _normalize_label(label: str) -> str:
     """Return a canonical form of *label* for storage & lookup.
@@ -64,7 +52,6 @@ def _normalize_label(label: str) -> str:
     3. Remove content inside square brackets (option lists).
     4. Collapse whitespace.
     5. Drop stopwords and light-stem remaining tokens.
-       Protected words are NOT stemmed to avoid false collisions.
 
     This matches the dedup logic in api_server.py so bot-learned and
     extension-synced entries converge on the same key.
@@ -76,16 +63,13 @@ def _normalize_label(label: str) -> str:
     text = re.sub(r"\[.*?\]", "", text).strip()
     # Collapse whitespace
     text = re.sub(r"\s+", " ", text).strip()
-    # Tokenize, drop stopwords, light-stem (with protection)
+    # Tokenize, drop stopwords, light-stem
     tokens = []
     for tok in text.split():
         if tok in _STOPWORDS:
             continue
-        # Only stem if NOT in protected set and long enough
-        if tok not in _STEM_PROTECTED and len(tok) > 4:
-            stemmed = _SUFFIX_RE.sub("", tok)
-        else:
-            stemmed = tok
+        # Light stem: remove common English suffixes
+        stemmed = _SUFFIX_RE.sub("", tok) if len(tok) > 4 else tok
         if stemmed:
             tokens.append(stemmed)
     return " ".join(tokens).strip() if tokens else text
