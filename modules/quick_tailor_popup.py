@@ -29,26 +29,30 @@ _popup_result = None
 _tailored_resume_path = None
 
 # ============ MODERN COLOR SCHEME ============
-COLORS = {
-    'bg_dark': '#1a1a2e',
-    'bg_card': '#16213e',
-    'bg_input': '#0f3460',
-    'accent': '#e94560',
-    'accent_hover': '#ff6b6b',
-    'success': '#00d9a5',
-    'warning': '#ffc107',
-    'error': '#ff4757',
-    'text_primary': '#ffffff',
-    'text_secondary': '#a0a0a0',
-    'text_muted': '#6c757d',
-    'diff_added_bg': '#1e4620',
-    'diff_added_fg': '#7fff7f',
-    'diff_removed_bg': '#4a1515',
-    'diff_removed_fg': '#ff7f7f',
-    'diff_changed_bg': '#4a4a15',
-    'diff_changed_fg': '#ffff7f',
-    'border': '#2d3748',
-}
+# Import from shared module; fall back to inline dict if import fails
+try:
+    from config.colors import TAILOR_COLORS as COLORS
+except ImportError:
+    COLORS = {
+        'bg_dark': '#1a1a2e',
+        'bg_card': '#16213e',
+        'bg_input': '#0f3460',
+        'accent': '#e94560',
+        'accent_hover': '#ff6b6b',
+        'success': '#00d9a5',
+        'warning': '#ffc107',
+        'error': '#ff4757',
+        'text_primary': '#ffffff',
+        'text_secondary': '#a0a0a0',
+        'text_muted': '#6c757d',
+        'diff_added_bg': '#1e4620',
+        'diff_added_fg': '#7fff7f',
+        'diff_removed_bg': '#4a1515',
+        'diff_removed_fg': '#ff7f7f',
+        'diff_changed_bg': '#4a4a15',
+        'diff_changed_fg': '#ffff7f',
+        'border': '#2d3748',
+    }
 
 # ============ MASTER RESUME CACHE ============
 _master_resume_cache = {

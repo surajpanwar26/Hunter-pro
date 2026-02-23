@@ -445,13 +445,22 @@ def extract_resume_text():
         return jsonify({"error": "Unsupported resume type. Use TXT, DOCX, or PDF."}), 400
 
     raw_bytes = data.get("fileBytes", [])
-    if not isinstance(raw_bytes, list) or not raw_bytes:
-        return jsonify({"error": "fileBytes payload is missing or invalid"}), 400
+    file_base64 = data.get("fileBase64", "")
 
-    try:
-        blob = bytes(int(b) & 0xFF for b in raw_bytes)
-    except Exception:
-        return jsonify({"error": "Invalid fileBytes format"}), 400
+    # Accept base64-encoded data (preferred) or legacy list-of-ints
+    if isinstance(file_base64, str) and file_base64:
+        import base64 as _b64
+        try:
+            blob = _b64.b64decode(file_base64)
+        except Exception:
+            return jsonify({"error": "Invalid fileBase64 format"}), 400
+    elif isinstance(raw_bytes, list) and raw_bytes:
+        try:
+            blob = bytes(int(b) & 0xFF for b in raw_bytes)
+        except Exception:
+            return jsonify({"error": "Invalid fileBytes format"}), 400
+    else:
+        return jsonify({"error": "fileBase64 or fileBytes payload is missing"}), 400
 
     temp_path = ""
     try:

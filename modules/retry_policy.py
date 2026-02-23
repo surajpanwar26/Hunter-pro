@@ -44,6 +44,7 @@ _TRANSIENT_MARKERS = frozenset([
     "rate limit", "rate_limit", "quota", "temporarily unavailable",
     "SSLError", "ConnectionResetError", "BrokenPipeError",
     "RemoteDisconnected",
+    "StaleElementReferenceException", "ElementNotInteractableException",
 ])
 
 _DETERMINISTIC_MARKERS = frozenset([

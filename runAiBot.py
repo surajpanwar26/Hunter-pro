@@ -81,6 +81,16 @@ if use_AI:
     from modules.ai.geminiConnections import gemini_create_client, gemini_extract_skills, gemini_answer_question
     from modules.ai.groqConnections import groq_create_client, groq_extract_skills, groq_answer_question, groq_tailor_resume
 
+# Retry-wrapped AI answer helper — retries transient failures (rate limits, timeouts)
+from modules.retry_policy import retryable_ai_call, classify_error
+
+def _retried_ai_answer(fn, *args, **kwargs):
+    """Call an AI answer function with classified retry (max 2 retries)."""
+    try:
+        return retryable_ai_call(fn, *args, max_attempts=3, **kwargs)
+    except Exception:
+        return ""
+
 from typing import Literal
 
 # Import settings for pause options
@@ -3157,7 +3167,8 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
                                         f"Return the best matching option text exactly."
                                     )
                                     if ai_provider == "openai":
-                                        ai_selected = ai_answer_question(
+                                        ai_selected = _retried_ai_answer(
+                                            ai_answer_question,
                                             aiClient,
                                             prompt,
                                             options=options_list,
@@ -3166,7 +3177,8 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
                                             user_information_all=user_information_all,
                                         )
                                     elif ai_provider == "deepseek":
-                                        ai_selected = deepseek_answer_question(
+                                        ai_selected = _retried_ai_answer(
+                                            deepseek_answer_question,
                                             aiClient,
                                             prompt,
                                             options=options_list,
@@ -3176,7 +3188,8 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
                                             user_information_all=user_information_all,
                                         )
                                     elif ai_provider == "gemini":
-                                        ai_selected = gemini_answer_question(
+                                        ai_selected = _retried_ai_answer(
+                                            gemini_answer_question,
                                             aiClient,
                                             prompt,
                                             options=options_list,
@@ -3186,7 +3199,8 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
                                             user_information_all=user_information_all,
                                         )
                                     elif ai_provider == "groq":
-                                        ai_selected = groq_answer_question(
+                                        ai_selected = _retried_ai_answer(
+                                            groq_answer_question,
                                             aiClient,
                                             prompt,
                                             user_information_all or "",
@@ -3353,11 +3367,11 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
                     if use_AI and aiClient:
                         try:
                             if ai_provider.lower() == "openai":
-                                answer = ai_answer_question(aiClient, label_org, question_type="text", job_description=job_description, user_information_all=user_information_all)
+                                answer = _retried_ai_answer(ai_answer_question, aiClient, label_org, question_type="text", job_description=job_description, user_information_all=user_information_all)
                             elif ai_provider.lower() == "deepseek":
-                                answer = deepseek_answer_question(aiClient, label_org, options=None, question_type="text", job_description=job_description, about_company=None, user_information_all=user_information_all)
+                                answer = _retried_ai_answer(deepseek_answer_question, aiClient, label_org, options=None, question_type="text", job_description=job_description, about_company=None, user_information_all=user_information_all)
                             elif ai_provider.lower() == "gemini":
-                                answer = gemini_answer_question(aiClient, label_org, options=None, question_type="text", job_description=job_description, about_company=None, user_information_all=user_information_all)
+                                answer = _retried_ai_answer(gemini_answer_question, aiClient, label_org, options=None, question_type="text", job_description=job_description, about_company=None, user_information_all=user_information_all)
                             else:
                                 randomly_answered_questions.add((label_org, "text"))
                                 answer = years_of_experience
@@ -3404,11 +3418,11 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
                     if use_AI and aiClient:
                         try:
                             if ai_provider.lower() == "openai":
-                                answer = ai_answer_question(aiClient, label_org, question_type="textarea", job_description=job_description, user_information_all=user_information_all)
+                                answer = _retried_ai_answer(ai_answer_question, aiClient, label_org, question_type="textarea", job_description=job_description, user_information_all=user_information_all)
                             elif ai_provider.lower() == "deepseek":
-                                answer = deepseek_answer_question(aiClient, label_org, options=None, question_type="textarea", job_description=job_description, about_company=None, user_information_all=user_information_all)
+                                answer = _retried_ai_answer(deepseek_answer_question, aiClient, label_org, options=None, question_type="textarea", job_description=job_description, about_company=None, user_information_all=user_information_all)
                             elif ai_provider.lower() == "gemini":
-                                answer = gemini_answer_question(aiClient, label_org, options=None, question_type="textarea", job_description=job_description, about_company=None, user_information_all=user_information_all)
+                                answer = _retried_ai_answer(gemini_answer_question, aiClient, label_org, options=None, question_type="textarea", job_description=job_description, about_company=None, user_information_all=user_information_all)
                             else:
                                 randomly_answered_questions.add((label_org, "textarea"))
                                 answer = ""

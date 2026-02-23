@@ -73,6 +73,21 @@ def validate_personals() -> None | ValueError | TypeError:
     check_string(disability_status, "disability_status", ["Yes", "No", "Decline"])
     check_string(veteran_status, "veteran_status", ["Yes", "No", "Decline"])
 
+    # Variables moved from questions.py → personals.py
+    check_string(years_of_experience, "years_of_experience")
+    check_string(require_visa, "require_visa", ["Yes", "No"])
+    check_string(website, "website")
+    check_string(linkedIn, "linkedIn")
+    check_int(desired_salary, "desired_salary")
+    check_string(us_citizenship, "us_citizenship", ["U.S. Citizen/Permanent Resident", "Non-citizen allowed to work for any employer", "Non-citizen allowed to work for current employer", "Non-citizen seeking work authorization", "Canadian Citizen/Permanent Resident", "Other", "No"])
+    check_string(linkedin_headline, "linkedin_headline")
+    check_int(notice_period, "notice_period")
+    check_int(current_ctc, "current_ctc")
+    check_string(linkedin_summary, "linkedin_summary")
+    check_string(cover_letter, "cover_letter")
+    check_string(recent_employer, "recent_employer")
+    check_string(confidence_level, "confidence_level")
+
 
 
 from config.questions import *
@@ -84,19 +99,6 @@ def validate_questions() -> None | ValueError | TypeError:
     __validation_file_path = "config/questions.py"
 
     check_string(default_resume_path, "default_resume_path")
-    check_string(years_of_experience, "years_of_experience")
-    check_string(require_visa, "require_visa", ["Yes", "No"])
-    check_string(website, "website")
-    check_string(linkedIn, "linkedIn")
-    check_int(desired_salary, "desired_salary")
-    check_string(us_citizenship, "us_citizenship", ["U.S. Citizen/Permanent Resident", "Non-citizen allowed to work for any employer", "Non-citizen allowed to work for current employer", "Non-citizen seeking work authorization", "Canadian Citizen/Permanent Resident", "Other"])
-    check_string(linkedin_headline, "linkedin_headline")
-    check_int(notice_period, "notice_period")
-    check_int(current_ctc, "current_ctc")
-    check_string(linkedin_summary, "linkedin_summary")
-    check_string(cover_letter, "cover_letter")
-    check_string(recent_employer, "recent_employer")
-    check_string(confidence_level, "confidence_level")
 
     check_boolean(pause_before_submit, "pause_before_submit")
     check_boolean(pause_at_failed_question, "pause_at_failed_question")
@@ -233,5 +235,66 @@ def validate_config() -> bool | ValueError | TypeError:
     # validate_String(chatGPT_username, "chatGPT_username")
     # validate_String(chatGPT_password, "chatGPT_password")
     # validate_String(chatGPT_resume_chat_title, "chatGPT_resume_chat_title")
+    return True
+
+
+# ---------------------------------------------------------------------------
+# Enhanced startup validation
+# ---------------------------------------------------------------------------
+import os as _os
+import warnings as _warnings
+
+def validate_file_paths() -> list[str]:
+    """Check that critical file paths referenced in config actually exist."""
+    issues: list[str] = []
+    try:
+        from config.questions import default_resume_path
+        if default_resume_path and not _os.path.isfile(default_resume_path):
+            issues.append(f"default_resume_path '{default_resume_path}' does not exist")
+    except ImportError:
+        pass
+
+    chrome_profile = "chrome_profile"
+    if not _os.path.isdir(chrome_profile):
+        issues.append(f"Chrome profile directory '{chrome_profile}' not found")
+
+    return issues
+
+
+def validate_ai_config() -> list[str]:
+    """Validate AI-related config consistency."""
+    issues: list[str] = []
+    try:
+        from config.secrets import use_AI, ai_provider, llm_api_key, llm_api_url
+    except ImportError:
+        return issues
+
+    if use_AI:
+        if not ai_provider:
+            issues.append("use_AI is True but ai_provider is empty")
+        if ai_provider not in ("ollama",) and not llm_api_key:
+            issues.append(f"use_AI is True with provider '{ai_provider}' but llm_api_key is empty")
+        if not llm_api_url:
+            issues.append("use_AI is True but llm_api_url is empty")
+    return issues
+
+
+def validate_startup() -> bool:
+    """Run full config validation plus enhanced file/AI checks.
+    
+    Returns True if all checks pass. Prints warnings for non-fatal issues
+    and raises on fatal config errors.
+    """
+    # Phase 1 — strict type/range checks (raises on failure)
+    validate_config()
+
+    # Phase 2 — advisory checks (warn but don't block)
+    all_issues: list[str] = []
+    all_issues.extend(validate_file_paths())
+    all_issues.extend(validate_ai_config())
+
+    for issue in all_issues:
+        _warnings.warn(f"[Config Warning] {issue}", stacklevel=2)
+
     return True
 

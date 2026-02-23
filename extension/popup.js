@@ -2831,7 +2831,11 @@ function buildGeneratedResumeFilename(format = 'pdf') {
 }
 
 async function validateResumePayloadContent(payload) {
-    if (!payload || !Array.isArray(payload.fileBytes) || !payload.fileBytes.length) {
+    if (!payload) throw new Error('Resume payload is empty');
+    // Accept both base64 string and legacy array format
+    const hasBase64 = typeof payload.fileBase64 === 'string' && payload.fileBase64.length > 0;
+    const hasLegacyBytes = Array.isArray(payload.fileBytes) && payload.fileBytes.length > 0;
+    if (!hasBase64 && !hasLegacyBytes) {
         throw new Error('Resume payload is empty');
     }
 
@@ -2843,7 +2847,8 @@ async function validateResumePayloadContent(payload) {
     const extracted = await callAPI('/api/extract-resume-text', {
         fileName: payload.fileName,
         fileType: payload.fileType || guessMimeType(payload.fileName),
-        fileBytes: payload.fileBytes,
+        fileBase64: payload.fileBase64 || null,
+        fileBytes: payload.fileBytes || null,
     }, { timeoutMs: 45000, retries: 0 });
 
     const extractedText = String(extracted?.text || '').trim();
@@ -2861,11 +2866,14 @@ async function validateUploadedResumeFile(file) {
     }
 
     const arrayBuffer = await file.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
     const payload = {
         source: 'upload',
         fileName: file.name,
         fileType: file.type || guessMimeType(file.name),
-        fileBytes: Array.from(new Uint8Array(arrayBuffer)),
+        fileBase64: btoa(binary),
     };
     await validateResumePayloadContent(payload);
     return payload;
@@ -3090,11 +3098,14 @@ async function buildResumeUploadPayload() {
         const blob = await fetchResumeBlobFromApi(tailoredPath);
         const fileName = tailoredPath.split(/[\\/]/).pop() || `tailored_resume.${preferredFormat}`;
         const arrayBuffer = await blob.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuffer);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
         const payload = {
             source,
             fileName: buildGeneratedResumeFilename(preferredFormat),
             fileType: blob.type || guessMimeType(fileName),
-            fileBytes: Array.from(new Uint8Array(arrayBuffer)),
+            fileBase64: btoa(binary),
         };
         await validateResumePayloadContent(payload);
         return payload;
@@ -3119,11 +3130,14 @@ async function buildResumeUploadPayload() {
     const blob = await fetchResumeBlobFromApi(masterPath);
     const fileName = master?.filename || masterPath.split(/[\\/]/).pop() || 'master_resume.docx';
     const arrayBuffer = await blob.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
     const payload = {
         source,
         fileName,
         fileType: blob.type || guessMimeType(fileName),
-        fileBytes: Array.from(new Uint8Array(arrayBuffer)),
+        fileBase64: btoa(binary),
     };
     await validateResumePayloadContent(payload);
     return payload;

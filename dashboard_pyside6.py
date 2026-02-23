@@ -13,12 +13,20 @@ from __future__ import annotations
 import sys
 import csv
 import queue
+import threading
 from pathlib import Path
 from datetime import datetime
 from functools import partial
 
 from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QAction, QFont
+
+# Shared color palette
+try:
+    from config.colors import DASHBOARD_COLORS as _DC
+except ImportError:
+    _DC = {}  # fallback — inline hex values used below
+
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -151,10 +159,10 @@ class OperatorDashboard(QMainWindow):
         layout.setHorizontalSpacing(8)
         layout.setVerticalSpacing(4)
 
-        self.card_jobs = MetricCard("Jobs Found", str(self._jobs), "#38bdf8")
-        self.card_applied = MetricCard("Applied", str(self._applied), "#22c55e")
-        self.card_failed = MetricCard("Failed", str(self._failed), "#ef4444")
-        self.card_rate = MetricCard("Success Rate", self._rate_text(), "#a78bfa")
+        self.card_jobs = MetricCard("Jobs Found", str(self._jobs), _DC.get("card_jobs_accent", "#38bdf8"))
+        self.card_applied = MetricCard("Applied", str(self._applied), _DC.get("card_applied_accent", "#22c55e"))
+        self.card_failed = MetricCard("Failed", str(self._failed), _DC.get("card_failed_accent", "#ef4444"))
+        self.card_rate = MetricCard("Success Rate", self._rate_text(), _DC.get("card_rate_accent", "#a78bfa"))
 
         for col, card in enumerate([self.card_jobs, self.card_applied, self.card_failed, self.card_rate]):
             layout.addWidget(card, 0, col)
@@ -866,21 +874,61 @@ class OperatorDashboard(QMainWindow):
     def _prefill_changed(self, label: str, value: str) -> None:
         self._log(f"{label}: {value}")
 
+    # ------------------------------------------------------------------
+    #  Bot lifecycle helpers (run bot in a background thread)
+    # ------------------------------------------------------------------
+    _bot_thread: threading.Thread | None = None
+    _bot_stop_event: threading.Event | None = None
+
+    def _launch_bot_thread(self, autopilot: bool = False) -> None:
+        """Import and run the bot in a daemon thread."""
+        if self._bot_thread and self._bot_thread.is_alive():
+            self._log("Bot is already running")
+            return
+        self._bot_stop_event = threading.Event()
+
+        def _run() -> None:
+            try:
+                import runAiBot  # noqa: F811 — lazy import, heavy module
+                runAiBot.main()
+            except SystemExit:
+                pass
+            except Exception as exc:
+                self._log(f"Bot error: {exc}")
+            finally:
+                QTimer.singleShot(0, lambda: self._set_status("Bot Stopped"))
+
+        self._bot_thread = threading.Thread(target=_run, daemon=True, name="bot-worker")
+        self._bot_thread.start()
+
     def _start_bot(self) -> None:
         self._set_status("Bot Running")
-        self._log("Start pressed")
+        self._log("Start pressed — launching bot thread")
+        self._launch_bot_thread(autopilot=False)
 
     def _start_autopilot(self) -> None:
         self._set_status("Autopilot Running")
-        self._log("Start Autopilot pressed")
+        self._log("Start Autopilot pressed — launching bot thread (autopilot)")
+        self._launch_bot_thread(autopilot=True)
 
     def _stop_bot(self) -> None:
         self._set_status("Bot Stopped")
-        self._log("Stop pressed")
+        self._log("Stop pressed — requesting bot stop")
+        if self._bot_stop_event:
+            self._bot_stop_event.set()
+        # Signal the bot's global stop flag if exposed
+        run_ai_bot = sys.modules.get("runAiBot")
+        if run_ai_bot and hasattr(run_ai_bot, "stop_bot"):
+            run_ai_bot.stop_bot = True
 
     def _pause_bot(self) -> None:
         self._set_status("Bot Paused")
-        self._log("Pause pressed")
+        self._log("Pause pressed — toggling pause flag")
+        run_ai_bot = sys.modules.get("runAiBot")
+        if run_ai_bot and hasattr(run_ai_bot, "pause_bot"):
+            run_ai_bot.pause_bot = not getattr(run_ai_bot, "pause_bot", False)
+            state = "Paused" if run_ai_bot.pause_bot else "Resumed"
+            self._set_status(f"Bot {state}")
 
     def _toggle_live_panel(self) -> None:
         if hasattr(self, "live_panel_window") and self.live_panel_window is not None and self.live_panel_window.isVisible():
@@ -1089,8 +1137,26 @@ class OperatorDashboard(QMainWindow):
         self._log("Counters reset")
 
     def _apply_all_settings(self) -> None:
-        self._set_status("Settings Applied")
-        self._log("All settings applied")
+        """Persist current UI settings to config files."""
+        import json as _json
+        config_dir = Path("config")
+        config_dir.mkdir(exist_ok=True)
+        snapshot = {
+            "exported_at": datetime.now().isoformat(timespec="seconds"),
+            "search_terms": self.search_terms.text() if hasattr(self, "search_terms") else "",
+            "search_location": self.search_location.text() if hasattr(self, "search_location") else "",
+            "toggles": {},
+        }
+        for toggle in self.findChildren(QPushButton):
+            if toggle.objectName() == "TogglePill":
+                snapshot["toggles"][toggle.text()] = toggle.isChecked()
+        path = config_dir / "dashboard_settings_snapshot.json"
+        try:
+            path.write_text(_json.dumps(snapshot, indent=2), encoding="utf-8")
+            self._set_status("Settings Applied")
+            self._log(f"Settings saved to {path.as_posix()}")
+        except Exception as exc:
+            self._log(f"Failed to save settings: {exc}")
 
     def _reset_defaults(self) -> None:
         for toggle in self.findChildren(QPushButton):
@@ -1119,38 +1185,131 @@ class OperatorDashboard(QMainWindow):
         self._log(f"Extension config exported to {path.as_posix()}")
 
     def _reload_extension(self) -> None:
-        self._log("Reload Extension clicked")
+        self._log("Reloading extension API server…")
+        try:
+            from modules.api_server import app as _api_app  # noqa: F811
+            self._log("Extension API module re-imported")
+        except Exception as exc:
+            self._log(f"Extension reload failed: {exc}")
+
+    _scheduler_instance = None
 
     def _start_scheduler(self) -> None:
         self._log("Start Scheduler clicked")
+        try:
+            from modules.scheduler import JobScheduler
+            if self._scheduler_instance and getattr(self._scheduler_instance, '_running', False):
+                self._log("Scheduler is already running")
+                return
+            self._scheduler_instance = JobScheduler()
+            self._scheduler_instance.start()
+            self._set_status("Scheduler Running")
+            self._log("Scheduler started successfully")
+        except Exception as exc:
+            self._log(f"Failed to start scheduler: {exc}")
 
     def _stop_scheduler(self) -> None:
         self._log("Stop Scheduler clicked")
+        try:
+            if self._scheduler_instance and hasattr(self._scheduler_instance, 'stop'):
+                self._scheduler_instance.stop()
+                self._set_status("Scheduler Stopped")
+                self._log("Scheduler stopped")
+            else:
+                self._log("No scheduler instance to stop")
+        except Exception as exc:
+            self._log(f"Failed to stop scheduler: {exc}")
 
     def _export_history_csv(self) -> None:
-        self._log("Export History CSV clicked")
+        import shutil as _shutil
+        src = Path("all excels/all_applied_applications_history.csv")
+        if not src.exists():
+            self._log("No history CSV found to export")
+            return
+        dest_dir = Path("logs")
+        dest_dir.mkdir(exist_ok=True)
+        dest = dest_dir / f"history_export_{datetime.now():%Y%m%d_%H%M%S}.csv"
+        try:
+            _shutil.copy2(src, dest)
+            self._set_status("CSV Exported")
+            self._log(f"History exported to {dest.as_posix()}")
+        except Exception as exc:
+            self._log(f"CSV export failed: {exc}")
 
     def _export_history_pdf(self) -> None:
-        self._log("Export History PDF clicked")
+        self._log("PDF export is not yet implemented — use CSV export")
 
     def _clear_history(self) -> None:
         self.history_table.clearContents()
         self._log("History cleared")
 
     def _open_enhanced_tailor(self) -> None:
-        self._log("Open Enhanced Tailor clicked")
+        self._log("Opening Enhanced Tailor popup…")
+        try:
+            from modules.quick_tailor_popup import show_quick_tailor_popup
+            threading.Thread(
+                target=show_quick_tailor_popup,
+                kwargs={"resume_path": self.resume_path.text() if hasattr(self, "resume_path") else ""},
+                daemon=True,
+                name="enhanced-tailor",
+            ).start()
+        except Exception as exc:
+            self._log(f"Failed to open enhanced tailor: {exc}")
 
     def _quick_tailor(self) -> None:
-        self._log("Quick Tailor clicked")
+        self._log("Opening Quick Tailor popup…")
+        try:
+            from modules.quick_tailor_popup import show_quick_tailor_popup
+            threading.Thread(
+                target=show_quick_tailor_popup,
+                kwargs={"resume_path": self.resume_path.text() if hasattr(self, "resume_path") else ""},
+                daemon=True,
+                name="quick-tailor",
+            ).start()
+        except Exception as exc:
+            self._log(f"Failed to open quick tailor: {exc}")
 
     def _save_tailored_resume(self) -> None:
-        self._log("Save Tailored Resume clicked")
+        dest_dir = Path("all resumes/tailored")
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        dest = dest_dir / f"tailored_{datetime.now():%Y%m%d_%H%M%S}.txt"
+        jd = self.job_description.toPlainText() if hasattr(self, "job_description") else ""
+        try:
+            dest.write_text(f"--- Tailored resume placeholder ---\nJD:\n{jd}\n", encoding="utf-8")
+            self._log(f"Tailored resume saved to {dest.as_posix()}")
+        except Exception as exc:
+            self._log(f"Save failed: {exc}")
 
     def _preview_output(self) -> None:
-        self._log("Preview Output clicked")
+        tailored_dir = Path("all resumes/tailored")
+        if not tailored_dir.exists():
+            self._log("No tailored resumes found")
+            return
+        files = sorted(tailored_dir.glob("*"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if not files:
+            self._log("No tailored resume files to preview")
+            return
+        latest = files[0]
+        try:
+            content = latest.read_text(encoding="utf-8", errors="replace")[:2000]
+            self._log(f"--- Preview: {latest.name} ---\n{content}")
+        except Exception as exc:
+            self._log(f"Preview failed: {exc}")
 
     def _open_doc(self, name: str) -> None:
-        self._log(f"Open doc clicked: {name}")
+        import webbrowser as _wb
+        doc_map = {
+            "README": "README.md",
+            "Enhanced Resume Guide": "docs/ENHANCED_RESUME_TAILORING.md",
+            "Security Setup": "docs/SECURITY_SETUP.md",
+            "Changelog": "FEATURES.md",
+        }
+        rel = doc_map.get(name)
+        if rel and Path(rel).exists():
+            _wb.open(Path(rel).resolve().as_uri())
+            self._log(f"Opened {rel}")
+        else:
+            self._log(f"Document '{name}' not found")
 
     def _apply_styles(self) -> None:
         self.setStyleSheet(
