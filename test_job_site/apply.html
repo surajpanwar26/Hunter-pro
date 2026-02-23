@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Apply — Senior Software Engineer | TechJobs Pro</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="container nav-content">
+            <a href="index.html" class="logo">🚀 TechJobs<span>Pro</span></a>
+            <div class="nav-links">
+                <span class="breadcrumb">Applying for: <strong>Senior Software Engineer</strong></span>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Progress Bar -->
+    <div class="progress-bar-container">
+        <div class="container">
+            <div class="step-indicator">
+                <div class="step active" id="step1">
+                    <span class="step-number">1</span>
+                    <span class="step-label">Personal Info</span>
+                </div>
+                <div class="step-line active"></div>
+                <div class="step" id="step2">
+                    <span class="step-number">2</span>
+                    <span class="step-label">Experience & More</span>
+                </div>
+                <div class="step-line"></div>
+                <div class="step" id="step3">
+                    <span class="step-number">3</span>
+                    <span class="step-label">Review & Submit</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <main class="container form-container">
+        <!-- ==================== PAGE 1: Personal Information ==================== -->
+        <form id="page1" class="application-form">
+            <div class="form-header">
+                <h2>Personal Information</h2>
+                <p>Please fill in your basic details. Fields marked with <span class="required">*</span> are required.</p>
+            </div>
+
+            <!-- TEXT INPUTS -->
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="firstName">First Name <span class="required">*</span></label>
+                    <input type="text" id="firstName" name="firstName" required placeholder="e.g. John">
+                </div>
+                <div class="form-group">
+                    <label for="lastName">Last Name <span class="required">*</span></label>
+                    <input type="text" id="lastName" name="lastName" required placeholder="e.g. Doe">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="email">Email Address <span class="required">*</span></label>
+                    <input type="email" id="email" name="email" required placeholder="you@example.com">
+                </div>
+                <div class="form-group">
+                    <label for="phone">Phone Number <span class="required">*</span></label>
+                    <input type="tel" id="phone" name="phone" required placeholder="+91 98765 43210">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="city">City <span class="required">*</span></label>
+                <input type="text" id="city" name="city" required placeholder="e.g. Mumbai">
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="state">State / Province</label>
+                    <input type="text" id="state" name="state" placeholder="e.g. Maharashtra">
+                </div>
+                <div class="form-group">
+                    <label for="zipCode">Zip / Postal Code</label>
+                    <input type="text" id="zipCode" name="zipCode" placeholder="e.g. 400001">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="linkedIn">LinkedIn Profile URL</label>
+                <input type="url" id="linkedIn" name="linkedIn" placeholder="https://linkedin.com/in/yourprofile">
+            </div>
+
+            <div class="form-group">
+                <label for="portfolio">Portfolio / Website</label>
+                <input type="url" id="portfolio" name="portfolio" placeholder="https://yourportfolio.com">
+            </div>
+
+            <!-- SELECT DROPDOWNS -->
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="country">Country <span class="required">*</span></label>
+                    <select id="country" name="country" required>
+                        <option value="">Select an option</option>
+                        <option value="India">India</option>
+                        <option value="United States">United States</option>
+                        <option value="United Kingdom">United Kingdom</option>
+                        <option value="Canada">Canada</option>
+                        <option value="Australia">Australia</option>
+                        <option value="Germany">Germany</option>
+                        <option value="Singapore">Singapore</option>
+                        <option value="Japan">Japan</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="gender">Gender</label>
+                    <select id="gender" name="gender">
+                        <option value="">Select an option</option>
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Non-binary">Non-binary</option>
+                        <option value="Prefer not to say">Prefer not to say</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label for="phoneCountryCode">Phone Country Code</label>
+                <select id="phoneCountryCode" name="phoneCountryCode">
+                    <option value="">Select an option</option>
+                    <option value="India (+91)">India (+91)</option>
+                    <option value="US (+1)">US (+1)</option>
+                    <option value="UK (+44)">UK (+44)</option>
+                    <option value="Canada (+1)">Canada (+1)</option>
+                    <option value="Australia (+61)">Australia (+61)</option>
+                </select>
+            </div>
+
+            <!-- RADIO BUTTONS -->
+            <div class="form-group">
+                <label class="group-label">Are you legally authorized to work in India? <span class="required">*</span></label>
+                <div class="radio-group">
+                    <label class="radio-option"><input type="radio" name="workAuth" value="Yes" required> Yes</label>
+                    <label class="radio-option"><input type="radio" name="workAuth" value="No"> No</label>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="group-label">Will you now or in the future require sponsorship for employment visa status?</label>
+                <div class="radio-group">
+                    <label class="radio-option"><input type="radio" name="visaSponsorship" value="Yes"> Yes</label>
+                    <label class="radio-option"><input type="radio" name="visaSponsorship" value="No"> No</label>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="group-label">Are you comfortable commuting to Mumbai office 3 days a week?</label>
+                <div class="radio-group">
+                    <label class="radio-option"><input type="radio" name="commuteOk" value="Yes"> Yes</label>
+                    <label class="radio-option"><input type="radio" name="commuteOk" value="No"> No</label>
+                    <label class="radio-option"><input type="radio" name="commuteOk" value="Maybe"> Open to discussion</label>
+                </div>
+            </div>
+
+            <!-- CHECKBOXES -->
+            <div class="form-group">
+                <label class="group-label">Acknowledgements</label>
+                <div class="checkbox-group">
+                    <label class="checkbox-option">
+                        <input type="checkbox" id="agreeTerms" name="agreeTerms" required>
+                        I agree to the Terms & Conditions and Privacy Policy
+                    </label>
+                    <label class="checkbox-option">
+                        <input type="checkbox" id="agreeBackground" name="agreeBackground">
+                        I consent to a background check if required
+                    </label>
+                    <label class="checkbox-option">
+                        <input type="checkbox" id="agreeDataProcessing" name="agreeDataProcessing">
+                        I consent to the processing of my personal data for recruitment purposes
+                    </label>
+                </div>
+            </div>
+
+            <!-- RESUME UPLOAD -->
+            <div class="form-group">
+                <label for="resume">Upload Resume <span class="required">*</span></label>
+                <div class="file-upload-zone" id="uploadZone">
+                    <input type="file" id="resume" name="resume" accept=".pdf,.docx,.doc,.txt" required>
+                    <div class="upload-content">
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                            <polyline points="17,8 12,3 7,8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                        <p>Drag & drop your resume or <span class="link">browse</span></p>
+                        <small>Accepted: PDF, DOCX, DOC, TXT (Max 5MB)</small>
+                    </div>
+                    <div class="upload-filename" id="uploadFilename" style="display:none;"></div>
+                </div>
+            </div>
+
+            <!-- Navigation Buttons -->
+            <div class="form-actions">
+                <a href="index.html" class="btn btn-outline">← Back to Job</a>
+                <button type="button" class="btn btn-primary btn-lg" id="btnNext1">
+                    Next: Experience & More →
+                </button>
+            </div>
+        </form>
+
+        <!-- ==================== PAGE 2: Experience & Additional ==================== -->
+        <form id="page2" class="application-form" style="display:none;">
+            <div class="form-header">
+                <h2>Experience & Additional Information</h2>
+                <p>Tell us more about your professional background and qualifications.</p>
+            </div>
+
+            <!-- EXPERIENCE TEXT FIELDS -->
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="yearsExperience">How many years of work experience do you have? <span class="required">*</span></label>
+                    <input type="text" id="yearsExperience" name="yearsExperience" required placeholder="e.g. 5">
+                </div>
+                <div class="form-group">
+                    <label for="yearsExperiencePython">How many years of experience do you have with Python?</label>
+                    <input type="text" id="yearsExperiencePython" name="yearsExperiencePython" placeholder="e.g. 3">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="yearsExperienceReact">How many years of experience do you have with React.js?</label>
+                    <input type="text" id="yearsExperienceReact" name="yearsExperienceReact" placeholder="e.g. 2">
+                </div>
+                <div class="form-group">
+                    <label for="currentCompany">Current / Most Recent Employer</label>
+                    <input type="text" id="currentCompany" name="currentCompany" placeholder="e.g. Acme Corp">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="currentSalary">Current Salary (Annual, INR)</label>
+                    <input type="text" id="currentSalary" name="currentSalary" placeholder="e.g. 1500000">
+                </div>
+                <div class="form-group">
+                    <label for="expectedSalary">Expected Salary (Annual, INR)</label>
+                    <input type="text" id="expectedSalary" name="expectedSalary" placeholder="e.g. 2200000">
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="noticePeriod">Notice Period (in days)</label>
+                    <input type="text" id="noticePeriod" name="noticePeriod" placeholder="e.g. 30">
+                </div>
+                <div class="form-group">
+                    <label for="earliestStartDate">Earliest Start Date</label>
+                    <input type="date" id="earliestStartDate" name="earliestStartDate">
+                </div>
+            </div>
+
+            <!-- EDUCATION SELECT DROPDOWNS -->
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="educationLevel">Highest Education Level <span class="required">*</span></label>
+                    <select id="educationLevel" name="educationLevel" required>
+                        <option value="">Select an option</option>
+                        <option value="High School">High School</option>
+                        <option value="Associate's">Associate's Degree</option>
+                        <option value="Bachelor's">Bachelor's Degree</option>
+                        <option value="Master's">Master's Degree</option>
+                        <option value="PhD">PhD / Doctorate</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="fieldOfStudy">Field of Study</label>
+                    <select id="fieldOfStudy" name="fieldOfStudy">
+                        <option value="">Select an option</option>
+                        <option value="Computer Science">Computer Science</option>
+                        <option value="Information Technology">Information Technology</option>
+                        <option value="Software Engineering">Software Engineering</option>
+                        <option value="Electrical Engineering">Electrical Engineering</option>
+                        <option value="Mathematics">Mathematics</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-row">
+                <div class="form-group">
+                    <label for="university">University / College</label>
+                    <input type="text" id="university" name="university" placeholder="e.g. University of Mumbai">
+                </div>
+                <div class="form-group">
+                    <label for="gpa">GPA / CGPA</label>
+                    <input type="text" id="gpa" name="gpa" placeholder="e.g. 8.7">
+                </div>
+            </div>
+
+            <!-- RADIO: Work preferences -->
+            <div class="form-group">
+                <label class="group-label">What is your preferred work arrangement?</label>
+                <div class="radio-group">
+                    <label class="radio-option"><input type="radio" name="workPreference" value="On-site"> On-site</label>
+                    <label class="radio-option"><input type="radio" name="workPreference" value="Hybrid"> Hybrid</label>
+                    <label class="radio-option"><input type="radio" name="workPreference" value="Remote"> Remote</label>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="group-label">Do you have experience leading a team?</label>
+                <div class="radio-group">
+                    <label class="radio-option"><input type="radio" name="leadershipExp" value="Yes"> Yes</label>
+                    <label class="radio-option"><input type="radio" name="leadershipExp" value="No"> No</label>
+                </div>
+            </div>
+
+            <!-- DISABILITY / VETERAN -->
+            <div class="form-group">
+                <label class="group-label">Disability Status (Voluntary, confidential)</label>
+                <div class="radio-group">
+                    <label class="radio-option"><input type="radio" name="disability" value="Yes, I have a disability"> Yes, I have a disability</label>
+                    <label class="radio-option"><input type="radio" name="disability" value="No, I do not have a disability"> No, I don't have a disability</label>
+                    <label class="radio-option"><input type="radio" name="disability" value="Prefer not to say"> Prefer not to say</label>
+                </div>
+            </div>
+
+            <!-- TEXTAREA FIELDS -->
+            <div class="form-group">
+                <label for="coverLetter">Cover Letter / Why are you interested in this role?</label>
+                <textarea id="coverLetter" name="coverLetter" rows="5" placeholder="Tell us why you're excited about this role and what makes you a great fit..."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="additionalInfo">Additional Information</label>
+                <textarea id="additionalInfo" name="additionalInfo" rows="3" placeholder="Anything else you'd like us to know? (e.g., special requirements, projects, awards)"></textarea>
+            </div>
+
+            <!-- CHECKBOX: Skills confirmation -->
+            <div class="form-group">
+                <label class="group-label">Which of these technologies do you have experience with? (Select all that apply)</label>
+                <div class="checkbox-group">
+                    <label class="checkbox-option"><input type="checkbox" name="skills" value="Python"> Python</label>
+                    <label class="checkbox-option"><input type="checkbox" name="skills" value="React.js"> React.js</label>
+                    <label class="checkbox-option"><input type="checkbox" name="skills" value="TypeScript"> TypeScript</label>
+                    <label class="checkbox-option"><input type="checkbox" name="skills" value="Node.js"> Node.js</label>
+                    <label class="checkbox-option"><input type="checkbox" name="skills" value="AWS"> AWS</label>
+                    <label class="checkbox-option"><input type="checkbox" name="skills" value="Docker"> Docker</label>
+                    <label class="checkbox-option"><input type="checkbox" name="skills" value="PostgreSQL"> PostgreSQL</label>
+                    <label class="checkbox-option"><input type="checkbox" name="skills" value="MongoDB"> MongoDB</label>
+                </div>
+            </div>
+
+            <!-- SELECT: How did you hear -->
+            <div class="form-group">
+                <label for="referralSource">How did you hear about this position?</label>
+                <select id="referralSource" name="referralSource">
+                    <option value="">Select an option</option>
+                    <option value="LinkedIn">LinkedIn</option>
+                    <option value="Company Website">Company Website</option>
+                    <option value="Job Board">Job Board (Indeed, Naukri, etc.)</option>
+                    <option value="Employee Referral">Employee Referral</option>
+                    <option value="Social Media">Social Media</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+
+            <!-- SCALE RATING -->
+            <div class="form-group">
+                <label for="confidenceLevel">On a scale of 1-10, how confident are you in your technical abilities for this role?</label>
+                <input type="text" id="confidenceLevel" name="confidenceLevel" placeholder="e.g. 8">
+            </div>
+
+            <!-- Navigation Buttons -->
+            <div class="form-actions">
+                <button type="button" class="btn btn-outline" id="btnBack2">← Back</button>
+                <button type="button" class="btn btn-primary btn-lg" id="btnNext2">
+                    Next: Review & Submit →
+                </button>
+            </div>
+        </form>
+
+        <!-- ==================== PAGE 3: Review & Submit ==================== -->
+        <div id="page3" class="application-form" style="display:none;">
+            <div class="form-header">
+                <h2>Review Your Application</h2>
+                <p>Please review the information below before submitting. Click "Edit" to make changes.</p>
+            </div>
+
+            <div class="review-sections" id="reviewContent">
+                <!-- Will be filled via JavaScript -->
+            </div>
+
+            <div class="form-group">
+                <label class="checkbox-option highlight-checkbox">
+                    <input type="checkbox" id="confirmAccuracy" required>
+                    I confirm that all information provided is accurate and complete to the best of my knowledge.
+                </label>
+            </div>
+
+            <div class="form-actions">
+                <button type="button" class="btn btn-outline" id="btnBack3">← Back</button>
+                <button type="button" class="btn btn-success btn-lg" id="btnSubmit">
+                    ✅ Submit Application
+                </button>
+            </div>
+        </div>
+
+        <!-- ==================== SUCCESS PAGE ==================== -->
+        <div id="successPage" class="application-form" style="display:none;">
+            <div class="success-content">
+                <div class="success-icon">🎉</div>
+                <h2>Application Submitted!</h2>
+                <p>Thank you for applying to <strong>Senior Software Engineer</strong> at <strong>InnovateTech Solutions</strong>.</p>
+                <p>We've received your application and our hiring team will review it within <strong>48 hours</strong>. You'll receive a confirmation email shortly.</p>
+                <div class="success-details">
+                    <div class="success-item"><span>Application ID:</span><strong id="appId"></strong></div>
+                    <div class="success-item"><span>Position:</span><strong>Senior Software Engineer</strong></div>
+                    <div class="success-item"><span>Submitted:</span><strong id="submitTime"></strong></div>
+                </div>
+                <a href="index.html" class="btn btn-primary btn-lg">← Back to Job Listing</a>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer">
+        <div class="container">
+            <p>&copy; 2026 TechJobs Pro — Test Job Site for AutoFill Testing</p>
+        </div>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>

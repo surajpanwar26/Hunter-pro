@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Hunter pro</title>
+    <title>Universal Job AutoFill Pro</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -13,18 +13,13 @@
             <div class="logo">
                 <img src="icons/icon48.png" alt="Logo" width="32" height="32">
                 <div class="logo-text">
-                    <h1>AI Hunter pro</h1>
-                    <span class="tagline">Universal AI Job Application Assistant</span>
+                    <h1>AutoFill Pro</h1>
+                    <span class="tagline">Universal Job Application Assistant</span>
                 </div>
             </div>
-            <div class="header-actions">
-                <button class="btn btn-secondary btn-icon" id="btnToggleTopSection" title="Collapse/Expand top section" aria-label="Toggle top section">
-                    ⤢
-                </button>
-                <div class="status-badge" id="statusBadge">
-                    <span class="status-dot"></span>
-                    <span class="status-text">Ready</span>
-                </div>
+            <div class="status-badge" id="statusBadge">
+                <span class="status-dot"></span>
+                <span class="status-text">Ready</span>
             </div>
         </header>
 
@@ -43,59 +38,13 @@
                 </svg>
                 Auto-Fill Form
             </button>
-            <button class="btn btn-primary" id="btnAutoPilot" title="Run autofill then Next/Review/Submit sequence">
-                🤖 Auto Pilot
-            </button>
-            <button class="btn btn-secondary" id="btnQuickSidePanel" title="Open persistent side panel mode">
+            <button class="btn btn-secondary" id="btnAnalyze">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
-                    <line x1="9" y1="3" x2="9" y2="21"/>
+                    <circle cx="11" cy="11" r="8"/>
+                    <path d="M21 21l-4.35-4.35"/>
                 </svg>
-                Side Panel
+                Analyze
             </button>
-        </section>
-
-        <section class="workflow-actions">
-            <button class="btn btn-secondary btn-small" id="btnNextStep" title="Go to next step in application flow">
-                ⏭ Next
-            </button>
-            <button class="btn btn-secondary btn-small" id="btnReviewStep" title="Open review step or scroll to review">
-                👀 Review
-            </button>
-            <button class="btn btn-primary btn-small" id="btnSubmitApply" title="Submit or apply on current step">
-                ✅ Apply/Submit
-            </button>
-        </section>
-
-        <section class="autopilot-progress" id="autopilotProgress" style="display: none;">
-            <div class="autopilot-progress-header">
-                <span>🤖 Auto Pilot Progress</span>
-                <span class="autopilot-progress-phase" id="autopilotPhase">Idle</span>
-            </div>
-            <div class="autopilot-progress-grid">
-                <div class="autopilot-progress-item">
-                    <span class="autopilot-label">Step</span>
-                    <span class="autopilot-value" id="autopilotStep">0/0</span>
-                </div>
-                <div class="autopilot-progress-item">
-                    <span class="autopilot-label">Fields</span>
-                    <span class="autopilot-value" id="autopilotFields">0</span>
-                </div>
-                <div class="autopilot-progress-item">
-                    <span class="autopilot-label">Action</span>
-                    <span class="autopilot-value" id="autopilotAction">Waiting</span>
-                </div>
-                <div class="autopilot-progress-item">
-                    <span class="autopilot-label">Wait</span>
-                    <span class="autopilot-value" id="autopilotWait">0s</span>
-                </div>
-            </div>
-            <div class="autopilot-progress-note" id="autopilotNote">Ready to run.</div>
-            <div class="autopilot-progress-actions">
-                <button class="btn btn-secondary btn-small" id="btnAutoPilotPreview" style="display: none;">
-                    👁️ Auto Pilot Resume Preview
-                </button>
-            </div>
         </section>
 
         <!-- JD Detection & Resume Section -->
@@ -113,9 +62,6 @@
                     <button class="btn btn-small btn-secondary" id="btnPasteJD">
                         📋 Paste JD
                     </button>
-                    <button class="btn btn-small btn-primary" id="btnQuickTailorResume" title="Tailor resume using detected JD">
-                        ✨ Tailor Resume
-                    </button>
                 </div>
             </div>
             
@@ -132,24 +78,6 @@
                 <div class="jd-preview" id="jdPreview">
                     <p class="placeholder">Click "Auto-Detect" to extract job description from page, or "Paste JD" to manually enter one</p>
                 </div>
-
-                <div class="jd-structured" id="jdStructured" style="display: none;">
-                    <div class="structured-grid">
-                        <div class="structured-card">
-                            <h5>💼 Role</h5>
-                            <p id="jdRole" class="structured-value">—</p>
-                        </div>
-                        <div class="structured-card">
-                            <h5>🛂 Visa Sponsorship</h5>
-                            <p id="jdVisa" class="structured-value">—</p>
-                        </div>
-                        <div class="structured-card">
-                            <h5>💰 Salary</h5>
-                            <p id="jdSalary" class="structured-value">—</p>
-                        </div>
-                    </div>
-                </div>
-
                 <div class="jd-skills" id="jdSkills" style="display: none;">
                     <h4>Required Skills</h4>
                     <div class="skill-tags" id="skillTags"></div>
@@ -169,27 +97,11 @@
                         </label>
                     </div>
                     <div class="resume-upload" id="resumeUpload" style="display: none;">
-                        <input type="file" id="masterResumeFile" accept=".pdf,.docx">
-                        <small>Supported: PDF, DOCX</small>
+                        <input type="file" id="masterResumeFile" accept=".pdf,.docx,.txt">
+                        <small>Supported: PDF, DOCX, TXT</small>
                     </div>
                     <div class="master-resume-info" id="masterResumeInfo">
-                        <small>📄 Using project master resume</small>
-                    </div>
-                </div>
-
-                <div class="structured-section" id="instructionBox" style="display: none;">
-                    <div class="jd-title-row">
-                        <h5>🧠 Instructions</h5>
-                        <button class="btn btn-small btn-secondary" id="btnShowInstructions">Show Instructions</button>
-                    </div>
-                    <div id="instructionContent" style="display: none;">
-                        <div class="jd-title-row">
-                            <h5>Tailoring Instructions</h5>
-                            <button class="btn btn-small btn-secondary" id="btnGiveInstruction">Give Instruction</button>
-                        </div>
-                        <textarea id="tailoringInstruction" rows="10" placeholder="Instruction will be prefilled from project defaults"></textarea>
-                        <h5 class="instruction-subtitle">Reviewer Agent Instructions</h5>
-                        <textarea id="reviewerInstruction" rows="8" readonly placeholder="Reviewer guidance will load from API defaults"></textarea>
+                        <small>📄 Using: all resumes/master resume/resume.txt</small>
                     </div>
                 </div>
                 
@@ -206,15 +118,6 @@
                     <button class="btn btn-secondary" id="btnReviewResume" style="display: none;">
                         🔍 Review with AI
                     </button>
-                </div>
-                <p class="review-gate-note" id="reviewGateNote" style="display: none;">Run AI Review before Preview/Download/Use.</p>
-                <div class="tailor-failure-actions" id="tailorFailureActions" style="display: none; margin-top: 8px;">
-                    <div class="button-group">
-                        <button class="btn btn-secondary" id="btnRetryTailorGuided">Retry (with guidance)</button>
-                        <button class="btn btn-secondary" id="btnOpenManualEditor">Open manual editor</button>
-                        <button class="btn btn-secondary" id="btnDownloadCurrentDraft">Download tailored draft</button>
-                        <button class="btn btn-secondary" id="btnSendHumanReview">Send to human reviewer</button>
-                    </div>
                 </div>
                 
                 <!-- AI Review Status -->
@@ -277,12 +180,6 @@
                     </svg>
                     PDF
                 </button>
-                <button class="btn btn-secondary" id="btnOpenDocx">
-                    Open DOCX
-                </button>
-                <button class="btn btn-secondary" id="btnOpenPdf">
-                    Open PDF
-                </button>
             </div>
         </section>
 
@@ -298,20 +195,6 @@
         <div class="tab-content">
             <!-- Profile Tab -->
             <div class="tab-panel active" id="profile">
-                <div class="form-section" id="unknownFieldsHomeSection" style="display: none;">
-                    <h3>🧩 Action Needed: Unfilled Fields</h3>
-                    <p class="section-desc">Autofill paused on these questions. Add answers once, save, and the extension reuses them next time.</p>
-                    <div class="unknown-fields-help">
-                        <span>1) Pick a detected option or type your answer</span>
-                        <span>2) Click save to learn and refill</span>
-                    </div>
-                    <div id="unknownFieldsHomeSummary" class="unknown-fields-summary"></div>
-                    <div id="unknownFieldsHomeList" class="unknown-fields-list"></div>
-                    <button class="btn btn-primary full-width" id="btnSaveUnknownAnswersHome" style="margin-top: 10px;">
-                        Save Answers & Re-Fill Current Form
-                    </button>
-                </div>
-
                 <form id="profileForm">
                     <!-- Personal Info -->
                     <div class="form-section">
@@ -515,67 +398,6 @@
                                 <span class="slider"></span>
                             </label>
                         </div>
-                        <div class="setting-item">
-                            <div class="setting-info">
-                                <span class="setting-label">Use Side Panel Mode</span>
-                                <span class="setting-desc">Keep extension open side-by-side while working on forms</span>
-                            </div>
-                            <label class="switch" for="useSidePanelMode">
-                                <input type="checkbox" id="useSidePanelMode">
-                                <span class="slider"></span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="form-section">
-                    <h3>Side Panel</h3>
-                    <p class="section-desc">Popup windows close when focus moves outside (browser behavior). Use side panel for persistent workflow.</p>
-                    <button class="btn btn-primary full-width" id="btnOpenSidePanel">
-                        Open Side Panel Now
-                    </button>
-                </div>
-
-                <div class="form-section">
-                    <h3>Privacy & Diagnostics</h3>
-                    <p class="section-desc">Control telemetry, inspect what is stored locally, export personal data, or clear all personal data.</p>
-                    <div class="settings-list">
-                        <div class="setting-item">
-                            <div class="setting-info">
-                                <span class="setting-label">Telemetry Opt-In</span>
-                                <span class="setting-desc">Disabled by default. When enabled, only anonymized diagnostic events are stored locally.</span>
-                            </div>
-                            <label class="switch" for="telemetryOptIn">
-                                <input type="checkbox" id="telemetryOptIn">
-                                <span class="slider"></span>
-                            </label>
-                        </div>
-                    </div>
-                    <div class="privacy-summary" id="privacyDataSummary">
-                        <small>Loading stored data summary...</small>
-                    </div>
-                    <div class="button-group" style="margin-top: 10px;">
-                        <button class="btn btn-secondary" id="btnExportPersonalData">Export Personal Data</button>
-                        <button class="btn btn-secondary" id="btnSendDiagnostics">Send Diagnostic Log</button>
-                        <button class="btn btn-secondary" id="btnClearPersonalData">Clear All Personal Data</button>
-                    </div>
-                </div>
-
-                <div class="form-section">
-                    <h3>API Health</h3>
-                    <p class="section-desc">If local API is offline, extension uses degraded fallback for preview and scoring.</p>
-                    <div id="apiHealthStatus" class="privacy-summary"><small>Checking API status...</small></div>
-                    <div class="settings-list" style="margin-top: 10px;">
-                        <div class="setting-item">
-                            <div class="setting-info">
-                                <span class="setting-label">Auto Pilot API Backup Mode</span>
-                                <span class="setting-desc">If tailoring API is unavailable, continue Auto Pilot without tailored resume upload as a backup path.</span>
-                            </div>
-                            <label class="switch" for="autopilotApiBackupOnOffline">
-                                <input type="checkbox" id="autopilotApiBackupOnOffline">
-                                <span class="slider"></span>
-                            </label>
-                        </div>
                     </div>
                 </div>
 
@@ -590,70 +412,6 @@
                             <label for="maxRetries">Max Retries</label>
                             <input type="number" id="maxRetries" value="3" min="1" max="10">
                         </div>
-                    </div>
-                </div>
-
-                <div class="form-section">
-                    <h3>Resume Upload Source</h3>
-                    <p class="section-desc">Used when application forms ask for a resume file. Default: Tailored Resume.</p>
-                    <div class="resume-options" id="autofillResumeOptions">
-                        <label class="resume-option">
-                            <input type="radio" name="autofillResumeSource" value="tailored" checked>
-                            <span>Tailored Resume (latest generated)</span>
-                        </label>
-                        <label class="resume-option">
-                            <input type="radio" name="autofillResumeSource" value="master">
-                            <span>Master Resume</span>
-                        </label>
-                        <label class="resume-option">
-                            <input type="radio" name="autofillResumeSource" value="upload">
-                            <span>Upload Local Resume</span>
-                        </label>
-                    </div>
-                    <div class="resume-upload" id="autofillResumeUpload" style="display: none; margin-top: 8px;">
-                        <input type="file" id="autofillResumeFile" accept=".pdf,.docx">
-                        <small>Supported: PDF, DOCX</small>
-                    </div>
-                    <div class="master-resume-info" id="autofillResumeInfo" style="margin-top: 6px;">
-                        <small>Default source: Tailored Resume</small>
-                    </div>
-                    <div class="resume-upload-format" style="margin-top: 10px;">
-                        <label for="autofillResumeFormat">Upload Format</label>
-                        <select id="autofillResumeFormat">
-                            <option value="pdf" selected>PDF (default)</option>
-                            <option value="docx">DOCX</option>
-                        </select>
-                        <small>Auto-fill upload will always use this format (never TXT).</small>
-                    </div>
-                    <div class="settings-list" style="margin-top: 10px;">
-                        <div class="setting-item">
-                            <div class="setting-info">
-                                <span class="setting-label">Preview Resume Before Upload</span>
-                                <span class="setting-desc">Show ATS/Match and highlighted changes before form upload</span>
-                            </div>
-                            <label class="switch" for="previewBeforeUpload">
-                                <input type="checkbox" id="previewBeforeUpload" checked>
-                                <span class="slider"></span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="form-section">
-                    <h3>Auto Pilot Tailoring Mode</h3>
-                    <p class="section-desc">Controls how AI generates tailored resume content during Auto Pilot.</p>
-                    <div class="resume-options" id="autopilotTailorModeOptions">
-                        <label class="resume-option">
-                            <input type="radio" name="autopilotTailorMode" value="master_preserve" checked>
-                            <span>Master-Based (strictly preserve format/sections)</span>
-                        </label>
-                        <label class="resume-option">
-                            <input type="radio" name="autopilotTailorMode" value="scratch">
-                            <span>From Scratch (optimize aggressively to JD)</span>
-                        </label>
-                    </div>
-                    <div class="master-resume-info" id="autopilotTailorModeInfo" style="margin-top: 6px;">
-                        <small>Current mode: Master-Based (strict preserve)</small>
                     </div>
                 </div>
 
@@ -705,62 +463,75 @@
                 </button>
             </div>
 
-            <!-- Learning Tab (NEW) -->
+            <!-- Learning Tab (REDESIGNED) -->
             <div class="tab-panel" id="learning">
-                <div class="form-section">
-                    <h3>🧠 AI Learning</h3>
-                    <p class="section-desc">The extension learns from your inputs to better fill forms in the future.</p>
-                    
-                    <div class="learning-stats">
-                        <div class="stat-item">
-                            <span class="stat-icon">📚</span>
-                            <span class="stat-info">
-                                <span class="stat-value" id="learnedFieldsCount">0</span>
-                                <span class="stat-label">Learned Fields</span>
-                            </span>
-                        </div>
-                        <div class="stat-item">
-                            <span class="stat-icon">🌐</span>
-                            <span class="stat-info">
-                                <span class="stat-value" id="portalsUsed">0</span>
-                                <span class="stat-label">Portals Used</span>
-                            </span>
+                <!-- Learning Overview Cards -->
+                <div class="learning-overview">
+                    <div class="learning-card learning-card-primary">
+                        <div class="learning-card-icon">🧠</div>
+                        <div class="learning-card-data">
+                            <span class="learning-card-value" id="learnedFieldsCount">0</span>
+                            <span class="learning-card-label">Learned Fields</span>
                         </div>
                     </div>
-                </div>
-
-                <div class="form-section">
-                    <h3>Learned Field Mappings</h3>
-                    <div id="learnedFieldsList" class="learned-fields-list">
-                        <div class="empty-state">
-                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-                                <path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"/>
-                                <path d="M8.5 8.5v.01"/>
-                                <path d="M16 15.5v.01"/>
-                                <path d="M12 12v.01"/>
-                            </svg>
-                            <p>No learned fields yet</p>
-                            <span>Fill forms manually to teach the AI</span>
+                    <div class="learning-card">
+                        <div class="learning-card-icon">🌐</div>
+                        <div class="learning-card-data">
+                            <span class="learning-card-value" id="portalsUsed">0</span>
+                            <span class="learning-card-label">Portals</span>
+                        </div>
+                    </div>
+                    <div class="learning-card">
+                        <div class="learning-card-icon">🎯</div>
+                        <div class="learning-card-data">
+                            <span class="learning-card-value" id="learnedAccuracy">--</span>
+                            <span class="learning-card-label">Accuracy</span>
                         </div>
                     </div>
                 </div>
 
-                <div class="form-section" id="unknownFieldsSection" style="display: none;">
-                    <h3>🧩 Action Needed: Unfilled Fields</h3>
-                    <p class="section-desc">These fields were not auto-filled. Save answers here so similar fields are handled automatically next time.</p>
-                    <div class="unknown-fields-help">
-                        <span>1) Select from options (if shown) or type an answer</span>
-                        <span>2) Save to train autofill for this field pattern</span>
+                <!-- Search & Filter Bar -->
+                <div class="learning-toolbar">
+                    <div class="learning-search">
+                        <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="11" cy="11" r="8"/>
+                            <path d="M21 21l-4.35-4.35"/>
+                        </svg>
+                        <input type="text" id="learnedSearchInput" placeholder="Search learned fields..." class="learning-search-input">
                     </div>
-                    <div id="unknownFieldsSummary" class="unknown-fields-summary"></div>
-                    <div id="unknownFieldsList" class="unknown-fields-list"></div>
-                    <button class="btn btn-primary full-width" id="btnSaveUnknownAnswers" style="margin-top: 10px;">
-                        Save Answers for Future Autofill
-                    </button>
+                    <div class="learning-filter-chips">
+                        <button class="filter-chip active" data-filter="all">All</button>
+                        <button class="filter-chip" data-filter="text">Text</button>
+                        <button class="filter-chip" data-filter="select">Select</button>
+                        <button class="filter-chip" data-filter="radio">Radio</button>
+                        <button class="filter-chip" data-filter="textarea">Textarea</button>
+                        <button class="filter-chip" data-filter="checkbox">Checkbox</button>
+                    </div>
                 </div>
 
-                <div class="form-section">
-                    <h3>Settings</h3>
+                <!-- Learned Fields List -->
+                <div id="learnedFieldsList" class="learned-fields-list">
+                    <div class="empty-state">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"/>
+                            <path d="M8.5 8.5v.01"/>
+                            <path d="M16 15.5v.01"/>
+                            <path d="M12 12v.01"/>
+                        </svg>
+                        <p>No learned fields yet</p>
+                        <span>Fill forms manually and the AI will learn your preferences</span>
+                    </div>
+                </div>
+
+                <!-- Learning Settings -->
+                <div class="form-section learning-settings-section">
+                    <h3>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="3"/>
+                            <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+                        </svg>
+                        Settings
+                    </h3>
                     <div class="settings-list">
                         <div class="setting-item">
                             <div class="setting-info">
@@ -774,8 +545,8 @@
                         </div>
                         <div class="setting-item">
                             <div class="setting-info">
-                                <span class="setting-label">Sync to Python Config</span>
-                                <span class="setting-desc">Save learned fields to project config</span>
+                                <span class="setting-label">Sync to Python Backend</span>
+                                <span class="setting-desc">Sync learned fields with bot's config</span>
                             </div>
                             <label class="switch" for="syncToConfig">
                                 <input type="checkbox" id="syncToConfig" checked>
@@ -785,8 +556,17 @@
                     </div>
                 </div>
 
-                <div class="button-group">
-                    <button class="btn btn-secondary" id="btnExportLearned">
+                <!-- Action Buttons -->
+                <div class="learning-actions">
+                    <button class="btn btn-secondary" id="btnImportLearned" title="Import learned fields from JSON">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                            <polyline points="17,8 12,3 7,8"/>
+                            <line x1="12" y1="3" x2="12" y2="15"/>
+                        </svg>
+                        Import
+                    </button>
+                    <button class="btn btn-secondary" id="btnExportLearned" title="Export all learned fields as JSON">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
                             <polyline points="7,10 12,15 17,10"/>
@@ -794,7 +574,7 @@
                         </svg>
                         Export
                     </button>
-                    <button class="btn btn-secondary" id="btnClearLearned">
+                    <button class="btn btn-danger-outline" id="btnClearLearned" title="Clear all learned fields">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                             <polyline points="3,6 5,6 21,6"/>
                             <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
@@ -802,6 +582,8 @@
                         Clear All
                     </button>
                 </div>
+                <!-- Hidden file input for import -->
+                <input type="file" id="learnedImportFile" accept=".json" style="display:none">
             </div>
         </div>
 
@@ -838,8 +620,6 @@
             <div class="modal-footer">
                 <button class="btn btn-secondary" id="btnModalDownloadDocx">Download DOCX</button>
                 <button class="btn btn-secondary" id="btnModalDownloadPdf">Download PDF</button>
-                <button class="btn btn-secondary" id="btnModalOpenDocx">Open DOCX</button>
-                <button class="btn btn-secondary" id="btnModalOpenPdf">Open PDF</button>
                 <button class="btn btn-primary" id="btnUseResume">Use This Resume</button>
             </div>
         </div>
@@ -855,17 +635,10 @@
         <div class="loading-content">
             <div class="loading-spinner"></div>
             <p class="loading-text" id="loadingText">Processing...</p>
-            <div class="loading-progress" id="loadingProgress" style="display: none;">
-                <div class="loading-progress-track">
-                    <div class="loading-progress-bar" id="loadingProgressBar"></div>
-                </div>
-                <p class="loading-progress-text" id="loadingProgressText">0%</p>
-            </div>
         </div>
     </div>
 
     <script src="resume_engine.js"></script>
-    <script src="popup_helpers.js"></script>
     <script src="popup.js"></script>
 </body>
 </html>
