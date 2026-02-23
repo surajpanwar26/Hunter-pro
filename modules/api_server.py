@@ -18,7 +18,7 @@ import re
 import json
 import html
 import tempfile
-from datetime import datetime
+from datetime import datetime, timezone
 from difflib import SequenceMatcher
 from typing import Optional, Any
 
@@ -37,7 +37,10 @@ from flask import Flask, request, jsonify, send_file  # noqa: E402
 from flask_cors import CORS  # noqa: E402
 
 app = Flask(__name__)
-CORS(app, origins=["chrome-extension://*", "http://localhost:*"])
+# CORS: Allow localhost for development and Chrome extension origins.
+# For production, replace the extension wildcard with your specific extension ID:
+# e.g., "chrome-extension://your-extension-id-here"
+CORS(app, origins=["http://127.0.0.1:5001", "http://localhost:5001", "chrome-extension://*"])
 
 EXTENSION_LEARNING_FILE = os.path.join(PROJECT_ROOT, "config", "extension_learning_sync.json")
 LEARNED_ANSWERS_FILE = os.path.join(PROJECT_ROOT, "config", "learned_answers.json")
@@ -154,11 +157,11 @@ def _extract_skills_from_jd(jd_text: str) -> dict:
 def _sanitize_jd_text(value: str) -> str:
     text = str(value or "").replace("\r", "\n")
     for _ in range(2):
-        had_markup = bool(re.search(r"<[^>]+>|&lt;\\/?[a-z][^&]*&gt;", text, flags=re.IGNORECASE))
+        had_markup = bool(re.search(r"<[^>]+>|&lt;/?[a-z][^&]*&gt;", text, flags=re.IGNORECASE))
         text = html.unescape(text)
-        text = re.sub(r"(?is)<(script|style).*?>.*?</\\1>", " ", text)
-        text = re.sub(r"(?is)<br\\s*/?>", "\n", text)
-        text = re.sub(r"(?is)</p\\s*>", "\n", text)
+        text = re.sub(r"(?is)<(script|style).*?>.*?</\1>", " ", text)
+        text = re.sub(r"(?is)<br\s*/?>", "\n", text)
+        text = re.sub(r"(?is)</p\s*>", "\n", text)
         text = re.sub(r"(?is)<[^>]+>", " ", text)
         if not had_markup:
             break
@@ -203,7 +206,7 @@ def _save_extension_learning(learned_fields: dict, custom_answers: dict) -> None
     payload = {
         "learnedFields": learned_fields or {},
         "customAnswers": custom_answers or {},
-        "updatedAt": datetime.utcnow().isoformat(timespec="seconds") + "Z",
+        "updatedAt": datetime.now(tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     os.makedirs(os.path.dirname(EXTENSION_LEARNING_FILE), exist_ok=True)
     with open(EXTENSION_LEARNING_FILE, "w", encoding="utf-8") as file_obj:

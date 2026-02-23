@@ -4,8 +4,16 @@ from config.settings import showAiErrorAlerts
 from modules.helpers import print_lg, critical_error_log, convert_to_json
 from modules.ai.prompts import *
 from modules.retry_policy import retry, classify_error, RetryExhausted
-from pyautogui import confirm
 from typing import Literal
+
+
+def _confirm_safe(*args, **kwargs):
+    """Wrapper for pyautogui.confirm that fails gracefully in headless mode."""
+    try:
+        from pyautogui import confirm
+        return confirm(*args, **kwargs)
+    except Exception:
+        return None
 
 
 def _emit_event(event: str, data: dict | None = None) -> None:
@@ -61,7 +69,7 @@ def gemini_create_client():
         error_message = "Error occurred while configuring Gemini client. Make sure your API key and model name are correct."
         critical_error_log(error_message, e)
         if showAiErrorAlerts:
-            if "Pause AI error alerts" == confirm(f"{error_message}\n{str(e)}", "Gemini Connection Error", ["Pause AI error alerts", "Okay Continue"]):
+            if "Pause AI error alerts" == _confirm_safe(f"{error_message}\n{str(e)}", "Gemini Connection Error", ["Pause AI error alerts", "Okay Continue"]):
                 showAiErrorAlerts = False
         return None
 
@@ -148,7 +156,7 @@ def gemini_extract_skills(model, job_description: str) -> list[str] | None:
     except Exception as e:
         _emit_event("jd_analysis_failed", {"provider": "gemini", "error": str(e)})
         critical_error_log("Error occurred while extracting skills with Gemini!", e)
-        return {"error": str(e)}
+        return None  # Return None on error — callers check for None
 
 def gemini_answer_question(
     model,
@@ -185,4 +193,4 @@ def gemini_answer_question(
     except Exception as e:
         _emit_event("form_filling_failed", {"provider": "gemini", "error": str(e)})
         critical_error_log("Error occurred while answering question with Gemini!", e)
-        return {"error": str(e)}
+        return ""  # Return empty string, not dict — callers expect str for form filling

@@ -200,7 +200,9 @@ def get_education() -> dict:
 
 def flush():
     """Force-save if there are unsaved changes. Call at end of session."""
-    if _dirty:
+    with _lock:
+        needs_save = _dirty
+    if needs_save:
         save()
 
 

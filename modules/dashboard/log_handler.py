@@ -8,6 +8,7 @@ _log_queue: "queue.Queue[str]" = queue.Queue()
 _event_queue: "queue.Queue[dict]" = queue.Queue()
 _subscribers: list[Callable[[str], None]] = []
 _event_subscribers: list[Callable[[dict], None]] = []
+_sub_lock = threading.Lock()  # Protects subscriber list mutations
 
 
 def publish_event(event: str, data: Optional[dict] = None, source: str = "system") -> None:
@@ -58,23 +59,27 @@ def publish(msg: str, tag: Optional[str] = None, meta: Optional[dict] = None) ->
 
 def subscribe(cb: Callable[[str], None]) -> None:
     """Subscribe a callback(msg) to receive all new messages."""
-    if cb not in _subscribers:
-        _subscribers.append(cb)
+    with _sub_lock:
+        if cb not in _subscribers:
+            _subscribers.append(cb)
 
 
 def unsubscribe(cb: Callable[[str], None]) -> None:
-    if cb in _subscribers:
-        _subscribers.remove(cb)
+    with _sub_lock:
+        if cb in _subscribers:
+            _subscribers.remove(cb)
 
 
 def subscribe_events(cb: Callable[[dict], None]) -> None:
-    if cb not in _event_subscribers:
-        _event_subscribers.append(cb)
+    with _sub_lock:
+        if cb not in _event_subscribers:
+            _event_subscribers.append(cb)
 
 
 def unsubscribe_events(cb: Callable[[dict], None]) -> None:
-    if cb in _event_subscribers:
-        _event_subscribers.remove(cb)
+    with _sub_lock:
+        if cb in _event_subscribers:
+            _event_subscribers.remove(cb)
 
 
 def get_queue() -> "queue.Queue[str]":

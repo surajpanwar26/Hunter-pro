@@ -24,8 +24,17 @@ import threading
 from time import sleep
 from random import randint
 from datetime import datetime, timedelta
-from pyautogui import alert
 from pprint import pprint
+
+# Lazy import pyautogui to avoid crash in headless environments
+def _alert_safe(*args, **kwargs):
+    """Wrapper for pyautogui.alert that fails gracefully in headless mode."""
+    try:
+        from pyautogui import alert as _pyautogui_alert
+        return _pyautogui_alert(*args, **kwargs)
+    except Exception:
+        print(f"[GUI Alert skipped - headless mode]: {args[0] if args else ''}")
+        return None
 
 from config.settings import logs_folder_path
 
@@ -195,7 +204,7 @@ def print_lg(*msgs: str | dict, end: str = "\n", pretty: bool = False, flush: bo
             except ImportError:
                 pass
             try:
-                alert(f"log.txt in {logs_folder_path} is open or is occupied by another program! Please close it! {trail}", "Failed Logging")
+                _alert_safe(f"log.txt in {logs_folder_path} is open or is occupied by another program! Please close it! {trail}", "Failed Logging")
             except Exception:
                 print(f"Logging error: {e}")
             if not from_critical:
@@ -252,7 +261,6 @@ def manual_login_retry(is_logged_in: callable, limit: int = 2) -> None:
     '''
     count = 0
     while not is_logged_in():
-        from pyautogui import alert
         print_lg("Seems like you're not logged in!")
         button = "Confirm Login"
         message = 'After you successfully Log In, please click "{}" button below.'.format(button)
@@ -260,7 +268,7 @@ def manual_login_retry(is_logged_in: callable, limit: int = 2) -> None:
             button = "Skip Confirmation"
             message = 'If you\'re seeing this message even after you logged in, Click "{}". Seems like auto login confirmation failed!'.format(button)
         count += 1
-        if alert(message, "Login Required", button) and count > limit: return
+        if _alert_safe(message, "Login Required", button) and count > limit: return
 
 
 

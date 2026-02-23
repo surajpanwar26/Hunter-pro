@@ -24,11 +24,7 @@
     "select_answers": {
         "Email Address": "surajpanwar26@gmail.com",
         "Phone country code": "India (+91)",
-        "Country": "India",
-        "Email address": "Yes",
-        "Are you currently SC Cleared? ": "Yes",
-        "If no, is there anything stopping you from going through SC clearance? ": "Yes",
-        "work author": "Yes"
+        "Country": "India"
     },
     "radio_answers": {
         "Will you now or in the future require sponsorship for employment visa status? [  \"Yes\"<Yes>, \"No\"<No>,": "Yes",
@@ -46,13 +42,10 @@
         "end_date": "06/2022"
     },
     "dropdown_mappings": {
-        "email address": "Yes",
+        "email address": "surajpanwar26@gmail.com",
         "email": "surajpanwar26@gmail.com",
         "phone country code": "India (+91)",
         "country code": "India (+91)",
-        "mobile phone country code": "India (+91)",
-        "are you currently sc cleared? ": "Yes",
-        "if no, is there anything stopping you from going through sc clearance? ": "Yes",
-        "work author": "Yes"
+        "mobile phone country code": "India (+91)"
     }
 }

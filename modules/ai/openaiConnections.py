@@ -15,16 +15,23 @@ version:    26.01.20.5.08
 '''
 
 
-from config.secrets import *
+from config.secrets import use_AI, llm_api_url, llm_api_key, llm_model, stream_output, llm_spec
 from config.settings import showAiErrorAlerts
 from config.personals import ethnicity, gender, disability_status, veteran_status
-from config.questions import *
+from config.questions import user_information_all
 from config.search import security_clearance, did_masters
 
 from modules.helpers import print_lg, critical_error_log, convert_to_json
 from modules.ai.prompts import *
 
-from pyautogui import confirm
+def _confirm_safe(*args, **kwargs):
+    """Wrapper for pyautogui.confirm that fails gracefully in headless mode."""
+    try:
+        from pyautogui import confirm
+        return confirm(*args, **kwargs)
+    except Exception:
+        return None
+
 from openai import OpenAI
 from openai.types.model import Model
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
@@ -57,7 +64,7 @@ def ai_error_alert(message: str, stackTrace: str, title: str = "AI Connection Er
     """
     global showAiErrorAlerts
     if showAiErrorAlerts:
-        if "Pause AI error alerts" == confirm(f"{message}{stackTrace}\n", title, ["Pause AI error alerts", "Okay Continue"]):
+        if "Pause AI error alerts" == _confirm_safe(f"{message}{stackTrace}\n", title, ["Pause AI error alerts", "Okay Continue"]):
             showAiErrorAlerts = False
     critical_error_log(message, stackTrace)
 

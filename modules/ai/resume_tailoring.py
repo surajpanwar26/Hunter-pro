@@ -845,7 +845,10 @@ def _call_ai_provider(provider: str, prompt: str, client: Optional[object] = Non
             from modules.ai.geminiConnections import gemini_completion, gemini_create_client
             if client is None:
                 client = gemini_create_client()
-            return str(gemini_completion(client, prompt, is_json=False))
+            result = gemini_completion(client, prompt, is_json=False)
+            if isinstance(result, dict) and "error" in result:
+                raise ValueError(f"Gemini API error: {result['error']}")
+            return str(result)
 
         if provider == "groq":
             # Groq uses OpenAI-compatible API (FREE & FAST!)
@@ -946,6 +949,8 @@ def _tailor_paragraphs_with_ai(
             if client is None:
                 client = gemini_create_client()
             result = gemini_completion(client, prompt, is_json=True)
+            if isinstance(result, dict) and "error" in result:
+                raise ValueError(f"Gemini API error: {result['error']}")
             return json.loads(str(result))
 
         if provider == "groq":

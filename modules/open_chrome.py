@@ -58,9 +58,9 @@ def createChromeSession(isRetry: bool = False):
     
     # === ENHANCED ANTI-DETECTION OPTIONS ===
     # These help bypass LinkedIn's automation detection
-    options.add_argument("--disable-web-security")  # May help with CSP issues
-    options.add_argument("--allow-running-insecure-content")
-    options.add_argument("--disable-features=IsolateOrigins,site-per-process")
+    # Removed --disable-web-security (security risk: disables Same-Origin Policy)
+    # Removed --allow-running-insecure-content (security risk)
+    # Removed --disable-features=IsolateOrigins,site-per-process (security risk)
     # Set realistic window size
     options.add_argument("--window-size=1920,1080")
     # Add language to appear more human

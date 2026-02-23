@@ -290,9 +290,8 @@ click_gap = 20                       # Enter max allowed secs to wait approximat
 # If you want to see Chrome running then set run_in_background as False (May reduce performance). 
 run_in_background = False           # True or False, Note: True or False are case-sensitive ,   If True, this will make pause_at_failed_question, pause_before_submit and run_in_background as False
 
-# Pause before submit for manual review (can be disabled from dashboard)
-pause_before_submit = False         # True = Ask for confirmation before submitting, False = Auto-submit
-pause_at_failed_question = False    # True = Pause when question can't be answered, False = Skip/fail
+# Pause settings are defined in config/questions.py to avoid duplicate definitions.
+# pause_before_submit and pause_at_failed_question - edit them in config/questions.py
 
 # If you want to disable extensions then set disable_extensions as True (Better for performance)
 disable_extensions = False          # True or False, Note: True or False are case-sensitive

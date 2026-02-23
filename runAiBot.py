@@ -44,6 +44,15 @@ from config.secrets import use_AI, username, password, ai_provider
 from config.settings import *
 from config import settings as settings_module  # For getattr access to dynamic settings
 
+# Re-import from personals to guarantee user's personal data wins over any residual defaults.
+# This is a safety net — the duplicate definitions have been removed from questions.py,
+# but this explicit import protects against future accidental re-additions.
+from config.personals import (
+    years_of_experience, desired_salary, current_ctc, notice_period,
+    require_visa, us_citizenship, linkedIn, website, linkedin_headline,
+    linkedin_summary, cover_letter, recent_employer, confidence_level,
+)
+
 from modules.open_chrome import *
 # Import session management functions explicitly
 from modules.open_chrome import set_auto_reset_allowed, is_session_valid
@@ -3381,6 +3390,7 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
         # Check if it's a textarea question
         text_area = try_xp(Question, ".//textarea", False)
         if text_area:
+            do_actions = False  # Initialize for textarea scope (was missing, caused NameError)
             label = try_xp(Question, ".//label[@for]", False)
             label_org = label.text if label else "Unknown"
             label = label_org.lower()

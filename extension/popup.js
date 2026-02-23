@@ -5011,16 +5011,21 @@ async function loadMasterResume() {
 // ================================
 async function init() {
     try {
-        await loadUserData();
-        await loadSettings();
-        await loadHistory();
-        await loadLearnedFields();
-        await hydrateLearnedFromBackend();
+        // Parallelize independent data loads for faster startup
+        await Promise.all([
+            loadUserData(),
+            loadSettings(),
+            loadHistory(),
+            loadLearnedFields(),
+        ]);
         
-        // Try to load master resume from API server
-        await loadMasterResume();
-        await loadDefaultTailoringInstructions();
-        await refreshPrivacySummary();
+        // These depend on settings/data being loaded
+        await Promise.all([
+            hydrateLearnedFromBackend(),
+            loadMasterResume(),
+            loadDefaultTailoringInstructions(),
+            refreshPrivacySummary(),
+        ]);
         setTailorFailureActionsVisible(false);
         
         // Check current tab and detect portal

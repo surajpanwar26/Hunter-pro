@@ -9,7 +9,6 @@ Author: Suraj Panwar
 
 import os
 import sys
-import json
 import time
 import logging
 import threading
@@ -19,7 +18,7 @@ from typing import Optional, Callable, Dict, List, Any
 from pathlib import Path
 from modules.scheduler_runtime import apply_scheduled_runtime_overrides
 from modules.scheduler_state import load_state, save_scheduler_tick
-from modules.bot_session import new_session, get_session_id
+from modules.bot_session import new_session
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +33,6 @@ class JobScheduler:
         self.config_path = config_path or self._get_default_config_path()
         self.config = self._load_config()
         self._running = False
-        self.running = False  # Public attribute for external access
         self._scheduler_thread: Optional[threading.Thread] = None
         self._stop_event = threading.Event()
         self._current_session_start: Optional[datetime] = None
@@ -49,6 +47,11 @@ class JobScheduler:
         self._state_file = Path("logs/scheduler_state.json")
         self._load_state()
     
+    @property
+    def running(self) -> bool:
+        """Public read-only access to running state."""
+        return self._running
+    
     def _get_default_config_path(self) -> str:
         """Get path to default config file."""
         return os.path.join(os.path.dirname(__file__), '..', 'config', 'pilot_settings.py')
@@ -56,8 +59,10 @@ class JobScheduler:
     def _load_config(self) -> Dict[str, Any]:
         """Load scheduling configuration from settings."""
         try:
-            # Try to import from config module
-            sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            # Ensure project root is on sys.path (idempotent)
+            _project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            if _project_root not in sys.path:
+                sys.path.insert(0, _project_root)
             from config import settings
             from config import pilot_settings
             
@@ -233,7 +238,6 @@ class JobScheduler:
             return
         
         self._running = True
-        self.running = True  # Update public attribute
         self._stop_event.clear()
         
         self._scheduler_thread = threading.Thread(target=self._scheduler_loop, daemon=True)
@@ -249,7 +253,6 @@ class JobScheduler:
             return
         
         self._running = False
-        self.running = False  # Update public attribute
         self._stop_event.set()
         
         if self._scheduler_thread:

@@ -150,7 +150,7 @@ def validate_search() -> None | ValueError | TypeError:
 
 
 
-from config.secrets import *
+from config.secrets import username, password, use_AI, ai_provider, llm_api_url, llm_api_key, llm_model, stream_output
 def validate_secrets() -> None | ValueError | TypeError:
     '''
     Validates all variables in the `/config/secrets.py` file.

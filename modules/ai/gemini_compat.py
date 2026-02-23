@@ -63,13 +63,17 @@ def is_new_sdk() -> bool:
 
 def configure(api_key: str) -> None:
     """Configure the active SDK with an API key."""
+    global _configured_api_key
     if genai is None:
         raise ImportError("No Gemini SDK installed. Run: pip install google-genai")
+    _configured_api_key = api_key
     if _USE_NEW_SDK:
-        # New SDK uses client-based approach
-        pass  # Client is created per-call in new SDK
+        # New SDK uses client-based approach — api_key stored for later use
+        pass
     else:
         genai.configure(api_key=api_key)
+
+_configured_api_key: str | None = None
 
 
 def list_models() -> list[str]:
@@ -77,7 +81,7 @@ def list_models() -> list[str]:
     if genai is None:
         return []
     if _USE_NEW_SDK:
-        client = genai.Client()
+        client = genai.Client(api_key=_configured_api_key) if _configured_api_key else genai.Client()
         return [m.name for m in client.models.list()]
     else:
         return [m.name for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
