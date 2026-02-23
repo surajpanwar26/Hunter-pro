@@ -1104,66 +1104,12 @@
         const expMatch = text.match(/(\d+)\+?\s*(?:years?|yrs?)\s*(?:of\s*)?(?:experience|exp)/i);
         const yearsRequired = expMatch ? parseInt(expMatch[1]) : null;
         
-        // Extract location
-        const locationSelectors = [
-            '.job-details-jobs-unified-top-card__primary-description-container',
-            '.jobs-unified-top-card__workplace-type',
-            '[class*="location"]',
-            '[class*="workplace"]'
-        ];
-        let location = '';
-        for (const sel of locationSelectors) {
-            const el = document.querySelector(sel);
-            if (el && el.textContent.trim()) { location = el.textContent.trim().split('\n')[0].trim(); break; }
-        }
-        if (!location) {
-            const locMatch = text.match(/(?:location|based in|office|headquartered)[\s:]+([^\n,]{3,50}(?:,\s*[A-Z]{2})?)/i);
-            if (locMatch) location = locMatch[1].trim();
-        }
-        
-        // Extract salary
-        let salary = '';
-        const salaryEl = document.querySelector('.salary-main-rail__salary-range, [class*="salary"], [class*="compensation"]');
-        if (salaryEl && salaryEl.textContent.trim()) {
-            salary = salaryEl.textContent.trim();
-        } else {
-            const salaryMatch = text.match(/\$[\d,]+(?:\s*[-–]\s*\$?[\d,]+)?(?:\s*(?:\/yr|per year|annually|\/hour|\/hr|per hour|k))?/i);
-            if (salaryMatch) salary = salaryMatch[0].trim();
-        }
-        
-        // Extract job type
-        let jobType = '';
-        const typeEl = document.querySelector('[class*="job-type"], [class*="employment"], .job-details-jobs-unified-top-card__job-insight--highlight');
-        if (typeEl && typeEl.textContent.trim()) {
-            const typeMatch = typeEl.textContent.match(/\b(full[-\s]?time|part[-\s]?time|contract|remote|hybrid|on[-\s]?site|internship)\b/i);
-            if (typeMatch) jobType = typeMatch[1];
-        }
-        if (!jobType) {
-            const typeMatch = text.match(/\b(full[-\s]?time|part[-\s]?time|contract|remote|hybrid|on[-\s]?site|internship)\b/i);
-            if (typeMatch) jobType = typeMatch[1];
-        }
-        
-        // Extract posted date
-        let postedDate = '';
-        const dateEl = document.querySelector('.jobs-unified-top-card__posted-date, [class*="posted"], time[datetime]');
-        if (dateEl) {
-            postedDate = dateEl.getAttribute('datetime') || dateEl.textContent.trim();
-        }
-        if (!postedDate) {
-            const dateMatch = text.match(/(?:posted|listed)\s*(\d+\s*(?:day|hour|week|month)s?\s*ago|today|yesterday|just now)/i);
-            if (dateMatch) postedDate = dateMatch[0].trim();
-        }
-        
         return {
             jobTitle,
             company,
             description: text,
             skills: [...new Set(skills)],
             yearsRequired,
-            location,
-            salary,
-            jobType,
-            postedDate,
             url: jd.url,
             portal: jd.portal
         };

@@ -197,24 +197,6 @@ if (chrome.commands && chrome.commands.onCommand) {
                 }
             });
         }
-        
-        if (command === 'detect-jd') {
-            chrome.tabs.sendMessage(tab.id, { action: 'detectJD' }, response => {
-                if (response && response.success && response.jobDescription) {
-                    // Store detected JD for popup usage
-                    chrome.storage.local.set({ detectedJobDescription: response.jobDescription });
-                    showNotification(
-                        'JD Detected',
-                        `Found job description (${response.jobDescription.length} chars)`
-                    );
-                } else {
-                    showNotification(
-                        'JD Detection',
-                        'No job description found on this page'
-                    );
-                }
-            });
-        }
     });
 } else {
     console.log('chrome.commands API not available - keyboard shortcuts disabled');

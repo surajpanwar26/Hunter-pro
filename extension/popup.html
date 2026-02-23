@@ -3,179 +3,365 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Hunter Pro</title>
+    <title>Universal Job AutoFill Pro</title>
     <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-    <div class="app">
-        <!-- ====== SIDEBAR RAIL ====== -->
-        <nav class="sidebar">
-            <div class="sidebar-logo">H</div>
-            <button class="nav-btn active" data-panel="home" title="Dashboard">🏠</button>
-            <button class="nav-btn" id="sidebarDetect" title="Detect JD">🔍</button>
-            <button class="nav-btn" id="sidebarResume" title="Resume">📄</button>
-            <button class="nav-btn" data-panel="settings" title="Settings">⚙️</button>
-            <button class="nav-btn" data-panel="learning" title="Learning">🧠</button>
-            <button class="nav-btn" data-panel="history" title="History">📊</button>
-            <div class="sidebar-spacer"></div>
-            <button class="nav-btn" id="helpLink" title="Help">❓</button>
-        </nav>
-
-        <!-- ====== MAIN CONTENT ====== -->
-        <main class="content">
-
-            <!-- ====== HOME PANEL ====== -->
-            <div class="panel active" id="home">
-
-                <!-- Status Badge (hidden, used by JS) -->
-                <div class="status-badge" id="statusBadge" style="display:none;">
-                    <span class="status-dot"></span>
-                    <span class="status-text">Ready</span>
+    <div class="container">
+        <!-- Header -->
+        <header class="header">
+            <div class="logo">
+                <img src="icons/icon48.png" alt="Logo" width="32" height="32">
+                <div class="logo-text">
+                    <h1>AutoFill Pro</h1>
+                    <span class="tagline">Universal Job Application Assistant</span>
                 </div>
+            </div>
+            <div class="status-badge" id="statusBadge">
+                <span class="status-dot"></span>
+                <span class="status-text">Ready</span>
+            </div>
+        </header>
 
-                <!-- Autopilot Bar -->
-                <div class="autopilot-bar" id="autopilotBar">
-                    <span class="ap-label">AUTOPILOT</span>
-                    <label class="ap-toggle">
-                        <input type="checkbox" id="autopilotToggle">
-                        <span class="ap-slider"></span>
-                    </label>
-                    <span class="ap-status" id="apStatus">OFF</span>
+        <!-- Portal Detection Banner -->
+        <div class="portal-banner" id="portalBanner" style="display: none;">
+            <span class="portal-icon">🌐</span>
+            <span class="portal-name" id="portalName">Unknown Portal</span>
+            <span class="portal-status" id="portalStatus">Detecting...</span>
+        </div>
+
+        <!-- Quick Actions -->
+        <section class="quick-actions">
+            <button class="btn btn-primary btn-large" id="btnFillForm">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 5v14M5 12h14"/>
+                </svg>
+                Auto-Fill Form
+            </button>
+            <button class="btn btn-secondary" id="btnAnalyze">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"/>
+                    <path d="M21 21l-4.35-4.35"/>
+                </svg>
+                Analyze
+            </button>
+        </section>
+
+        <!-- JD Detection & Resume Section -->
+        <section class="jd-section" id="jdSection">
+            <div class="jd-header">
+                <h3>📄 Job Description</h3>
+                <div class="jd-header-buttons">
+                    <button class="btn btn-small" id="btnDetectJD">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                            <circle cx="12" cy="12" r="3"/>
+                        </svg>
+                        Auto-Detect
+                    </button>
+                    <button class="btn btn-small btn-secondary" id="btnPasteJD">
+                        📋 Paste JD
+                    </button>
                 </div>
-
-                <!-- Stats Row -->
-                <div class="stats-row">
-                    <div class="stat"><div class="stat-num stat-green" id="statApplied">0</div><div class="stat-lbl">Applied</div></div>
-                    <div class="stat"><div class="stat-num stat-yellow" id="statQueue">0</div><div class="stat-lbl">Queue</div></div>
-                    <div class="stat"><div class="stat-num stat-red" id="statFailed">0</div><div class="stat-lbl">Fails</div></div>
-                    <div class="stat"><div class="stat-num stat-blue" id="statRate">--%</div><div class="stat-lbl">Rate</div></div>
+            </div>
+            
+            <!-- Manual JD Input -->
+            <div class="jd-manual-input" id="jdManualInput" style="display: none;">
+                <textarea id="manualJDText" placeholder="Paste the job description here..." rows="6"></textarea>
+                <div class="jd-manual-actions">
+                    <button class="btn btn-primary btn-small" id="btnAnalyzeManualJD">Analyze JD</button>
+                    <button class="btn btn-secondary btn-small" id="btnCancelManualJD">Cancel</button>
                 </div>
-
-                <!-- Portal Detection Banner -->
-                <div class="portal-banner" id="portalBanner" style="display:none;">
-                    <span class="portal-icon">🌐</span>
-                    <span class="portal-name" id="portalName">Unknown Portal</span>
-                    <span class="portal-status" id="portalStatus">Detecting...</span>
+            </div>
+            
+            <div class="jd-content" id="jdContent" style="display: none;">
+                <div class="jd-preview" id="jdPreview">
+                    <p class="placeholder">Click "Auto-Detect" to extract job description from page, or "Paste JD" to manually enter one</p>
                 </div>
-
-                <!-- JD Intelligence Card -->
-                <div class="jd-card">
-                    <div class="jd-card-header">
-                        <h4>JOB INTELLIGENCE</h4>
-                        <div class="jd-btns">
-                            <button class="btn-sm" id="btnDetectJD">🔍 Detect</button>
-                            <button class="btn-sm" id="btnPasteJD">📋 Paste</button>
-                        </div>
-                    </div>
-
-                    <!-- Manual JD Input -->
-                    <div class="jd-manual" id="jdManualInput" style="display:none;">
-                        <textarea id="manualJDText" placeholder="Paste job description here..." rows="5"></textarea>
-                        <div class="jd-manual-actions">
-                            <button class="btn-pri btn-sm" id="btnAnalyzeManualJD">Analyze</button>
-                            <button class="btn-sec btn-sm" id="btnCancelManualJD">Cancel</button>
-                        </div>
-                    </div>
-
-                    <!-- Structured JD Display -->
-                    <div class="jd-structured" id="jdContent" style="display:none;">
-                        <div class="company-row">
-                            <div class="company-avatar" id="companyAvatar">?</div>
-                            <div class="company-info">
-                                <h3 id="companyName">Company</h3>
-                                <p id="jobRole">Role</p>
-                            </div>
-                        </div>
-                        <div class="meta-grid" id="metaGrid"></div>
-                        <div class="jd-skills" id="jdSkills" style="display:none;">
-                            <div class="skill-tags" id="skillTags"></div>
-                        </div>
-                    </div>
-
-                    <!-- JD Preview (for raw text fallback) -->
-                    <div id="jdPreview" style="display:none;"></div>
-
-                    <!-- Placeholder -->
-                    <div class="jd-placeholder" id="jdPlaceholder">
-                        <p>Click <strong>"Detect"</strong> to extract job info from page</p>
-                    </div>
+                <div class="jd-skills" id="jdSkills" style="display: none;">
+                    <h4>Required Skills</h4>
+                    <div class="skill-tags" id="skillTags"></div>
                 </div>
-
-                <!-- Score Badges -->
-                <div class="scores-row" id="atsSection" style="display:none;">
-                    <div class="score-badge">
-                        <div class="score-val ats" id="atsScoreValue">--</div>
-                        <div class="score-lbl">ATS Score</div>
-                    </div>
-                    <div class="score-badge">
-                        <div class="score-val match" id="matchScoreValue">--</div>
-                        <div class="score-lbl">Job Match</div>
-                    </div>
-                </div>
-
-                <!-- Resume Source -->
-                <div class="resume-source" id="resumeSource" style="display:none;">
+                
+                <!-- Master Resume Selection -->
+                <div class="resume-source" id="resumeSource" style="display: none;">
                     <h4>📁 Resume Source</h4>
                     <div class="resume-options">
                         <label class="resume-option">
                             <input type="radio" name="resumeSource" value="master" checked>
-                            <span>Master Resume</span>
+                            <span>Master Resume (from project)</span>
                         </label>
                         <label class="resume-option">
                             <input type="radio" name="resumeSource" value="upload">
                             <span>Upload Resume</span>
                         </label>
                     </div>
-                    <div class="resume-upload" id="resumeUpload" style="display:none;">
+                    <div class="resume-upload" id="resumeUpload" style="display: none;">
                         <input type="file" id="masterResumeFile" accept=".pdf,.docx,.txt">
-                        <small>PDF, DOCX, TXT</small>
+                        <small>Supported: PDF, DOCX, TXT</small>
                     </div>
                     <div class="master-resume-info" id="masterResumeInfo">
-                        <small>📄 Using: master resume/resume.txt</small>
+                        <small>📄 Using: all resumes/master resume/resume.txt</small>
                     </div>
                 </div>
-
-                <!-- JD Actions -->
-                <div class="jd-actions" id="jdActions" style="display:none;">
-                    <button class="btn-pri" id="btnTailorResume">📄 Tailor Resume</button>
-                    <button class="btn-sec" id="btnReviewResume" style="display:none;">🔍 Review</button>
+                
+                <div class="jd-actions" id="jdActions" style="display: none;">
+                    <button class="btn btn-primary" id="btnTailorResume">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                            <polyline points="14,2 14,8 20,8"/>
+                            <line x1="16" y1="13" x2="8" y2="13"/>
+                            <line x1="16" y1="17" x2="8" y2="17"/>
+                        </svg>
+                        Generate Tailored Resume
+                    </button>
+                    <button class="btn btn-secondary" id="btnReviewResume" style="display: none;">
+                        🔍 Review with AI
+                    </button>
                 </div>
-
+                
                 <!-- AI Review Status -->
-                <div class="ai-review" id="aiReviewStatus" style="display:none;">
+                <div class="ai-review-status" id="aiReviewStatus" style="display: none;">
                     <div class="review-progress">
                         <span class="review-icon">🤖</span>
-                        <span class="review-text" id="reviewText">AI analyzing...</span>
+                        <span class="review-text" id="reviewText">AI Reviewer analyzing...</span>
                     </div>
-                    <div class="review-iterations">
+                    <div class="review-iterations" id="reviewIterations">
                         Iteration: <span id="iterationCount">0</span>/3
                     </div>
                 </div>
+            </div>
+        </section>
 
-                <!-- Resume Actions -->
-                <div class="resume-actions-row" id="resumeActions" style="display:none;">
-                    <button class="btn-sec btn-sm" id="btnPreviewResume">👁 Preview</button>
-                    <button class="btn-sec btn-sm" id="btnDownloadDocx">📥 DOCX</button>
-                    <button class="btn-sec btn-sm" id="btnDownloadPdf">📥 PDF</button>
+        <!-- ATS Score Display -->
+        <section class="ats-section" id="atsSection" style="display: none;">
+            <div class="ats-scores">
+                <div class="score-card ats-score">
+                    <div class="score-ring">
+                        <svg viewBox="0 0 36 36">
+                            <path class="score-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                            <path class="score-fill" id="atsScoreRing" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                        </svg>
+                        <span class="score-value" id="atsScoreValue">--</span>
+                    </div>
+                    <span class="score-label">ATS Score</span>
                 </div>
-
-                <!-- Main Action Buttons -->
-                <div class="actions-row">
-                    <button class="btn-pri" id="btnFillForm">✨ Auto-Fill</button>
-                    <button class="btn-sec" id="btnAnalyze">🔬</button>
+                <div class="score-card match-score">
+                    <div class="score-ring">
+                        <svg viewBox="0 0 36 36">
+                            <path class="score-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                            <path class="score-fill" id="matchScoreRing" stroke-dasharray="0, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"/>
+                        </svg>
+                        <span class="score-value" id="matchScoreValue">--</span>
+                    </div>
+                    <span class="score-label">Job Match</span>
                 </div>
             </div>
+            <div class="resume-actions" id="resumeActions" style="display: none;">
+                <button class="btn btn-secondary" id="btnPreviewResume">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                        <circle cx="12" cy="12" r="3"/>
+                    </svg>
+                    Preview
+                </button>
+                <button class="btn btn-secondary" id="btnDownloadDocx">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                        <polyline points="7,10 12,15 17,10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                    DOCX
+                </button>
+                <button class="btn btn-secondary" id="btnDownloadPdf">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                        <polyline points="14,2 14,8 20,8"/>
+                    </svg>
+                    PDF
+                </button>
+            </div>
+        </section>
 
-            <!-- ====== SETTINGS PANEL ====== -->
-            <div class="panel" id="settings">
-                <div class="panel-title">⚙️ Settings</div>
+        <!-- Tabs -->
+        <nav class="tabs">
+            <button class="tab active" data-tab="profile">Profile</button>
+            <button class="tab" data-tab="settings">Settings</button>
+            <button class="tab" data-tab="learning">Learning</button>
+            <button class="tab" data-tab="history">History</button>
+        </nav>
+
+        <!-- Tab Content -->
+        <div class="tab-content">
+            <!-- Profile Tab -->
+            <div class="tab-panel active" id="profile">
+                <form id="profileForm">
+                    <!-- Personal Info -->
+                    <div class="form-section">
+                        <h3>Personal Information</h3>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="firstName">First Name</label>
+                                <input type="text" id="firstName" placeholder="John">
+                            </div>
+                            <div class="form-group">
+                                <label for="lastName">Last Name</label>
+                                <input type="text" id="lastName" placeholder="Doe">
+                            </div>
+                            <div class="form-group">
+                                <label for="email">Email</label>
+                                <input type="email" id="email" placeholder="john@example.com">
+                            </div>
+                            <div class="form-group">
+                                <label for="phone">Phone</label>
+                                <input type="tel" id="phone" placeholder="+1 234 567 8900">
+                            </div>
+                            <div class="form-group">
+                                <label for="currentCity">Current City</label>
+                                <input type="text" id="currentCity" placeholder="San Francisco, CA">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Work Info -->
+                    <div class="form-section">
+                        <h3>Work Information</h3>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="currentCompany">Current Company</label>
+                                <input type="text" id="currentCompany" placeholder="Acme Inc.">
+                            </div>
+                            <div class="form-group">
+                                <label for="currentTitle">Current Title</label>
+                                <input type="text" id="currentTitle" placeholder="Software Engineer">
+                            </div>
+                            <div class="form-group">
+                                <label for="yearsExperience">Years of Experience</label>
+                                <input type="number" id="yearsExperience" placeholder="5" min="0" max="50">
+                            </div>
+                            <div class="form-group">
+                                <label for="expectedSalary">Expected Salary</label>
+                                <input type="text" id="expectedSalary" placeholder="150000">
+                            </div>
+                            <div class="form-group">
+                                <label for="noticePeriod">Notice Period</label>
+                                <input type="text" id="noticePeriod" placeholder="2 weeks">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Links -->
+                    <div class="form-section">
+                        <h3>Profile Links</h3>
+                        <div class="form-grid">
+                            <div class="form-group full-width">
+                                <label for="linkedinUrl">LinkedIn URL</label>
+                                <input type="url" id="linkedinUrl" placeholder="https://linkedin.com/in/johndoe">
+                            </div>
+                            <div class="form-group">
+                                <label for="portfolioUrl">Portfolio</label>
+                                <input type="url" id="portfolioUrl" placeholder="https://johndoe.com">
+                            </div>
+                            <div class="form-group">
+                                <label for="githubUrl">GitHub</label>
+                                <input type="url" id="githubUrl" placeholder="https://github.com/johndoe">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Common Questions -->
+                    <div class="form-section">
+                        <h3>Common Questions</h3>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="workAuthorization">Work Authorization</label>
+                                <select id="workAuthorization">
+                                    <option value="yes">Yes - Authorized</option>
+                                    <option value="no">No - Not Authorized</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="sponsorship">Need Sponsorship?</label>
+                                <select id="sponsorship">
+                                    <option value="no">No</option>
+                                    <option value="yes">Yes</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="remoteWork">Open to Remote?</label>
+                                <select id="remoteWork">
+                                    <option value="yes">Yes</option>
+                                    <option value="no">No</option>
+                                </select>
+                            </div>
+                            <div class="form-group">
+                                <label for="willingToRelocate">Willing to Relocate?</label>
+                                <select id="willingToRelocate">
+                                    <option value="yes">Yes</option>
+                                    <option value="no">No</option>
+                                </select>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Education -->
+                    <div class="form-section">
+                        <h3>Education</h3>
+                        <div class="form-grid">
+                            <div class="form-group">
+                                <label for="degree">Degree</label>
+                                <input type="text" id="degree" placeholder="Bachelor's">
+                            </div>
+                            <div class="form-group">
+                                <label for="major">Major</label>
+                                <input type="text" id="major" placeholder="Computer Science">
+                            </div>
+                            <div class="form-group">
+                                <label for="school">School</label>
+                                <input type="text" id="school" placeholder="MIT">
+                            </div>
+                            <div class="form-group">
+                                <label for="graduationYear">Graduation Year</label>
+                                <input type="number" id="graduationYear" placeholder="2020" min="1950" max="2030">
+                            </div>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary full-width">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+                            <polyline points="17,21 17,13 7,13 7,21"/>
+                            <polyline points="7,3 7,8 15,8"/>
+                        </svg>
+                        Save Profile
+                    </button>
+                    
+                    <div class="import-section" style="margin-top: 12px; padding-top: 12px; border-top: 1px solid #e5e5e5;">
+                        <p style="font-size: 11px; color: #666; margin-bottom: 8px; text-align: center;">
+                            📁 Import profile from config file (run config_loader.py first)
+                        </p>
+                        <input type="file" id="importConfig" accept=".json" style="display: none;">
+                        <button type="button" class="btn btn-secondary full-width" id="btnImportConfig">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                                <polyline points="17,8 12,3 7,8"/>
+                                <line x1="12" y1="3" x2="12" y2="15"/>
+                            </svg>
+                            Import from Config File
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Settings Tab -->
+            <div class="tab-panel" id="settings">
                 <div class="form-section">
                     <h3>Auto-Fill Settings</h3>
                     <div class="settings-list">
                         <div class="setting-item">
                             <div class="setting-info">
                                 <span class="setting-label">Auto-detect Easy Apply</span>
-                                <span class="setting-desc">Detect when Easy Apply modal opens</span>
+                                <span class="setting-desc">Automatically detect when Easy Apply modal opens</span>
                             </div>
                             <label class="switch" for="autoDetect">
                                 <input type="checkbox" id="autoDetect" checked>
@@ -185,7 +371,7 @@
                         <div class="setting-item">
                             <div class="setting-info">
                                 <span class="setting-label">Auto-fill on Detection</span>
-                                <span class="setting-desc">Automatically fill when detected</span>
+                                <span class="setting-desc">Automatically fill forms when detected</span>
                             </div>
                             <label class="switch" for="autoFill">
                                 <input type="checkbox" id="autoFill">
@@ -195,7 +381,7 @@
                         <div class="setting-item">
                             <div class="setting-info">
                                 <span class="setting-label">Show Notifications</span>
-                                <span class="setting-desc">Desktop notifications on fill</span>
+                                <span class="setting-desc">Show desktop notifications on fill complete</span>
                             </div>
                             <label class="switch" for="showNotifications">
                                 <input type="checkbox" id="showNotifications" checked>
@@ -205,7 +391,7 @@
                         <div class="setting-item">
                             <div class="setting-info">
                                 <span class="setting-label">Debug Mode</span>
-                                <span class="setting-desc">Console logging for troubleshooting</span>
+                                <span class="setting-desc">Enable console logging for troubleshooting</span>
                             </div>
                             <label class="switch" for="debugMode">
                                 <input type="checkbox" id="debugMode">
@@ -214,6 +400,7 @@
                         </div>
                     </div>
                 </div>
+
                 <div class="form-section">
                     <h3>Fill Behavior</h3>
                     <div class="form-grid">
@@ -227,64 +414,102 @@
                         </div>
                     </div>
                 </div>
-                <button class="btn-sec full-width" id="btnResetSettings">Reset to Defaults</button>
-                <button class="btn-pri full-width" id="btnRefreshFromConfig" style="margin-top:8px;">🔄 Refresh from Config</button>
-                <p class="hint-text">Clears storage and reloads from user_config.json</p>
+
+                <button class="btn btn-secondary full-width" id="btnResetSettings">
+                    Reset to Defaults
+                </button>
+                
+                <button class="btn btn-primary full-width" id="btnRefreshFromConfig" style="margin-top: 10px; background: linear-gradient(135deg, #10b981, #059669);">
+                    🔄 Refresh from Project Config
+                </button>
+                <p style="font-size: 11px; color: #6b7280; text-align: center; margin-top: 5px;">
+                    Clears storage and reloads from user_config.json
+                </p>
             </div>
 
-            <!-- ====== LEARNING PANEL ====== -->
-            <div class="panel" id="learning">
-                <div class="panel-title">🧠 Learning</div>
-                <div class="learning-overview">
-                    <div class="learning-card learning-card-primary">
-                        <div class="learning-card-icon">🧠</div>
-                        <div class="learning-card-data">
-                            <span class="learning-card-value" id="learnedFieldsCount">0</span>
-                            <span class="learning-card-label">Learned</span>
-                        </div>
+            <!-- History Tab -->
+            <div class="tab-panel" id="history">
+                <div class="history-stats">
+                    <div class="stat-card">
+                        <span class="stat-value" id="totalFilled">0</span>
+                        <span class="stat-label">Forms Filled</span>
                     </div>
-                    <div class="learning-card">
-                        <div class="learning-card-icon">🌐</div>
-                        <div class="learning-card-data">
-                            <span class="learning-card-value" id="portalsUsed">0</span>
-                            <span class="learning-card-label">Portals</span>
-                        </div>
+                    <div class="stat-card">
+                        <span class="stat-value" id="fieldsFilled">0</span>
+                        <span class="stat-label">Fields Filled</span>
                     </div>
-                    <div class="learning-card">
-                        <div class="learning-card-icon">🎯</div>
-                        <div class="learning-card-data">
-                            <span class="learning-card-value" id="learnedAccuracy">--</span>
-                            <span class="learning-card-label">Accuracy</span>
+                    <div class="stat-card">
+                        <span class="stat-value" id="timeSaved">0</span>
+                        <span class="stat-label">Minutes Saved</span>
+                    </div>
+                </div>
+
+                <div class="form-section">
+                    <h3>Recent Activity</h3>
+                    <div id="historyList" class="history-list">
+                        <div class="empty-state">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <circle cx="12" cy="12" r="10"/>
+                                <polyline points="12,6 12,12 16,14"/>
+                            </svg>
+                            <p>No activity yet</p>
+                            <span>Start filling forms to see your history</span>
                         </div>
                     </div>
                 </div>
-                <div class="learning-toolbar">
-                    <div class="learning-search">
-                        <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-                        <input type="text" id="learnedSearchInput" placeholder="Search fields..." class="learning-search-input">
-                    </div>
-                    <div class="learning-filter-chips">
-                        <button class="filter-chip active" data-filter="all">All</button>
-                        <button class="filter-chip" data-filter="text">Text</button>
-                        <button class="filter-chip" data-filter="select">Select</button>
-                        <button class="filter-chip" data-filter="radio">Radio</button>
-                        <button class="filter-chip" data-filter="textarea">Textarea</button>
-                        <button class="filter-chip" data-filter="checkbox">Checkbox</button>
+
+                <button class="btn btn-secondary full-width" id="btnClearHistory">
+                    Clear History
+                </button>
+            </div>
+
+            <!-- Learning Tab (NEW) -->
+            <div class="tab-panel" id="learning">
+                <div class="form-section">
+                    <h3>🧠 AI Learning</h3>
+                    <p class="section-desc">The extension learns from your inputs to better fill forms in the future.</p>
+                    
+                    <div class="learning-stats">
+                        <div class="stat-item">
+                            <span class="stat-icon">📚</span>
+                            <span class="stat-info">
+                                <span class="stat-value" id="learnedFieldsCount">0</span>
+                                <span class="stat-label">Learned Fields</span>
+                            </span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-icon">🌐</span>
+                            <span class="stat-info">
+                                <span class="stat-value" id="portalsUsed">0</span>
+                                <span class="stat-label">Portals Used</span>
+                            </span>
+                        </div>
                     </div>
                 </div>
-                <div id="learnedFieldsList" class="learned-fields-list">
-                    <div class="empty-state">
-                        <p>No learned fields yet</p>
-                        <span>Fill forms manually and the AI will learn</span>
+
+                <div class="form-section">
+                    <h3>Learned Field Mappings</h3>
+                    <div id="learnedFieldsList" class="learned-fields-list">
+                        <div class="empty-state">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                                <path d="M12 2a10 10 0 1 0 10 10 4 4 0 0 1-5-5 4 4 0 0 1-5-5"/>
+                                <path d="M8.5 8.5v.01"/>
+                                <path d="M16 15.5v.01"/>
+                                <path d="M12 12v.01"/>
+                            </svg>
+                            <p>No learned fields yet</p>
+                            <span>Fill forms manually to teach the AI</span>
+                        </div>
                     </div>
                 </div>
-                <div class="form-section learning-settings-section">
+
+                <div class="form-section">
                     <h3>Settings</h3>
                     <div class="settings-list">
                         <div class="setting-item">
                             <div class="setting-info">
                                 <span class="setting-label">Enable AI Learning</span>
-                                <span class="setting-desc">Learn from manual inputs</span>
+                                <span class="setting-desc">Learn from your manual form inputs</span>
                             </div>
                             <label class="switch" for="enableLearning">
                                 <input type="checkbox" id="enableLearning" checked>
@@ -293,8 +518,8 @@
                         </div>
                         <div class="setting-item">
                             <div class="setting-info">
-                                <span class="setting-label">Sync to Backend</span>
-                                <span class="setting-desc">Sync learned fields with bot</span>
+                                <span class="setting-label">Sync to Python Config</span>
+                                <span class="setting-desc">Save learned fields to project config</span>
                             </div>
                             <label class="switch" for="syncToConfig">
                                 <input type="checkbox" id="syncToConfig" checked>
@@ -303,77 +528,72 @@
                         </div>
                     </div>
                 </div>
-                <div class="learning-actions">
-                    <button class="btn-sec" id="btnImportLearned" title="Import">📥 Import</button>
-                    <button class="btn-sec" id="btnExportLearned" title="Export">📤 Export</button>
-                    <button class="btn-danger" id="btnClearLearned" title="Clear All">🗑 Clear</button>
-                </div>
-                <input type="file" id="learnedImportFile" accept=".json" style="display:none">
-            </div>
 
-            <!-- ====== HISTORY PANEL ====== -->
-            <div class="panel" id="history">
-                <div class="panel-title">📊 History</div>
-                <div class="history-stats">
-                    <div class="stat-card">
-                        <span class="stat-value" id="totalFilled">0</span>
-                        <span class="stat-label">Forms</span>
-                    </div>
-                    <div class="stat-card">
-                        <span class="stat-value" id="fieldsFilled">0</span>
-                        <span class="stat-label">Fields</span>
-                    </div>
-                    <div class="stat-card">
-                        <span class="stat-value" id="timeSaved">0</span>
-                        <span class="stat-label">Min Saved</span>
-                    </div>
+                <div class="button-group">
+                    <button class="btn btn-secondary" id="btnExportLearned">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/>
+                            <polyline points="7,10 12,15 17,10"/>
+                            <line x1="12" y1="15" x2="12" y2="3"/>
+                        </svg>
+                        Export
+                    </button>
+                    <button class="btn btn-secondary" id="btnClearLearned">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3,6 5,6 21,6"/>
+                            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                        </svg>
+                        Clear All
+                    </button>
                 </div>
-                <div class="form-section">
-                    <h3>Recent Activity</h3>
-                    <div id="historyList" class="history-list">
-                        <div class="empty-state">
-                            <p>No activity yet</p>
-                            <span>Start filling forms to see history</span>
-                        </div>
-                    </div>
-                </div>
-                <button class="btn-sec full-width" id="btnClearHistory">Clear History</button>
             </div>
-        </main>
+        </div>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <span>Universal Job AutoFill Pro v3.0</span>
+            <a href="#" id="helpLink">Help</a>
+        </footer>
     </div>
 
-    <!-- ====== ANALYSIS MODAL ====== -->
+    <!-- Analysis Modal -->
     <div class="modal" id="analysisModal">
         <div class="modal-content">
             <div class="modal-header">
                 <h2>Form Analysis</h2>
                 <button class="modal-close" id="closeAnalysis">&times;</button>
             </div>
-            <div class="modal-body" id="analysisContent"></div>
+            <div class="modal-body" id="analysisContent">
+                <!-- Analysis results will be inserted here -->
+            </div>
         </div>
     </div>
 
-    <!-- ====== RESUME PREVIEW MODAL ====== -->
+    <!-- Resume Preview Modal -->
     <div class="modal" id="resumeModal">
         <div class="modal-content modal-large">
             <div class="modal-header">
-                <h2>📄 Tailored Resume</h2>
+                <h2>📄 Tailored Resume Preview</h2>
                 <button class="modal-close" id="closeResume">&times;</button>
             </div>
-            <div class="modal-body" id="resumeContent"></div>
+            <div class="modal-body" id="resumeContent">
+                <!-- Resume preview will be inserted here -->
+            </div>
             <div class="modal-footer">
-                <button class="btn-sec" id="btnModalDownloadDocx">DOCX</button>
-                <button class="btn-sec" id="btnModalDownloadPdf">PDF</button>
-                <button class="btn-pri" id="btnUseResume">Use This Resume</button>
+                <button class="btn btn-secondary" id="btnModalDownloadDocx">Download DOCX</button>
+                <button class="btn btn-secondary" id="btnModalDownloadPdf">Download PDF</button>
+                <button class="btn btn-primary" id="btnUseResume">Use This Resume</button>
             </div>
         </div>
     </div>
 
-    <!-- Toast -->
-    <div class="toast" id="toast"><span class="toast-message"></span></div>
+    <!-- Toast Notification -->
+    <div class="toast" id="toast">
+        <span class="toast-message"></span>
+    </div>
 
     <!-- Loading Overlay -->
-    <div class="loading-overlay" id="loadingOverlay" style="display:none;">
+    <div class="loading-overlay" id="loadingOverlay" style="display: none;">
         <div class="loading-content">
             <div class="loading-spinner"></div>
             <p class="loading-text" id="loadingText">Processing...</p>
