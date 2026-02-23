@@ -2621,7 +2621,9 @@ def smart_easy_apply(modal: WebElement, resume_path: str, questions_handler, wor
             try:
                 from modules.self_learning import get_all_learned
                 all_learned = get_all_learned()
-                for bucket_key in ('dropdown_mappings', 'select_answers', 'text_answers'):
+                # Flatten ALL answer buckets for AnswerEngine
+                for bucket_key in ('dropdown_mappings', 'select_answers', 'text_answers',
+                                   'radio_answers', 'textarea_answers', 'checkbox_answers'):
                     bucket = all_learned.get(bucket_key, {})
                     for k, v in bucket.items():
                         v2_learned[k.strip().lower()] = v
@@ -3223,10 +3225,10 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
                             answer = select.first_selected_option.text
                             randomly_answered_questions.add((f'{label_org} [ {options} ]',"select"))
             questions_list.add((f'{label_org} [ {options} ]', answer, "select", prev_answer))
-            # ===== SELF-LEARNING: Save successful dropdown answer =====
+            # ===== SELF-LEARNING: Save successful select answer =====
+            # Store only in select_answers — no longer double-saving to dropdown_mappings
             if _self_learning_available and answer and answer != prev_answer:
                 sl_learn(label_org, answer, question_type="select", overwrite=True)
-                sl_learn_dropdown(label, answer)
                 print_lg(f"[SelfLearning] 💾 Learned select answer: '{label_org}' → '{answer}'")
             continue
         
@@ -3253,36 +3255,53 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
                 label_org += f' {options_labels[-1]},'
 
             if overwrite_previous_answers or prev_answer is None:
-                if 'citizenship' in label or 'employment eligibility' in label: answer = us_citizenship
-                elif 'veteran' in label or 'protected' in label: answer = veteran_status
-                elif 'disability' in label or 'handicapped' in label: 
-                    answer = disability_status
-                else: answer = answer_common_questions(label,answer)
-                foundOption = try_xp(radio, f".//label[normalize-space()='{answer}']", False)
-                if foundOption: 
-                    actions.move_to_element(foundOption).click().perform()
-                else:    
-                    possible_answer_phrases = ["Decline", "not wish", "don't wish", "Prefer not", "not want"] if answer == 'Decline' else [answer]
-                    ele = options[0]
-                    answer = options_labels[0]
-                    for phrase in possible_answer_phrases:
+                # ===== SELF-LEARNING: Check learned radio answers first =====
+                learned_radio = None
+                if _self_learning_available:
+                    learned_radio = sl_get_answer(label_org, "radio")
+                
+                if learned_radio:
+                    answer = learned_radio
+                    print_lg(f"[SelfLearning] 🧠 Using learned radio answer for '{label_org}': {answer}")
+                    # Try to click the learned option
+                    foundOption = try_xp(radio, f".//label[normalize-space()='{answer}']", False)
+                    if foundOption:
+                        actions.move_to_element(foundOption).click().perform()
+                    else:
+                        # Fuzzy match learned answer against available options
                         for i, option_label in enumerate(options_labels):
-                            if phrase in option_label:
-                                foundOption = options[i]
-                                ele = foundOption
-                                answer = f'Decline ({option_label})' if len(possible_answer_phrases) > 1 else option_label
+                            if answer.lower() in option_label.lower() or option_label.lower() in answer.lower():
+                                actions.move_to_element(options[i]).click().perform()
+                                answer = option_label
+                                foundOption = True
                                 break
-                        if foundOption: break
-                    # if answer == 'Decline':
-                    #     answer = options_labels[0]
-                    #     for phrase in ["Prefer not", "not want", "not wish"]:
-                    #         foundOption = try_xp(radio, f".//label[normalize-space()='{phrase}']", False)
-                    #         if foundOption:
-                    #             answer = f'Decline ({phrase})'
-                    #             ele = foundOption
-                    #             break
-                    actions.move_to_element(ele).click().perform()
-                    if not foundOption: randomly_answered_questions.add((f'{label_org} ]',"radio"))
+                        if not foundOption:
+                            # Learned answer no longer matches available options, fall through
+                            learned_radio = None
+                
+                if not learned_radio:
+                    if 'citizenship' in label or 'employment eligibility' in label: answer = us_citizenship
+                    elif 'veteran' in label or 'protected' in label: answer = veteran_status
+                    elif 'disability' in label or 'handicapped' in label: 
+                        answer = disability_status
+                    else: answer = answer_common_questions(label,answer)
+                    foundOption = try_xp(radio, f".//label[normalize-space()='{answer}']", False)
+                    if foundOption: 
+                        actions.move_to_element(foundOption).click().perform()
+                    else:    
+                        possible_answer_phrases = ["Decline", "not wish", "don't wish", "Prefer not", "not want"] if answer == 'Decline' else [answer]
+                        ele = options[0]
+                        answer = options_labels[0]
+                        for phrase in possible_answer_phrases:
+                            for i, option_label in enumerate(options_labels):
+                                if phrase in option_label:
+                                    foundOption = options[i]
+                                    ele = foundOption
+                                    answer = f'Decline ({option_label})' if len(possible_answer_phrases) > 1 else option_label
+                                    break
+                            if foundOption: break
+                        actions.move_to_element(ele).click().perform()
+                        if not foundOption: randomly_answered_questions.add((f'{label_org} ]',"radio"))
             else: answer = prev_answer
             questions_list.add((label_org+" ]", answer, "radio", prev_answer))
             # ===== SELF-LEARNING: Save radio answer =====
@@ -3411,7 +3430,15 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
             answer = ""
             prev_answer = text_area.get_attribute("value")
             if not prev_answer or overwrite_previous_answers:
-                if 'summary' in label: answer = linkedin_summary
+                # ===== SELF-LEARNING: Check learned textarea answers first =====
+                learned_ta = None
+                if _self_learning_available:
+                    learned_ta = sl_get_answer(label_org, "textarea")
+                
+                if learned_ta:
+                    answer = learned_ta
+                    print_lg(f"[SelfLearning] 🧠 Using learned textarea answer for '{label_org}': {answer[:50]}")
+                elif 'summary' in label: answer = linkedin_summary
                 elif 'cover' in label: answer = cover_letter
                 if answer == "":
                 ##> ------ Yang Li : MARKYangL - Feature ------
@@ -3461,14 +3488,40 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
             answer = answer.text if answer else "Unknown"
             prev_answer = checkbox.is_selected()
             checked = prev_answer
-            if not prev_answer:
+            
+            # ===== SELF-LEARNING: Check learned checkbox state =====
+            learned_cb = None
+            if _self_learning_available:
+                learned_cb = sl_get_answer(label_org, "checkbox")
+            
+            if learned_cb:
+                should_check = learned_cb.lower() in ("checked", "true", "yes")
+                print_lg(f"[SelfLearning] 🧠 Using learned checkbox state for '{label_org}': {learned_cb}")
+                if should_check and not prev_answer:
+                    try:
+                        actions.move_to_element(checkbox).click().perform()
+                        checked = True
+                    except Exception as e:
+                        print_lg("Checkbox click failed!", e)
+                elif not should_check and prev_answer:
+                    try:
+                        actions.move_to_element(checkbox).click().perform()
+                        checked = False
+                    except Exception as e:
+                        print_lg("Checkbox unclick failed!", e)
+                else:
+                    checked = prev_answer
+            elif not prev_answer:
                 try:
                     actions.move_to_element(checkbox).click().perform()
                     checked = True
                 except Exception as e: 
                     print_lg("Checkbox click failed!", e)
-                    pass
+            
             questions_list.add((f'{label} ([X] {answer})', checked, "checkbox", prev_answer))
+            # ===== SELF-LEARNING: Save checkbox state =====
+            if _self_learning_available and checked != prev_answer:
+                sl_learn(label_org, "checked" if checked else "unchecked", question_type="checkbox", overwrite=True)
             continue
 
 
