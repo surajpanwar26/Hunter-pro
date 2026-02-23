@@ -1,4 +1,4 @@
-"""Tabbed PySide6 dashboard for Auto Job Applier.
+"""Tabbed PySide6 dashboard for AI Hunter pro.
 
 Production dashboard with a top-tab layout where the Home page contains
 all settings and configuration controls (similar to the Tkinter dashboard
@@ -11,11 +11,13 @@ Run:
 from __future__ import annotations
 
 import sys
+import csv
+import queue
 from pathlib import Path
 from datetime import datetime
 from functools import partial
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QTimer, Qt
 from PySide6.QtGui import QAction, QFont
 from PySide6.QtWidgets import (
     QApplication,
@@ -33,6 +35,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSpinBox,
     QStatusBar,
+    QSplitter,
     QTabWidget,
     QTableWidget,
     QTableWidgetItem,
@@ -42,11 +45,31 @@ from PySide6.QtWidgets import (
 )
 
 
+class NoWheelComboBox(QComboBox):
+    def wheelEvent(self, event) -> None:  # type: ignore[override]
+        if self.hasFocus():
+            super().wheelEvent(event)
+        else:
+            event.ignore()
+
+
+class NoWheelSpinBox(QSpinBox):
+    def wheelEvent(self, event) -> None:  # type: ignore[override]
+        if self.hasFocus():
+            super().wheelEvent(event)
+        else:
+            event.ignore()
+
+
 class MetricCard(QFrame):
     def __init__(self, title: str, value: str, accent: str) -> None:
         super().__init__()
         self.setObjectName("Card")
+        self.setMinimumHeight(64)
+        self.setMaximumHeight(76)
         layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 8, 10, 8)
+        layout.setSpacing(2)
         title_label = QLabel(title)
         title_label.setObjectName("CardTitle")
         self.value_label = QLabel(value)
@@ -59,17 +82,22 @@ class MetricCard(QFrame):
 class OperatorDashboard(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
-        self.setWindowTitle("Auto Job Applier — Operator Console")
+        self.setWindowTitle("AI Hunter pro — Operator Console")
         self.resize(1700, 1000)
         self._started_at = datetime.now()
+        self._tick_counter = 0
 
-        self._jobs = 124
-        self._applied = 37
-        self._failed = 6
-        self._skipped = 12
+        self._jobs = 0
+        self._applied = 0
+        self._failed = 0
+        self._skipped = 0
+        self._log_queue = None
+        self._event_queue = None
+        self._metrics_refresh_every_ticks = 3
 
         self._build_ui()
         self._apply_styles()
+        self._refresh_runtime_metrics(force=True)
         self._setup_timer()
 
     def _build_ui(self) -> None:
@@ -94,25 +122,24 @@ class OperatorDashboard(QMainWindow):
         frame = QFrame()
         frame.setObjectName("TopBar")
         layout = QHBoxLayout(frame)
-        layout.setContentsMargins(14, 10, 14, 10)
+        layout.setContentsMargins(10, 6, 10, 6)
 
         left = QVBoxLayout()
-        title = QLabel("🚀 Auto Job Applier — Premium Console")
+        title = QLabel("🚀 AI Hunter pro — Premium Console")
         title.setObjectName("HeroTitle")
-        subtitle = QLabel("Modern tabbed workspace • Home-centric settings • Fully interactive")
-        subtitle.setObjectName("HeroSub")
+        left.setContentsMargins(0, 0, 0, 0)
         left.addWidget(title)
-        left.addWidget(subtitle)
         layout.addLayout(left)
 
         layout.addStretch()
 
         self.btn_start = self._mk_button("▶ Start", "BtnSuccess", self._start_bot)
+        self.btn_autopilot = self._mk_button("✈ Autopilot", "BtnSuccess", self._start_autopilot)
         self.btn_stop = self._mk_button("⏹ Stop", "BtnDanger", self._stop_bot)
         self.btn_pause = self._mk_button("⏸ Pause", "BtnWarn", self._pause_bot)
-        self.btn_live = self._mk_button("📺 Live Panel", "BtnInfo", self._toggle_live_panel)
+        self.btn_live = self._mk_button("🧭 Side Panel", "BtnInfo", self._toggle_live_panel)
 
-        for button in [self.btn_start, self.btn_stop, self.btn_pause, self.btn_live]:
+        for button in [self.btn_start, self.btn_autopilot, self.btn_stop, self.btn_pause, self.btn_live]:
             layout.addWidget(button)
 
         return frame
@@ -121,6 +148,8 @@ class OperatorDashboard(QMainWindow):
         row = QWidget()
         layout = QGridLayout(row)
         layout.setContentsMargins(0, 0, 0, 0)
+        layout.setHorizontalSpacing(8)
+        layout.setVerticalSpacing(4)
 
         self.card_jobs = MetricCard("Jobs Found", str(self._jobs), "#38bdf8")
         self.card_applied = MetricCard("Applied", str(self._applied), "#22c55e")
@@ -149,52 +178,110 @@ class OperatorDashboard(QMainWindow):
         page = QWidget()
         root = QVBoxLayout(page)
 
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
+        splitter = QSplitter()
 
-        container = QWidget()
-        content = QVBoxLayout(container)
-        content.setSpacing(10)
+        left = QWidget()
+        left_layout = QVBoxLayout(left)
+        left_layout.setSpacing(8)
+
+        quick_access = QGroupBox("🚀 Quick Access")
+        quick_access.setMaximumHeight(112)
+        quick_layout = QGridLayout(quick_access)
+        quick_layout.setContentsMargins(8, 6, 8, 6)
+        quick_layout.setHorizontalSpacing(6)
+        quick_layout.setVerticalSpacing(4)
+        quick_buttons = [
+            self._mk_button("▶ Start Bot", "BtnSuccess", self._start_bot, height=30),
+            self._mk_button("✈ Start Autopilot", "BtnSuccess", self._start_autopilot, height=30),
+            self._mk_button("⏹ Stop Bot", "BtnDanger", self._stop_bot, height=30),
+            self._mk_button("⏸ Pause Bot", "BtnWarn", self._pause_bot, height=30),
+            self._mk_button("🧭 Open Side Panel", "BtnInfo", self._toggle_live_panel, height=30),
+            self._mk_button("▶ Start Scheduler", "BtnSuccess", self._start_scheduler, height=30),
+            self._mk_button("⏹ Stop Scheduler", "BtnDanger", self._stop_scheduler, height=30),
+        ]
+        for idx, button in enumerate(quick_buttons):
+            quick_layout.addWidget(button, idx // 4, idx % 4)
+        left_layout.addWidget(quick_access)
+
+        settings_scroll = QScrollArea()
+        settings_scroll.setWidgetResizable(True)
+        settings_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.home_scroll = settings_scroll
+
+        settings_container = QWidget()
+        settings_layout = QVBoxLayout(settings_container)
+        settings_layout.setSpacing(8)
 
         home_settings = QGroupBox("⚙️ Settings & Configuration")
         home_settings_layout = QVBoxLayout(home_settings)
-        home_settings_layout.setSpacing(10)
+        home_settings_layout.setSpacing(8)
 
-        home_settings_layout.addWidget(self._settings_bot_behavior())
-        home_settings_layout.addWidget(self._settings_form_filling())
-        home_settings_layout.addWidget(self._settings_resume_tailor())
-        home_settings_layout.addWidget(self._settings_browser_ui())
-        home_settings_layout.addWidget(self._settings_control_alerts())
-        home_settings_layout.addWidget(self._settings_extension())
-        home_settings_layout.addWidget(self._settings_pilot())
-        home_settings_layout.addWidget(self._settings_prefill())
-        home_settings_layout.addWidget(self._settings_scheduler())
-        home_settings_layout.addWidget(self._settings_job_search())
+        settings_grid = QGridLayout()
+        settings_grid.setHorizontalSpacing(8)
+        settings_grid.setVerticalSpacing(8)
+        settings_sections = [
+            self._settings_pilot(),
+            self._settings_scheduler(),
+            self._settings_job_search(),
+            self._settings_bot_behavior(),
+            self._settings_form_filling(),
+            self._settings_resume_tailor(),
+            self._settings_control_alerts(),
+            self._settings_browser_ui(),
+            self._settings_extension(),
+            self._settings_prefill(),
+        ]
+        for idx, section in enumerate(settings_sections):
+            settings_grid.addWidget(section, idx // 2, idx % 2)
+        home_settings_layout.addLayout(settings_grid)
 
-        action_row = QHBoxLayout()
-        action_row.addWidget(self._mk_button("💾 Apply All Settings", "BtnSuccess", self._apply_all_settings))
-        action_row.addWidget(self._mk_button("🔄 Reset Defaults", "BtnWarn", self._reset_defaults))
-        action_row.addWidget(self._mk_button("📤 Export Extension Config", "BtnInfo", self._export_extension_config))
-        action_row.addWidget(self._mk_button("🔁 Reload Extension", "BtnNeutral", self._reload_extension))
+        action_row = QGridLayout()
+        action_row.setHorizontalSpacing(8)
+        action_row.setVerticalSpacing(6)
+        action_row.addWidget(self._mk_button("💾 Apply", "BtnSuccess", self._apply_all_settings, height=30), 0, 0)
+        action_row.addWidget(self._mk_button("🔄 Reset", "BtnWarn", self._reset_defaults, height=30), 0, 1)
+        action_row.addWidget(self._mk_button("📤 Export Ext", "BtnInfo", self._export_extension_config, height=30), 1, 0)
+        action_row.addWidget(self._mk_button("🔁 Reload Ext", "BtnNeutral", self._reload_extension, height=30), 1, 1)
         home_settings_layout.addLayout(action_row)
 
-        content.addWidget(home_settings)
-        content.addWidget(self._build_live_operations())
+        settings_layout.addWidget(home_settings)
+        settings_scroll.setWidget(settings_container)
+        left_layout.addWidget(settings_scroll)
 
-        scroll.setWidget(container)
-        root.addWidget(scroll)
+        right_scroll = QScrollArea()
+        right_scroll.setWidgetResizable(True)
+        right_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        right_scroll.setWidget(self._build_live_operations())
+        right_scroll.setMinimumWidth(360)
+
+        splitter.addWidget(left)
+        splitter.addWidget(right_scroll)
+        splitter.setStretchFactor(0, 7)
+        splitter.setStretchFactor(1, 3)
+        splitter.setSizes([1180, 500])
+
+        root.addWidget(splitter)
         return page
 
     def _build_live_operations(self) -> QWidget:
         section = QWidget()
         root = QVBoxLayout(section)
+        root.setSpacing(8)
 
-        top_row = QHBoxLayout()
+        stream_group = QGroupBox("Live Activity Stream")
+        stream_layout = QVBoxLayout(stream_group)
+        self.log_box = QTextEdit()
+        self.log_box.setReadOnly(True)
+        self.log_box.setMinimumHeight(220)
+        stream_layout.addWidget(self.log_box)
+        root.addWidget(stream_group)
 
         browser_group = QGroupBox("Browser Session")
         browser_layout = QVBoxLayout(browser_group)
         self.browser_preview = QTextEdit()
         self.browser_preview.setReadOnly(True)
+        self.browser_preview.setMinimumHeight(90)
+        self.browser_preview.setMaximumHeight(130)
         self.browser_preview.setPlainText(
             "LinkedIn Browser View\n"
             "- Active tab: Easy Apply jobs\n"
@@ -202,10 +289,9 @@ class OperatorDashboard(QMainWindow):
             "- Status: Ready"
         )
         browser_layout.addWidget(self.browser_preview)
-        top_row.addWidget(browser_group, 2)
+        root.addWidget(browser_group)
 
-        self.live_side_panel = QGroupBox("Live Side Panel")
-        side_layout = QVBoxLayout(self.live_side_panel)
+        details_and_pipeline = QVBoxLayout()
 
         details_group = QGroupBox("Important Details")
         details_layout = QGridLayout(details_group)
@@ -220,27 +306,20 @@ class OperatorDashboard(QMainWindow):
         details_layout.addWidget(self.live_location_value, 2, 1)
 
         self.job_progress = QProgressBar()
-        self.job_progress.setValue(42)
+        self.job_progress.setValue(0)
         details_layout.addWidget(QLabel("Current Job Progress"), 3, 0)
         details_layout.addWidget(self.job_progress, 3, 1)
-        side_layout.addWidget(details_group)
-
-        stream_group = QGroupBox("Live Activity Stream")
-        stream_layout = QVBoxLayout(stream_group)
-        self.log_box = QTextEdit()
-        self.log_box.setReadOnly(True)
-        stream_layout.addWidget(self.log_box)
-        side_layout.addWidget(stream_group)
+        details_and_pipeline.addWidget(details_group, 1)
 
         pipeline = QGroupBox("AI Pipeline")
         pipeline_grid = QGridLayout(pipeline)
 
         self.jd_progress = QProgressBar()
-        self.jd_progress.setValue(60)
+        self.jd_progress.setValue(0)
         self.resume_progress = QProgressBar()
-        self.resume_progress.setValue(35)
+        self.resume_progress.setValue(0)
         self.form_progress = QProgressBar()
-        self.form_progress.setValue(75)
+        self.form_progress.setValue(0)
 
         pipeline_grid.addWidget(QLabel("JD Analysis"), 0, 0)
         pipeline_grid.addWidget(self.jd_progress, 0, 1)
@@ -248,10 +327,8 @@ class OperatorDashboard(QMainWindow):
         pipeline_grid.addWidget(self.resume_progress, 1, 1)
         pipeline_grid.addWidget(QLabel("Form Filler"), 2, 0)
         pipeline_grid.addWidget(self.form_progress, 2, 1)
-
-        side_layout.addWidget(pipeline)
-        top_row.addWidget(self.live_side_panel, 1)
-        root.addLayout(top_row)
+        details_and_pipeline.addWidget(pipeline, 1)
+        root.addLayout(details_and_pipeline)
 
         controls_group = QGroupBox("Live Job Controls")
         controls_layout = QVBoxLayout(controls_group)
@@ -271,7 +348,7 @@ class OperatorDashboard(QMainWindow):
             ("Reset Counters", self._reset_counters),
         ]
         for index, (label, handler) in enumerate(action_buttons):
-            button = self._mk_button(label, "BtnNeutral", handler, height=34)
+            button = self._mk_button(label, "BtnNeutral", handler, height=30)
             grid.addWidget(button, index // 2, index % 2)
         controls_layout.addWidget(actions_group)
         root.addWidget(controls_group)
@@ -288,7 +365,7 @@ class OperatorDashboard(QMainWindow):
             layout.addWidget(self._mk_toggle(label), idx // 3, idx % 3)
 
         layout.addWidget(QLabel("Max Jobs"), 2, 0)
-        spin = QSpinBox()
+        spin = NoWheelSpinBox()
         spin.setRange(0, 500)
         spin.setValue(50)
         spin.valueChanged.connect(lambda value: self._log(f"Max Jobs set to {value}"))
@@ -301,7 +378,7 @@ class OperatorDashboard(QMainWindow):
         layout.addWidget(self._mk_toggle("Smart Form Filler"), 0, 1)
 
         layout.addWidget(QLabel("Delay Multiplier"), 1, 0)
-        combo = QComboBox()
+        combo = NoWheelComboBox()
         combo.addItems(["0.5x", "1.0x", "1.5x", "2.0x"])
         combo.currentTextChanged.connect(lambda text: self._log(f"Delay Multiplier changed to {text}"))
         layout.addWidget(combo, 1, 1)
@@ -313,7 +390,7 @@ class OperatorDashboard(QMainWindow):
             layout.addWidget(self._mk_toggle(label), 0, idx)
 
         layout.addWidget(QLabel("Upload Format"), 1, 0)
-        combo = QComboBox()
+        combo = NoWheelComboBox()
         combo.addItems(["Auto", "PDF", "DOCX"])
         combo.currentTextChanged.connect(lambda text: self._log(f"Upload Format changed to {text}"))
         layout.addWidget(combo, 1, 1)
@@ -339,7 +416,7 @@ class OperatorDashboard(QMainWindow):
             layout.addWidget(self._mk_toggle(label), 0, idx)
 
         layout.addWidget(QLabel("Detection Mode"), 1, 0)
-        combo = QComboBox()
+        combo = NoWheelComboBox()
         combo.addItems(["LinkedIn", "Universal", "Smart Detect"])
         combo.currentTextChanged.connect(lambda text: self._log(f"Detection Mode changed to {text}"))
         layout.addWidget(combo, 1, 1)
@@ -351,20 +428,20 @@ class OperatorDashboard(QMainWindow):
         layout.addWidget(self._mk_toggle("Continue on Error"), 0, 1)
 
         layout.addWidget(QLabel("Resume Mode"), 1, 0)
-        resume_mode = QComboBox()
+        resume_mode = NoWheelComboBox()
         resume_mode.addItems(["tailored", "default", "preselected", "skip"])
         resume_mode.currentTextChanged.connect(lambda text: self._log(f"Pilot Resume Mode changed to {text}"))
         layout.addWidget(resume_mode, 1, 1)
 
         layout.addWidget(QLabel("Delay (sec)"), 1, 2)
-        delay = QSpinBox()
+        delay = NoWheelSpinBox()
         delay.setRange(1, 30)
         delay.setValue(5)
         delay.valueChanged.connect(lambda value: self._log(f"Pilot Delay changed to {value}s"))
         layout.addWidget(delay, 1, 3)
 
         layout.addWidget(QLabel("Max Apps"), 2, 0)
-        max_apps = QSpinBox()
+        max_apps = NoWheelSpinBox()
         max_apps.setRange(0, 500)
         max_apps.setValue(100)
         max_apps.valueChanged.connect(lambda value: self._log(f"Pilot Max Apps changed to {value}"))
@@ -384,13 +461,13 @@ class OperatorDashboard(QMainWindow):
         ]
         for idx, label in enumerate(labels):
             layout.addWidget(QLabel(label), idx // 2, (idx % 2) * 2)
-            combo = QComboBox()
+            combo = NoWheelComboBox()
             combo.addItems(["Yes", "No"])
             combo.currentTextChanged.connect(partial(self._prefill_changed, label))
             layout.addWidget(combo, idx // 2, (idx % 2) * 2 + 1)
 
         layout.addWidget(QLabel("Chrome Wait Time (sec)"), 4, 0)
-        wait = QSpinBox()
+        wait = NoWheelSpinBox()
         wait.setRange(5, 30)
         wait.setValue(10)
         wait.valueChanged.connect(lambda value: self._log(f"Autopilot Chrome Wait Time changed to {value}s"))
@@ -402,27 +479,27 @@ class OperatorDashboard(QMainWindow):
         layout.addWidget(self._mk_toggle("Scheduling Enabled"), 0, 0)
 
         layout.addWidget(QLabel("Type"), 0, 1)
-        schedule_type = QComboBox()
+        schedule_type = NoWheelComboBox()
         schedule_type.addItems(["interval", "daily", "weekly"])
         schedule_type.currentTextChanged.connect(lambda text: self._log(f"Schedule Type changed to {text}"))
         layout.addWidget(schedule_type, 0, 2)
 
         layout.addWidget(QLabel("Interval Hours"), 1, 0)
-        interval = QSpinBox()
+        interval = NoWheelSpinBox()
         interval.setRange(1, 24)
         interval.setValue(4)
         interval.valueChanged.connect(lambda value: self._log(f"Schedule Interval changed to {value}h"))
         layout.addWidget(interval, 1, 1)
 
         layout.addWidget(QLabel("Max Runtime (min)"), 1, 2)
-        runtime = QSpinBox()
+        runtime = NoWheelSpinBox()
         runtime.setRange(10, 480)
         runtime.setValue(120)
         runtime.valueChanged.connect(lambda value: self._log(f"Schedule Runtime changed to {value} min"))
         layout.addWidget(runtime, 1, 3)
 
         layout.addWidget(QLabel("Max Applications"), 2, 0)
-        max_apps = QSpinBox()
+        max_apps = NoWheelSpinBox()
         max_apps.setRange(0, 500)
         max_apps.setValue(50)
         max_apps.valueChanged.connect(lambda value: self._log(f"Schedule Max Applications changed to {value}"))
@@ -448,7 +525,7 @@ class OperatorDashboard(QMainWindow):
         layout.addWidget(self.search_location, 1, 1)
 
         layout.addWidget(QLabel("Date Posted"), 1, 2)
-        posted = QComboBox()
+        posted = NoWheelComboBox()
         posted.addItems(["Past 24 hours", "Past week", "Past month"])
         posted.currentTextChanged.connect(lambda text: self._log(f"Date Posted changed to {text}"))
         layout.addWidget(posted, 1, 3)
@@ -576,7 +653,7 @@ class OperatorDashboard(QMainWindow):
 
         about = QGroupBox("About")
         about_layout = QVBoxLayout(about)
-        about_layout.addWidget(QLabel("Auto Job Applier — PySide6 Operator Dashboard"))
+        about_layout.addWidget(QLabel("AI Hunter pro — PySide6 Operator Dashboard"))
         about_layout.addWidget(QLabel("Home page includes complete settings and configuration controls."))
         root.addWidget(about)
 
@@ -594,6 +671,8 @@ class OperatorDashboard(QMainWindow):
         button = QPushButton(label)
         button.setObjectName(object_name)
         button.setFixedHeight(height)
+        button.setMinimumWidth(96)
+        button.setMaximumWidth(170)
         button.clicked.connect(handler)
         return button
 
@@ -617,12 +696,15 @@ class OperatorDashboard(QMainWindow):
     def _tick(self) -> None:
         now = datetime.now()
         runtime = now - self._started_at
+        self._tick_counter += 1
         self.status_time.setText(f"{now:%Y-%m-%d %H:%M:%S} • Runtime {str(runtime).split('.')[0]}")
 
-        self.job_progress.setValue((self.job_progress.value() + 2) % 101)
-        self.jd_progress.setValue((self.jd_progress.value() + 1) % 101)
-        self.resume_progress.setValue((self.resume_progress.value() + 1) % 101)
-        self.form_progress.setValue((self.form_progress.value() + 2) % 101)
+        self._drain_dashboard_event_queue()
+        self._drain_dashboard_log_queue()
+        if self._tick_counter % self._metrics_refresh_every_ticks == 0:
+            self._refresh_runtime_metrics()
+
+        self._sync_live_panel_window()
 
     def _rate_text(self) -> str:
         total = self._applied + self._failed
@@ -639,6 +721,140 @@ class OperatorDashboard(QMainWindow):
     def _log(self, message: str) -> None:
         timestamp = datetime.now().strftime("%H:%M:%S")
         self.log_box.append(f"[{timestamp}] {message}")
+        if hasattr(self, "live_panel_log_box") and self.live_panel_log_box is not None:
+            self.live_panel_log_box.setPlainText(self.log_box.toPlainText())
+            self.live_panel_log_box.verticalScrollBar().setValue(self.live_panel_log_box.verticalScrollBar().maximum())
+
+    def _drain_dashboard_log_queue(self) -> None:
+        if self._log_queue is None:
+            try:
+                from modules.dashboard import log_handler
+                self._log_queue = log_handler.get_queue()
+            except Exception:
+                return
+
+        try:
+            while True:
+                entry = self._log_queue.get_nowait()
+                self._log(str(entry))
+        except queue.Empty:
+            pass
+
+    def _drain_dashboard_event_queue(self) -> None:
+        if self._event_queue is None:
+            try:
+                from modules.dashboard import log_handler
+                self._event_queue = log_handler.get_event_queue()
+            except Exception:
+                return
+
+        try:
+            while True:
+                payload = self._event_queue.get_nowait()
+                if isinstance(payload, dict):
+                    self._handle_structured_event(payload)
+        except queue.Empty:
+            pass
+        except Exception:
+            pass
+
+    def _handle_structured_event(self, payload: dict) -> None:
+        event = str(payload.get("event", "")).strip().lower()
+        data = payload.get("data") or {}
+
+        if event == "bot_session_started":
+            self.jd_progress.setValue(0)
+            self.resume_progress.setValue(0)
+            self.form_progress.setValue(0)
+            self.job_progress.setValue(0)
+            self._set_status("Autopilot Running")
+
+        elif event == "job_context":
+            title = str(data.get("title") or "-")
+            company = str(data.get("company") or "-")
+            location = str(data.get("location") or "-")
+            self.live_role_value.setText(title)
+            self.live_company_value.setText(company)
+            self.live_location_value.setText(location)
+
+        elif event == "jd_analysis_started":
+            self.jd_progress.setValue(max(self.jd_progress.value(), 20))
+        elif event == "jd_analysis_completed":
+            self.jd_progress.setValue(100)
+
+        elif event == "resume_tailoring_started":
+            self.resume_progress.setValue(max(self.resume_progress.value(), 20))
+        elif event == "resume_tailoring_completed":
+            self.resume_progress.setValue(100)
+
+        elif event == "form_filling_started":
+            self.form_progress.setValue(max(self.form_progress.value(), 25))
+        elif event == "form_filling_completed":
+            self.form_progress.setValue(100)
+
+        elif event == "application_submitted":
+            self.form_progress.setValue(100)
+            self.job_progress.setValue(100)
+            self._refresh_runtime_metrics(force=True)
+
+        elif event == "application_failed":
+            self.form_progress.setValue(max(5, self.form_progress.value() - 20))
+            self._refresh_runtime_metrics(force=True)
+
+    def _count_csv_rows(self, path: Path) -> int:
+        try:
+            if not path.exists():
+                return 0
+            with open(path, "r", encoding="utf-8", errors="replace") as file:
+                reader = csv.reader(file)
+                next(reader, None)
+                return sum(1 for _ in reader)
+        except Exception:
+            return 0
+
+    def _refresh_runtime_metrics(self, force: bool = False) -> None:
+        run_ai_bot = sys.modules.get("runAiBot")
+
+        if run_ai_bot is not None:
+            easy = int(getattr(run_ai_bot, "easy_applied_count", 0) or 0)
+            external = int(getattr(run_ai_bot, "external_jobs_count", 0) or 0)
+            failed = int(getattr(run_ai_bot, "failed_count", 0) or 0)
+            skipped = int(getattr(run_ai_bot, "skip_count", 0) or 0)
+
+            self._applied = easy + external
+            self._failed = failed
+            self._skipped = skipped
+
+            max_jobs = int(getattr(run_ai_bot, "max_jobs_to_process", 0) or 0)
+            processed = self._applied + self._failed + self._skipped
+            self._jobs = max(0, max_jobs - processed) if max_jobs > 0 else 0
+
+            if max_jobs > 0:
+                progress = min(100, int((self._applied / max_jobs) * 100))
+                self.job_progress.setValue(progress)
+
+        else:
+            base = Path("all excels")
+            self._applied = self._count_csv_rows(base / "all_applied_applications_history.csv")
+            self._failed = self._count_csv_rows(base / "all_failed_applications_history.csv")
+            self._jobs = 0
+
+        self._update_cards()
+
+    def _update_pipeline_from_log(self, message: str) -> None:
+        text = message.lower()
+        if "jd" in text or "job description" in text:
+            self.jd_progress.setValue(max(self.jd_progress.value(), 40))
+        if "tailor" in text or "resume" in text:
+            self.resume_progress.setValue(max(self.resume_progress.value(), 55))
+        if "form" in text or "question" in text:
+            self.form_progress.setValue(max(self.form_progress.value(), 70))
+        if "submitted" in text or "apply clicked" in text or "applied" in text:
+            self.jd_progress.setValue(100)
+            self.resume_progress.setValue(100)
+            self.form_progress.setValue(100)
+        if "failed" in text or "error" in text:
+            self.form_progress.setValue(max(10, self.form_progress.value() - 15))
 
     def _set_status(self, text: str) -> None:
         self.status_state.setText(text)
@@ -654,6 +870,10 @@ class OperatorDashboard(QMainWindow):
         self._set_status("Bot Running")
         self._log("Start pressed")
 
+    def _start_autopilot(self) -> None:
+        self._set_status("Autopilot Running")
+        self._log("Start Autopilot pressed")
+
     def _stop_bot(self) -> None:
         self._set_status("Bot Stopped")
         self._log("Stop pressed")
@@ -663,16 +883,152 @@ class OperatorDashboard(QMainWindow):
         self._log("Pause pressed")
 
     def _toggle_live_panel(self) -> None:
-        should_show = not self.live_side_panel.isVisible()
-        self.live_side_panel.setVisible(should_show)
-        if should_show:
-            self.btn_live.setText("📺 Hide Panel")
-            self._set_status("Live Panel Visible")
-            self._log("Live side panel opened")
-        else:
-            self.btn_live.setText("📺 Live Panel")
-            self._set_status("Live Panel Hidden")
-            self._log("Live side panel hidden")
+        if hasattr(self, "live_panel_window") and self.live_panel_window is not None and self.live_panel_window.isVisible():
+            self._close_live_panel_window()
+            return
+
+        self.live_panel_window = QMainWindow(self)
+        self.live_panel_window.setWindowTitle("Side Panel — Live Monitor")
+        self.live_panel_window.resize(430, 860)
+        self._side_panel_anchor = "right"
+
+        container = QWidget()
+        layout = QVBoxLayout(container)
+
+        dock_controls = QHBoxLayout()
+        self.btn_side_move = self._mk_button("⬅ Move Left", "BtnNeutral", self._toggle_side_panel_anchor, height=28)
+        dock_controls.addWidget(self.btn_side_move)
+        dock_controls.addStretch()
+        layout.addLayout(dock_controls)
+
+        panel_browser = QGroupBox("Browser Session")
+        panel_browser_layout = QVBoxLayout(panel_browser)
+        self.live_panel_browser_preview = QTextEdit()
+        self.live_panel_browser_preview.setReadOnly(True)
+        self.live_panel_browser_preview.setMinimumHeight(90)
+        self.live_panel_browser_preview.setMaximumHeight(130)
+        panel_browser_layout.addWidget(self.live_panel_browser_preview)
+        layout.addWidget(panel_browser)
+
+        panel_log = QGroupBox("Live Activity")
+        panel_log_layout = QVBoxLayout(panel_log)
+        self.live_panel_log_box = QTextEdit()
+        self.live_panel_log_box.setReadOnly(True)
+        self.live_panel_log_box.setMinimumHeight(250)
+        panel_log_layout.addWidget(self.live_panel_log_box)
+        layout.addWidget(panel_log)
+
+        panel_details = QGroupBox("Important Details")
+        panel_details_grid = QGridLayout(panel_details)
+        panel_details_grid.addWidget(QLabel("Role"), 0, 0)
+        self.live_panel_role_value = QLabel("-")
+        panel_details_grid.addWidget(self.live_panel_role_value, 0, 1)
+        panel_details_grid.addWidget(QLabel("Company"), 1, 0)
+        self.live_panel_company_value = QLabel("-")
+        panel_details_grid.addWidget(self.live_panel_company_value, 1, 1)
+        panel_details_grid.addWidget(QLabel("Location"), 2, 0)
+        self.live_panel_location_value = QLabel("-")
+        panel_details_grid.addWidget(self.live_panel_location_value, 2, 1)
+        panel_details_grid.addWidget(QLabel("Progress"), 3, 0)
+        self.live_panel_job_progress = QProgressBar()
+        panel_details_grid.addWidget(self.live_panel_job_progress, 3, 1)
+        layout.addWidget(panel_details)
+
+        panel_pipeline = QGroupBox("AI Pipeline")
+        panel_pipeline_grid = QGridLayout(panel_pipeline)
+        panel_pipeline_grid.addWidget(QLabel("JD Analysis"), 0, 0)
+        self.live_panel_jd_progress = QProgressBar()
+        panel_pipeline_grid.addWidget(self.live_panel_jd_progress, 0, 1)
+        panel_pipeline_grid.addWidget(QLabel("Resume Tailoring"), 1, 0)
+        self.live_panel_resume_progress = QProgressBar()
+        panel_pipeline_grid.addWidget(self.live_panel_resume_progress, 1, 1)
+        panel_pipeline_grid.addWidget(QLabel("Form Filler"), 2, 0)
+        self.live_panel_form_progress = QProgressBar()
+        panel_pipeline_grid.addWidget(self.live_panel_form_progress, 2, 1)
+        layout.addWidget(panel_pipeline)
+
+        self.live_panel_window.setCentralWidget(container)
+        self.live_panel_window.destroyed.connect(lambda _: self._close_live_panel_window(reset_only=True))
+        self._sync_live_panel_window()
+        self._position_side_panel_window()
+        self.live_panel_window.show()
+
+        self.btn_live.setText("🧭 Close Side Panel")
+        self._set_status("Side panel opened")
+        self._log("Opened narrow side panel live monitor")
+
+    def _toggle_side_panel_anchor(self) -> None:
+        self._side_panel_anchor = "left" if getattr(self, "_side_panel_anchor", "right") == "right" else "right"
+        if hasattr(self, "btn_side_move") and self.btn_side_move is not None:
+            self.btn_side_move.setText("➡ Move Right" if self._side_panel_anchor == "left" else "⬅ Move Left")
+        self._position_side_panel_window()
+
+    def _position_side_panel_window(self) -> None:
+        if not hasattr(self, "live_panel_window") or self.live_panel_window is None:
+            return
+        frame = self.frameGeometry()
+        panel_w = self.live_panel_window.width()
+        x = frame.left() - panel_w - 8 if getattr(self, "_side_panel_anchor", "right") == "left" else frame.right() + 8
+        y = max(40, frame.top())
+        self.live_panel_window.move(x, y)
+
+    def moveEvent(self, event) -> None:  # type: ignore[override]
+        super().moveEvent(event)
+        self._position_side_panel_window()
+
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        self._position_side_panel_window()
+
+    def _close_live_panel_window(self, reset_only: bool = False) -> None:
+        if not reset_only and hasattr(self, "live_panel_window") and self.live_panel_window is not None:
+            self.live_panel_window.close()
+        self.live_panel_window = None
+        self.live_panel_browser_preview = None
+        self.live_panel_log_box = None
+        self.live_panel_role_value = None
+        self.live_panel_company_value = None
+        self.live_panel_location_value = None
+        self.live_panel_job_progress = None
+        self.live_panel_jd_progress = None
+        self.live_panel_resume_progress = None
+        self.live_panel_form_progress = None
+        self.btn_side_move = None
+        try:
+            self.btn_live.setText("🧭 Side Panel")
+            self._set_status("System Ready")
+        except RuntimeError:
+            pass
+
+    def _sync_live_panel_window(self) -> None:
+        if not hasattr(self, "live_panel_window") or self.live_panel_window is None:
+            return
+        if self.live_panel_browser_preview is not None:
+            self.live_panel_browser_preview.setPlainText(self.browser_preview.toPlainText())
+        if self.live_panel_log_box is not None:
+            self.live_panel_log_box.setPlainText(self.log_box.toPlainText())
+        panel_role = getattr(self, "live_panel_role_value", None)
+        panel_company = getattr(self, "live_panel_company_value", None)
+        panel_location = getattr(self, "live_panel_location_value", None)
+        panel_job_progress = getattr(self, "live_panel_job_progress", None)
+        panel_jd_progress = getattr(self, "live_panel_jd_progress", None)
+        panel_resume_progress = getattr(self, "live_panel_resume_progress", None)
+        panel_form_progress = getattr(self, "live_panel_form_progress", None)
+
+        if panel_role is not None:
+            panel_role.setText(self.live_role_value.text())
+        if panel_company is not None:
+            panel_company.setText(self.live_company_value.text())
+        if panel_location is not None:
+            panel_location.setText(self.live_location_value.text())
+        if panel_job_progress is not None:
+            panel_job_progress.setValue(self.job_progress.value())
+        if panel_jd_progress is not None:
+            panel_jd_progress.setValue(self.jd_progress.value())
+        if panel_resume_progress is not None:
+            panel_resume_progress.setValue(self.resume_progress.value())
+        if panel_form_progress is not None:
+            panel_form_progress.setValue(self.form_progress.value())
 
     def _apply_now(self) -> None:
         self._applied += 1
@@ -699,6 +1055,7 @@ class OperatorDashboard(QMainWindow):
             "- URL: https://www.linkedin.com/jobs/view/123456789\n"
             "- Status: Inspecting posting"
         )
+        self._sync_live_panel_window()
         self._set_status("Job opened in browser panel")
         self._log("Open Job clicked")
 
@@ -828,10 +1185,10 @@ class OperatorDashboard(QMainWindow):
                 background: #121a2f;
                 border: 1px solid #22324a;
                 border-radius: 12px;
-                min-height: 100px;
+                min-height: 64px;
             }
             QLabel#CardTitle { color: #94a3b8; font-size: 12px; }
-            QLabel#CardValue { font-size: 30px; font-weight: 700; }
+            QLabel#CardValue { font-size: 22px; font-weight: 700; }
             QTabWidget#MainTabs::pane {
                 border: 1px solid #22324a;
                 border-radius: 10px;

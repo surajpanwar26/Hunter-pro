@@ -20,6 +20,7 @@ import os
 import csv
 import re
 import time
+import threading
 import pyautogui
 
 # Set CSV field size limit to prevent field size errors
@@ -153,13 +154,130 @@ failed_count = 0
 skip_count = 0
 dailyEasyApplyLimitReached = False
 
+# ===== PER-SESSION RUNTIME CONTEXT =====
+# Bridge: create a session context that co-exists with the globals above.
+# New code should prefer reading/writing through _session_ctx; legacy code
+# still mutates the bare globals and the context is synced at session boundaries.
+try:
+    from modules.bot_session import current_session as _get_session_ctx, new_session as _new_session, get_session_id as _get_session_id
+    _session_ctx = _get_session_ctx()
+except Exception:
+    _session_ctx = None
+    def _get_session_id():
+        return "no-session"
+
+# ===== STUCK / TIMEOUT RECOVERY SYSTEM =====
+# Import timeout settings with safe defaults
+try:
+    from config.settings import per_job_timeout, form_fill_timeout, dialog_auto_dismiss_timeout
+except ImportError:
+    per_job_timeout = 180
+    form_fill_timeout = 120
+    dialog_auto_dismiss_timeout = 15
+
+class JobTimeoutError(Exception):
+    """Raised when a single job application exceeds per_job_timeout."""
+    pass
+
+def _safe_pyautogui_confirm(text, title="", buttons=None, timeout_seconds=None):
+    """
+    Wrapper around pyautogui.confirm that auto-dismisses in pilot/scheduled mode.
+    In pilot mode or when dialog_auto_dismiss_timeout > 0, runs the dialog in a thread 
+    and auto-presses Enter after the timeout to dismiss it.
+    Falls back to first button option (safe default).
+    """
+    if buttons is None:
+        buttons = ["OK"]
+    
+    # Determine effective timeout
+    effective_timeout = timeout_seconds if timeout_seconds is not None else dialog_auto_dismiss_timeout
+    
+    # In pilot mode, skip dialog entirely and return first (default) option
+    if pilot_mode_enabled:
+        print_lg(f"[PILOT] Auto-dismissing dialog: '{title}' -> '{buttons[0]}'")
+        return buttons[0]
+    
+    # If no timeout configured, use native pyautogui (blocking)
+    if not effective_timeout or effective_timeout <= 0:
+        return pyautogui.confirm(text=text, title=title, buttons=buttons)
+    
+    # Threaded auto-dismiss: run dialog in thread, press Enter after timeout
+    result_holder = [buttons[0]]  # Default to first button
+    dialog_done = threading.Event()
+    
+    def _show_dialog():
+        try:
+            result_holder[0] = pyautogui.confirm(text=text, title=title, buttons=buttons)
+        except Exception:
+            result_holder[0] = buttons[0]
+        finally:
+            dialog_done.set()
+    
+    dialog_thread = threading.Thread(target=_show_dialog, daemon=True)
+    dialog_thread.start()
+    
+    # Wait for timeout, then auto-dismiss if still open
+    if not dialog_done.wait(timeout=effective_timeout):
+        print_lg(f"[TIMEOUT] Auto-dismissing dialog after {effective_timeout}s: '{title}'")
+        try:
+            pyautogui.press('enter')  # Dismiss the dialog
+        except Exception:
+            pass
+        dialog_done.wait(timeout=3)  # Give it 3s to close
+    
+    return result_holder[0]
+
+def _safe_pyautogui_alert(text, title="", button="OK", timeout_seconds=None):
+    """Wrapper around pyautogui.alert that auto-dismisses in pilot/scheduled mode."""
+    if pilot_mode_enabled:
+        print_lg(f"[PILOT] Auto-dismissing alert: '{title}'")
+        return button
+    
+    effective_timeout = timeout_seconds if timeout_seconds is not None else dialog_auto_dismiss_timeout
+    if not effective_timeout or effective_timeout <= 0:
+        return pyautogui.alert(text=text, title=title, button=button)
+    
+    result_holder = [button]
+    dialog_done = threading.Event()
+    
+    def _show_alert():
+        try:
+            result_holder[0] = pyautogui.alert(text=text, title=title, button=button)
+        except Exception:
+            pass
+        finally:
+            dialog_done.set()
+    
+    alert_thread = threading.Thread(target=_show_alert, daemon=True)
+    alert_thread.start()
+    
+    if not dialog_done.wait(timeout=effective_timeout):
+        print_lg(f"[TIMEOUT] Auto-dismissing alert after {effective_timeout}s: '{title}'")
+        try:
+            pyautogui.press('enter')
+        except Exception:
+            pass
+        dialog_done.wait(timeout=3)
+    
+    return result_holder[0]
+
+
 # Bot control flags for dashboard integration
-import threading
+# (threading already imported at top)
 _stop_event = None  # Threading event for stop signal
 _pause_flag = False  # Pause flag
 _skip_current = False  # Skip current job flag
 
 # ===== VERBOSE LOGGING FOR DASHBOARD =====
+def emit_dashboard_event(event: str, data: dict | None = None):
+    """Publish deterministic structured telemetry events for dashboard."""
+    try:
+        from modules.dashboard import log_handler
+        log_handler.publish_event(event=event, data=data or {}, source="runAiBot")
+    except Exception:
+        pass
+
+
 def log_action(action: str, details: str = "", level: str = "info"):
     """
     Log detailed bot actions to both console and dashboard.
@@ -206,10 +324,18 @@ def log_status(status: str, level: str = "info"):
 def log_job(title: str, company: str, action: str = "Processing"):
     """Log job-related action."""
     log_action("JOB", f"💼 {action}: {title} @ {company}", "info")
+    emit_dashboard_event("job_context", {"title": title, "company": company})
 
 def log_ai(action: str, details: str = ""):
     """Log AI-related action."""
     log_action("AI", f"🤖 {action}: {details}" if details else f"🤖 {action}", "info")
+    stage = (action or "").strip().lower()
+    if "extract" in stage or "skill" in stage or "jd" in stage:
+        emit_dashboard_event("jd_analysis_started", {"action": action, "details": details})
+    elif "resume" in stage or "tailor" in stage:
+        emit_dashboard_event("resume_tailoring_started", {"action": action, "details": details})
+    else:
+        emit_dashboard_event("form_filling_started", {"action": action, "details": details})
 
 def log_next_step(step: str, details: str = ""):
     """
@@ -431,7 +557,7 @@ def login_LN() -> None:
     driver.get("https://www.linkedin.com/login")
     if username == "username@example.com" and password == "example_password":
         if not pilot_mode_enabled:
-            pyautogui.alert("User did not configure username and password in secrets.py, hence can't login automatically! Please login manually!", "Login Manually","Okay")
+            _safe_pyautogui_alert("User did not configure username and password in secrets.py, hence can't login automatically! Please login manually!", "Login Manually","Okay")
         print_lg("User did not configure username and password in secrets.py, hence can't login automatically! Please login manually!")
         manual_login_retry(is_logged_in_LN, 2)
         return
@@ -771,14 +897,14 @@ def apply_filters() -> None:
         # Skip confirmation in pilot mode
         if pilot_mode_enabled:
             print_lg("[PILOT MODE] \u2708\ufe0f Skipping filter confirmation dialog")
-        elif pause_after_filters and "Turn off Pause after search" == pyautogui.confirm("These are your configured search results and filter. It is safe to change them while this dialog is open, any changes later could result in errors and skipping this search run.", "Please check your results", ["Turn off Pause after search", "Look's good, Continue"]):
+        elif pause_after_filters and "Turn off Pause after search" == _safe_pyautogui_confirm("These are your configured search results and filter. It is safe to change them while this dialog is open, any changes later could result in errors and skipping this search run.", "Please check your results", ["Turn off Pause after search", "Look's good, Continue"]):
             pause_after_filters = False
 
     except Exception as e:
         print_lg("Setting the preferences failed!")
         # Skip error confirmation in pilot mode
         if not pilot_mode_enabled:
-            pyautogui.confirm(f"Faced error while applying filters. Please make sure correct filters are selected, click on show results and click on any button of this dialog, I know it sucks. Can't turn off Pause after search when error occurs! ERROR: {e}", ["Doesn't look good, but Continue XD", "Look's good, Continue"])
+            _safe_pyautogui_confirm(f"Faced error while applying filters. Please make sure correct filters are selected, click on show results and click on any button of this dialog, I know it sucks. Can't turn off Pause after search when error occurs! ERROR: {e}", "Filter Error", ["Doesn't look good, but Continue XD", "Look's good, Continue"])
         else:
             print_lg(f"[PILOT MODE] \u2708\ufe0f Skipping error dialog, continuing... Error: {e}")
         # print_lg(e)
@@ -942,8 +1068,8 @@ def get_job_description(
                 skipReason = "Found a Bad Word in About Job"
                 skip = True
                 break
-        if not skip and security_clearance == False and ('polygraph' in jobDescriptionLow or 'clearance' in jobDescriptionLow or 'secret' in jobDescriptionLow):
-            skipMessage = f'\n{jobDescription}\n\nFound "Clearance" or "Polygraph". Skipping this job!\n'
+        if not skip and security_clearance == False and ('polygraph' in jobDescriptionLow or 'security clearance' in jobDescriptionLow or 'secret clearance' in jobDescriptionLow or 'top secret' in jobDescriptionLow or 'top-secret' in jobDescriptionLow or 'ts/sci' in jobDescriptionLow):
+            skipMessage = f'\n{jobDescription}\n\nFound security clearance requirement. Skipping this job!\n'
             skipReason = "Asking for Security clearance"
             skip = True
         if not skip:
@@ -1064,7 +1190,7 @@ def prompt_for_resume_tailoring(
     
     if not TAILOR_POPUP_AVAILABLE:
         # Fallback to simple pyautogui dialog
-        decision = pyautogui.confirm(
+        decision = _safe_pyautogui_confirm(
             f"Do you want to tailor your resume for:\n\n"
             f"📋 {job_title}\n"
             f"🏢 {company}\n\n"
@@ -1081,7 +1207,7 @@ def prompt_for_resume_tailoring(
             # If enabled, show the job description text before sending to AI
             if resume_tailoring_prompt_before_jd and not pilot_mode_enabled:
                 jd_preview = job_description[:1500] + ("..." if len(job_description) > 1500 else "")
-                jd_confirm = pyautogui.confirm(
+                jd_confirm = _safe_pyautogui_confirm(
                     f"📄 Job Description Preview (will be sent to AI):\n\n"
                     f"{jd_preview}\n\n"
                     f"Send this to AI for resume tailoring?",
@@ -1177,7 +1303,7 @@ def prompt_for_resume_tailoring(
                 if tailored_resume:
                     # Show preview option (skip in pilot mode)
                     if paths.get('html_diff') and not pilot_mode_enabled:
-                        preview_choice = pyautogui.confirm(
+                        preview_choice = _safe_pyautogui_confirm(
                             "Resume tailored successfully!\n\nWould you like to preview it?",
                             "Tailored Resume Ready",
                             ["👁️ Preview & Apply", "✅ Apply Now", "❌ Cancel"]
@@ -1185,7 +1311,7 @@ def prompt_for_resume_tailoring(
                         if preview_choice == "👁️ Preview & Apply":
                             import webbrowser
                             webbrowser.open(f"file://{os.path.abspath(paths['html_diff'])}")
-                            pyautogui.alert("Click OK when ready to continue with application.", "Preview Open")
+                            _safe_pyautogui_alert("Click OK when ready to continue with application.", "Preview Open")
                         elif preview_choice == "❌ Cancel":
                             return None, False
                     elif pilot_mode_enabled:
@@ -2457,11 +2583,34 @@ def smart_easy_apply(modal: WebElement, resume_path: str, questions_handler, wor
                     'citizenship': getattr(_p, 'us_citizenship', ''),
                     'work_authorized': 'Yes',
                     'full_name': f"{getattr(_p, 'first_name', '')} {getattr(_p, 'last_name', '')}".strip(),
+                    # Education fields
+                    'university': getattr(_p, 'university', ''),
+                    'degree': getattr(_p, 'degree', ''),
+                    'field_of_study': getattr(_p, 'field_of_study', ''),
+                    'gpa': getattr(_p, 'gpa', ''),
+                    # Email and phone country code
+                    'phone_country_code': getattr(_p, 'phone_country_code', ''),
                 })
+                # Override email with config email if available
+                if getattr(_p, 'email', ''):
+                    v2_config['email'] = getattr(_p, 'email', '')
             except Exception:
                 pass
-            smart_filler_v2 = SmartFormFiller(driver, v2_config, fast_mode=True)
-            print_lg("[SmartEasyApply] 🧠 Smart Form Filler V2 enabled")
+            
+            # Load learned answers for V2 filler
+            v2_learned = {}
+            try:
+                from modules.self_learning import get_all_learned
+                all_learned = get_all_learned()
+                for bucket_key in ('dropdown_mappings', 'select_answers', 'text_answers'):
+                    bucket = all_learned.get(bucket_key, {})
+                    for k, v in bucket.items():
+                        v2_learned[k.strip().lower()] = v
+            except ImportError:
+                pass
+            
+            smart_filler_v2 = SmartFormFiller(driver, v2_config, fast_mode=True, learned_answers=v2_learned)
+            print_lg("[SmartEasyApply] 🧠 Smart Form Filler V2 enabled (with self-learning)")
         except Exception as e:
             print_lg(f"[SmartEasyApply] ⚠️ V2 filler unavailable, falling back to legacy: {e}")
             smart_filler_v2 = None
@@ -2487,6 +2636,10 @@ def smart_easy_apply(modal: WebElement, resume_path: str, questions_handler, wor
     upload_retry_count = 0
     max_upload_retries = 3
     
+    # === WALL-CLOCK TIMEOUT for form filling ===
+    _form_start_time = time.time()
+    _effective_form_timeout = form_fill_timeout if form_fill_timeout and form_fill_timeout > 0 else 0
+    
     # === CRITICAL FIX: In preselected/default/skip mode, mark resume as handled IMMEDIATELY ===
     # This prevents navigate_to_next_page() from blocking on upload pages
     if skip_resume_upload:
@@ -2505,6 +2658,18 @@ def smart_easy_apply(modal: WebElement, resume_path: str, questions_handler, wor
     
     while iteration < max_iterations:
         iteration += 1
+        
+        # === WALL-CLOCK TIMEOUT CHECK ===
+        if _effective_form_timeout > 0:
+            elapsed = time.time() - _form_start_time
+            if elapsed > _effective_form_timeout:
+                print_lg(f"[SmartEasyApply] ⏰ Form fill timeout reached ({elapsed:.0f}s > {_effective_form_timeout}s)")
+                return False, questions_list, f"Form fill timeout after {elapsed:.0f}s"
+        
+        # === STOP SIGNAL CHECK inside form loop ===
+        if should_stop():
+            print_lg("[SmartEasyApply] 🛑 Stop signal received during form filling")
+            return False, questions_list, "Stop signal received"
         
         # === CRASH PROTECTION: Check if driver is still alive ===
         if not handler._is_driver_alive():
@@ -2766,7 +2931,7 @@ def smart_easy_apply(modal: WebElement, resume_path: str, questions_handler, wor
             # Handle pause_before_submit (skip in pilot mode)
             cur_pause_before_submit = pause_before_submit
             if cur_pause_before_submit and not pilot_mode_enabled:
-                decision = pyautogui.confirm(
+                decision = _safe_pyautogui_confirm(
                     '1. Please verify your information.\n'
                     '2. If you edited something, please return to this final screen.\n'
                     '3. DO NOT CLICK "Submit Application".\n\n\n'
@@ -2854,13 +3019,29 @@ def answer_common_questions(label: str, answer: str) -> str:
 
 # Function to answer the questions for Easy Apply
 def answer_questions(modal: WebElement, questions_list: set, work_location: str, job_description: str | None = None ) -> set:
+    # ===== SELF-LEARNING: Load learned answers =====
+    try:
+        from modules.self_learning import get_answer as sl_get_answer, learn as sl_learn, learn_dropdown as sl_learn_dropdown, get_dropdown as sl_get_dropdown, get_education as sl_get_education, flush as sl_flush
+        _self_learning_available = True
+    except ImportError:
+        _self_learning_available = False
+    
+    # Load email from config for dropdown matching
+    try:
+        from config.personals import email as config_email, phone_country_code as config_phone_country_code
+    except ImportError:
+        config_email = ""
+        config_phone_country_code = ""
+    
+    # Load education config
+    try:
+        from config.personals import university, degree, field_of_study, gpa, education_start_date, education_end_date
+    except ImportError:
+        university = degree = field_of_study = gpa = education_start_date = education_end_date = ""
+    
     # Get all questions from the page
      
     all_questions = modal.find_elements(By.XPATH, ".//div[@data-test-form-element]")
-    # all_questions = modal.find_elements(By.CLASS_NAME, "jobs-easy-apply-form-element")
-    # all_list_questions = modal.find_elements(By.XPATH, ".//div[@data-test-text-entity-list-form-component]")
-    # all_single_line_questions = modal.find_elements(By.XPATH, ".//div[@data-test-single-line-text-form-component]")
-    # all_questions = all_questions + all_list_questions + all_single_line_questions
 
     for Question in all_questions:
         # Check if it's a select Question
@@ -2877,14 +3058,37 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
             selected_option = select.first_selected_option.text
             optionsText = []
             options = '"List of phone country codes"'
-            if label != "phone country code":
-                optionsText = [option.text for option in select.options]
+            # Always enumerate options now (needed for email/country code matching)
+            optionsText = [option.text for option in select.options]
+            if 'country code' in label:
+                options = '"List of phone country codes"'  # Keep compact log
+            else:
                 options = "".join([f' "{option}",' for option in optionsText])
             prev_answer = selected_option
             if overwrite_previous_answers or selected_option == "Select an option":
-                ##> ------ WINDY_WINDWARD Email:karthik.sarode23@gmail.com - Added fuzzy logic to answer location based questions ------
-                if 'email' in label or 'phone' in label: 
-                    answer = prev_answer
+                # ===== SELF-LEARNING: Check learned dropdown mappings first =====
+                learned_answer = None
+                if _self_learning_available:
+                    learned_answer = sl_get_dropdown(label)
+                    if not learned_answer:
+                        learned_answer = sl_get_answer(label_org, "select")
+                
+                if learned_answer:
+                    # Use learned answer
+                    answer = learned_answer
+                    print_lg(f"[SelfLearning] 🧠 Using learned answer for '{label_org}': {answer}")
+                elif 'email' in label:
+                    # Select the correct email from dropdown options
+                    if config_email:
+                        answer = config_email
+                    else:
+                        answer = prev_answer  # Fallback to pre-selected
+                elif 'country code' in label or ('phone' in label and 'country' in label):
+                    # Select the correct phone country code
+                    if config_phone_country_code:
+                        answer = config_phone_country_code
+                    else:
+                        answer = prev_answer
                 elif 'gender' in label or 'sex' in label: 
                     answer = gender
                 elif 'disability' in label: 
@@ -2996,6 +3200,11 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
                             answer = select.first_selected_option.text
                             randomly_answered_questions.add((f'{label_org} [ {options} ]',"select"))
             questions_list.add((f'{label_org} [ {options} ]', answer, "select", prev_answer))
+            # ===== SELF-LEARNING: Save successful dropdown answer =====
+            if _self_learning_available and answer and answer != prev_answer:
+                sl_learn(label_org, answer, question_type="select", overwrite=True)
+                sl_learn_dropdown(label, answer)
+                print_lg(f"[SelfLearning] 💾 Learned select answer: '{label_org}' → '{answer}'")
             continue
         
         # Check if it's a radio Question
@@ -3053,6 +3262,9 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
                     if not foundOption: randomly_answered_questions.add((f'{label_org} ]',"radio"))
             else: answer = prev_answer
             questions_list.add((label_org+" ]", answer, "radio", prev_answer))
+            # ===== SELF-LEARNING: Save radio answer =====
+            if _self_learning_available and answer and answer != prev_answer:
+                sl_learn(label_org, answer, question_type="radio", overwrite=True)
             continue
         
         # Check if it's a text question
@@ -3068,20 +3280,35 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
 
             prev_answer = text.get_attribute("value")
             if not prev_answer or overwrite_previous_answers:
-                if 'experience' in label or 'years' in label: answer = years_of_experience
+                # ===== SELF-LEARNING: Check learned text answers first =====
+                learned_text = None
+                if _self_learning_available:
+                    learned_text = sl_get_answer(label_org, "text")
+                
+                if learned_text:
+                    answer = learned_text
+                    print_lg(f"[SelfLearning] 🧠 Using learned text answer for '{label_org}': {answer[:30]}")
+                elif 'experience' in label or 'years' in label: answer = years_of_experience
+                elif 'email' in label: answer = config_email if config_email else ""
                 elif 'phone' in label or 'mobile' in label: answer = phone_number
                 elif 'street' in label: answer = street
                 elif 'city' in label or 'location' in label or 'address' in label:
                     answer = current_city if current_city else work_location
                     do_actions = True
-                elif 'signature' in label: answer = full_name # 'signature' in label or 'legal name' in label or 'your name' in label or 'full name' in label: answer = full_name     # What if question is 'name of the city or university you attend, name of referral etc?'
+                elif 'signature' in label: answer = full_name
                 elif 'name' in label:
                     if 'full' in label: answer = full_name
                     elif 'first' in label and 'last' not in label: answer = first_name
                     elif 'middle' in label and 'last' not in label: answer = middle_name
                     elif 'last' in label and 'first' not in label: answer = last_name
                     elif 'employer' in label: answer = recent_employer
+                    elif 'university' in label or 'college' in label or 'school' in label: answer = university
                     else: answer = full_name
+                # ===== EDUCATION FIELDS =====
+                elif 'university' in label or 'college' in label or 'school' in label or 'institution' in label: answer = university
+                elif 'degree' in label or 'qualification' in label: answer = degree
+                elif 'major' in label or 'field of study' in label or 'specialization' in label or 'specialisation' in label or 'discipline' in label: answer = field_of_study
+                elif 'gpa' in label or 'cgpa' in label or 'grade' in label or 'percentage' in label: answer = gpa
                 elif 'notice' in label:
                     if 'month' in label:
                         answer = notice_period_months
@@ -3145,6 +3372,10 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
                     actions.send_keys(Keys.ARROW_DOWN)
                     actions.send_keys(Keys.ENTER).perform()
             questions_list.add((label, text.get_attribute("value"), "text", prev_answer))
+            # ===== SELF-LEARNING: Save text answer =====
+            final_val = text.get_attribute("value")
+            if _self_learning_available and final_val and final_val != prev_answer:
+                sl_learn(label_org, final_val, question_type="text", overwrite=False)
             continue
 
         # Check if it's a textarea question
@@ -3189,6 +3420,10 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
                     actions.send_keys(Keys.ARROW_DOWN)
                     actions.send_keys(Keys.ENTER).perform()
             questions_list.add((label, text_area.get_attribute("value"), "textarea", prev_answer))
+            # ===== SELF-LEARNING: Save textarea answer =====
+            final_ta = text_area.get_attribute("value")
+            if _self_learning_available and final_ta and final_ta != prev_answer:
+                sl_learn(label_org, final_ta, question_type="textarea", overwrite=False)
             ##<
             continue
 
@@ -3219,6 +3454,13 @@ def answer_questions(modal: WebElement, questions_list: set, work_location: str,
     # Collect important skills
     # if 'do you have' in label and 'experience' in label and ' in ' in label -> Get word (skill) after ' in ' from label
     # if 'how many years of experience do you have in ' in label -> Get word (skill) after ' in '
+
+    # ===== SELF-LEARNING: Persist all learned answers to disk =====
+    if _self_learning_available:
+        try:
+            sl_flush()
+        except Exception:
+            pass
 
     return questions_list
 
@@ -3284,16 +3526,24 @@ def failed_job(job_id: str, job_link: str, resume: str, date_listed, error: str,
     Function to update failed jobs list in excel
     '''
     try:
+        sid = _get_session_id() if callable(_get_session_id) else "n/a"
+        emit_dashboard_event("application_failed", {
+            "session_id": sid,
+            "job_id": str(job_id),
+            "job_link": str(job_link),
+            "reason": str(error),
+            "application_link": str(application_link),
+        })
         with open(failed_file_name, 'a', newline='', encoding='utf-8') as file:
-            fieldnames = ['Job ID', 'Job Link', 'Resume Tried', 'Date listed', 'Date Tried', 'Assumed Reason', 'Stack Trace', 'External Job link', 'Screenshot Name']
+            fieldnames = ['Job ID', 'Job Link', 'Resume Tried', 'Date listed', 'Date Tried', 'Assumed Reason', 'Stack Trace', 'External Job link', 'Screenshot Name', 'Session ID']
             writer = csv.DictWriter(file, fieldnames=fieldnames)
             if file.tell() == 0: writer.writeheader()
-            writer.writerow({'Job ID':truncate_for_csv(job_id), 'Job Link':truncate_for_csv(job_link), 'Resume Tried':truncate_for_csv(resume), 'Date listed':truncate_for_csv(date_listed), 'Date Tried':datetime.now(), 'Assumed Reason':truncate_for_csv(error), 'Stack Trace':truncate_for_csv(exception), 'External Job link':truncate_for_csv(application_link), 'Screenshot Name':truncate_for_csv(screenshot_name)})
+            writer.writerow({'Job ID':truncate_for_csv(job_id), 'Job Link':truncate_for_csv(job_link), 'Resume Tried':truncate_for_csv(resume), 'Date listed':truncate_for_csv(date_listed), 'Date Tried':datetime.now(), 'Assumed Reason':truncate_for_csv(error), 'Stack Trace':truncate_for_csv(exception), 'External Job link':truncate_for_csv(application_link), 'Screenshot Name':truncate_for_csv(screenshot_name), 'Session ID': sid})
             file.close()
     except Exception as e:
         print_lg("Failed to update failed jobs list!", e)
         if not pilot_mode_enabled:
-            pyautogui.alert("Failed to update the excel of failed jobs!\nProbably because of 1 of the following reasons:\n1. The file is currently open or in use by another program\n2. Permission denied to write to the file\n3. Failed to find the file", "Failed Logging")
+            _safe_pyautogui_alert("Failed to update the excel of failed jobs!\nProbably because of 1 of the following reasons:\n1. The file is currently open or in use by another program\n2. Permission denied to write to the file\n3. Failed to find the file", "Failed Logging")
 
 
 def screenshot(driver: WebDriver, job_id: str, failedAt: str) -> str:
@@ -3319,20 +3569,34 @@ def submitted_jobs(job_id: str, title: str, company: str, work_location: str, wo
     Function to create or update the Applied jobs CSV file, once the application is submitted successfully
     '''
     try:
+        sid = _get_session_id() if callable(_get_session_id) else "n/a"
+        emit_dashboard_event("application_submitted", {
+            "session_id": sid,
+            "job_id": str(job_id),
+            "title": str(title),
+            "company": str(company),
+            "location": str(work_location),
+            "job_link": str(job_link),
+        })
+        emit_dashboard_event("job_context", {
+            "title": str(title),
+            "company": str(company),
+            "location": str(work_location),
+        })
         with open(file_name, mode='a', newline='', encoding='utf-8') as csv_file:
-            fieldnames = ['Job ID', 'Title', 'Company', 'Work Location', 'Work Style', 'About Job', 'Experience required', 'Skills required', 'HR Name', 'HR Link', 'Resume', 'Re-posted', 'Date Posted', 'Date Applied', 'Job Link', 'External Job link', 'Questions Found', 'Connect Request']
+            fieldnames = ['Job ID', 'Title', 'Company', 'Work Location', 'Work Style', 'About Job', 'Experience required', 'Skills required', 'HR Name', 'HR Link', 'Resume', 'Re-posted', 'Date Posted', 'Date Applied', 'Job Link', 'External Job link', 'Questions Found', 'Connect Request', 'Session ID']
             writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
             if csv_file.tell() == 0: writer.writeheader()
             writer.writerow({'Job ID':truncate_for_csv(job_id), 'Title':truncate_for_csv(title), 'Company':truncate_for_csv(company), 'Work Location':truncate_for_csv(work_location), 'Work Style':truncate_for_csv(work_style), 
                             'About Job':truncate_for_csv(description), 'Experience required': truncate_for_csv(experience_required), 'Skills required':truncate_for_csv(skills), 
                                 'HR Name':truncate_for_csv(hr_name), 'HR Link':truncate_for_csv(hr_link), 'Resume':truncate_for_csv(resume), 'Re-posted':truncate_for_csv(reposted), 
                                 'Date Posted':truncate_for_csv(date_listed), 'Date Applied':truncate_for_csv(date_applied), 'Job Link':truncate_for_csv(job_link), 
-                                'External Job link':truncate_for_csv(application_link), 'Questions Found':truncate_for_csv(questions_list), 'Connect Request':truncate_for_csv(connect_request)})
+                                'External Job link':truncate_for_csv(application_link), 'Questions Found':truncate_for_csv(questions_list), 'Connect Request':truncate_for_csv(connect_request), 'Session ID': sid})
         csv_file.close()
     except Exception as e:
         print_lg("Failed to update submitted jobs list!", e)
         if not pilot_mode_enabled:
-            pyautogui.alert("Failed to update the excel of applied jobs!\nProbably because of 1 of the following reasons:\n1. The file is currently open or in use by another program\n2. Permission denied to write to the file\n3. Failed to find the file", "Failed Logging")
+            _safe_pyautogui_alert("Failed to update the excel of applied jobs!\nProbably because of 1 of the following reasons:\n1. The file is currently open or in use by another program\n2. Permission denied to write to the file\n3. Failed to find the file", "Failed Logging")
 
 
 
@@ -3413,6 +3677,10 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                     date_applied = None
                     connect_request = ""
                     application_link = "Easy Applied"
+                    
+                    # === PER-JOB WALL-CLOCK TIMEOUT ===
+                    _job_start_time = time.time()
+                    _effective_job_timeout = per_job_timeout if per_job_timeout and per_job_timeout > 0 else 0
                     
                     # Check for stop/pause signals from dashboard
                     if should_stop():
@@ -3603,7 +3871,7 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                             and description != "Unknown"
                             and resume_tailoring_confirm_after_filters 
                             and not pilot_mode_enabled):
-                        confirm_proceed = pyautogui.confirm(
+                        confirm_proceed = _safe_pyautogui_confirm(
                             f"✅ Filters passed for this job:\n\n"
                             f"📋 {title}\n"
                             f"🏢 {company}\n\n"
@@ -3688,39 +3956,127 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                     uploaded = False
                     resume_to_upload = tailored_resume_path if tailored_resume_path else default_resume_path
                     
+                    # === PER-JOB TIMEOUT CHECK before Easy Apply ===
+                    if _effective_job_timeout > 0:
+                        _job_elapsed = time.time() - _job_start_time
+                        if _job_elapsed > _effective_job_timeout:
+                            print_lg(f"[Job Timeout] ⏰ Job '{title}' timed out after {_job_elapsed:.0f}s (limit: {_effective_job_timeout}s)")
+                            failed_job(job_id, job_link, resume, date_listed, "Per-job timeout",
+                                       f"Job processing exceeded {_effective_job_timeout}s limit", "Timeout", screenshot_name)
+                            failed_count += 1
+                            continue
+                    
                     # Case 1: Easy Apply Button
                     log_next_step("Easy Apply", f"Applying to {title}")
+                    
+                    # Multiple XPath strategies for finding Easy Apply button (LinkedIn changes UI frequently)
+                    easy_apply_xpaths = [
+                        # Strategy 1: Broadest class match (most reliable across regions)
+                        ".//button[contains(@class,'jobs-apply-button')]",
+                        # Strategy 2: Button with child span containing Easy Apply text
+                        ".//button[.//span[contains(text(), 'Easy Apply')]]",
+                        # Strategy 3: Any button whose text contains 'Easy Apply'
+                        ".//button[contains(., 'Easy Apply')]",
+                        # Strategy 4: Match by aria-label containing 'Easy Apply'
+                        ".//button[contains(@aria-label, 'Easy Apply')]",
+                        # Strategy 5: aria-label just 'Easy'
+                        ".//button[contains(@aria-label, 'Easy')]",
+                        # Strategy 6: Div wrapper approach (LinkedIn sometimes wraps in a div)
+                        ".//div[contains(@class, 'jobs-apply-button')]//button",
+                        # Strategy 7: Artdeco primary button near job details
+                        ".//div[contains(@class,'jobs-details')]//button[contains(@class, 'artdeco-button--primary')]",
+                        # Strategy 8: Job details top card container
+                        ".//div[contains(@class,'job-details-jobs-unified-top-card')]//button[contains(@class, 'jobs-apply-button')]",
+                        # Strategy 9: Apply button container approach
+                        ".//div[contains(@class,'jobs-s-apply')]//button",
+                        # Strategy 10: data-control-name attribute
+                        ".//button[@data-control-name='jobdetails_topcard_inapply']",
+                    ]
                     
                     # Multiple attempts to find and click Easy Apply button (with stale element handling)
                     easy_apply_clicked = False
                     for attempt in range(3):
                         try:
-                            # First find the Easy Apply button
-                            easy_apply_btn = WebDriverWait(driver, 5).until(
-                                EC.presence_of_element_located((By.XPATH, 
-                                    ".//button[contains(@class,'jobs-apply-button') and contains(@class, 'artdeco-button--3') and contains(@aria-label, 'Easy')]"))
-                            )
+                            # Try each XPath strategy until one works
+                            easy_apply_btn = None
+                            matched_xpath = None
+                            for xpath in easy_apply_xpaths:
+                                try:
+                                    easy_apply_btn = WebDriverWait(driver, 2).until(
+                                        EC.presence_of_element_located((By.XPATH, xpath))
+                                    )
+                                    matched_xpath = xpath
+                                    break
+                                except (TimeoutException, Exception):
+                                    continue
+                            
+                            if easy_apply_btn is None:
+                                print_lg(f"[Easy Apply] No button found with any strategy on attempt {attempt+1}")
+                                # Debug: dump all apply-related buttons on the page
+                                if attempt == 0:
+                                    try:
+                                        debug_info = driver.execute_script("""
+                                            var buttons = document.querySelectorAll('button');
+                                            var results = [];
+                                            buttons.forEach(function(b) {
+                                                var text = b.textContent.trim().substring(0, 50);
+                                                var cls = b.className.substring(0, 80);
+                                                var aria = b.getAttribute('aria-label') || '';
+                                                if (text.toLowerCase().includes('apply') || cls.includes('apply') || aria.toLowerCase().includes('apply')) {
+                                                    results.push('TEXT=' + text + ' | CLASS=' + cls + ' | ARIA=' + aria);
+                                                }
+                                            });
+                                            return results.join('\\n');
+                                        """)
+                                        if debug_info:
+                                            print_lg(f"[Easy Apply DEBUG] Apply-related buttons found on page:\\n{debug_info}")
+                                        else:
+                                            print_lg("[Easy Apply DEBUG] No apply-related buttons found on page at all!")
+                                            # Also check current URL
+                                            print_lg(f"[Easy Apply DEBUG] Current URL: {driver.current_url[:100]}")
+                                    except Exception as debug_err:
+                                        print_lg(f"[Easy Apply DEBUG] Could not inspect page: {debug_err}")
+                                if attempt < 2:
+                                    time.sleep(0.5)
+                                    continue
+                                break
+                            
+                            if attempt == 0 and matched_xpath != easy_apply_xpaths[0]:
+                                print_lg(f"[Easy Apply] Found button with fallback strategy: {matched_xpath[:60]}")
                             
                             # Scroll button into view to avoid "element click intercepted" errors
                             scroll_to_view(driver, easy_apply_btn)
                             buffer(0.3)  # Brief pause after scroll
                             
-                            # Now wait for it to be clickable and click
+                            # Now wait for it to be clickable and click (use the matched xpath)
                             easy_apply_btn = WebDriverWait(driver, 3).until(
-                                EC.element_to_be_clickable((By.XPATH, 
-                                    ".//button[contains(@class,'jobs-apply-button') and contains(@class, 'artdeco-button--3') and contains(@aria-label, 'Easy')]"))
+                                EC.element_to_be_clickable((By.XPATH, matched_xpath))
                             )
-                            easy_apply_btn.click()
+                            try:
+                                easy_apply_btn.click()
+                            except Exception as click_err:
+                                # Fallback: JavaScript click (bypasses "element click intercepted")
+                                print_lg(f"[Easy Apply] Direct click failed, using JS click: {str(click_err)[:80]}")
+                                driver.execute_script("arguments[0].click();", easy_apply_btn)
                             easy_apply_clicked = True
                             break
                         except StaleElementReferenceException:
                             print_lg(f"[Easy Apply] Stale element on attempt {attempt+1}, retrying...")
                             time.sleep(0.5)
                         except TimeoutException:
-                            print_lg(f"[Easy Apply] Timeout finding button on attempt {attempt+1}")
-                            break
+                            print_lg(f"[Easy Apply] Timeout on attempt {attempt+1}, retrying...")
+                            time.sleep(0.5)
                         except Exception as e:
                             print_lg(f"[Easy Apply] Error on attempt {attempt+1}: {e}")
+                            # Fallback: try JavaScript click before giving up
+                            try:
+                                if easy_apply_btn:
+                                    driver.execute_script("arguments[0].click();", easy_apply_btn)
+                                    easy_apply_clicked = True
+                                    print_lg(f"[Easy Apply] ✅ JS click fallback succeeded on attempt {attempt+1}")
+                                    break
+                            except Exception:
+                                pass
                             # Try scrolling page up on error (button might be above viewport)
                             try:
                                 driver.execute_script("window.scrollBy(0, -200);")
@@ -3818,7 +4174,7 @@ def apply_to_jobs(search_terms: list[str]) -> None:
                                 # Check if pause_at_failed_question is enabled (skip in pilot mode)
                                 if pause_at_failed_question and error_msg and not pilot_mode_enabled:
                                     screenshot(driver, job_id, "Smart modal needed manual intervention")
-                                    decision = pyautogui.confirm(
+                                    decision = _safe_pyautogui_confirm(
                                         f'Smart form filling encountered an issue:\n{error_msg}\n\n'
                                         'Please complete the application manually.\n'
                                         'Click "Continue" when done or "Discard" to skip.\n\n'
@@ -3979,8 +4335,17 @@ linkedIn_tab = False
 def main() -> None:
     total_runs = 1
     try:
-        global linkedIn_tab, tabs_count, useNewResume, aiClient, popup_blocker
+        global linkedIn_tab, tabs_count, useNewResume, aiClient, popup_blocker, _session_ctx
         alert_title = "Error Occurred. Closing Browser!"
+        
+        # Initialize per-session runtime context
+        try:
+            _session_ctx = _new_session()
+            print_lg(f"[Session {_session_ctx.session_id}] Bot session started")
+            emit_dashboard_event("bot_session_started", {"session_id": _session_ctx.session_id})
+        except Exception:
+            pass
+        
         validate_config()
         
         # Network security check for corporate environments (DLP, SSL inspection)
@@ -4003,7 +4368,7 @@ def main() -> None:
                 
                 # Ask user if they want to continue anyway (skip in pilot mode)
                 if not pilot_mode_enabled:
-                    user_choice = pyautogui.confirm(
+                    user_choice = _safe_pyautogui_confirm(
                         text="Corporate security (DLP/Netskope) detected!\n\n"
                              "LinkedIn submissions will likely fail with 500 errors.\n\n"
                              "SOLUTION: Connect to mobile hotspot instead.\n\n"
@@ -4024,7 +4389,7 @@ def main() -> None:
         
         if not os.path.exists(default_resume_path):
             if not pilot_mode_enabled:
-                pyautogui.alert(text='Your default resume "{}" is missing! Please update it\'s folder path "default_resume_path" in config.py\n\nOR\n\nAdd a resume with exact name and path (check for spelling mistakes including cases).\n\n\nFor now the bot will continue using your previous upload from LinkedIn!'.format(default_resume_path), title="Missing Resume", button="OK")
+                _safe_pyautogui_alert(text='Your default resume "{}" is missing! Please update it\'s folder path "default_resume_path" in config.py\n\nOR\n\nAdd a resume with exact name and path (check for spelling mistakes including cases).\n\n\nFor now the bot will continue using your previous upload from LinkedIn!'.format(default_resume_path), title="Missing Resume", button="OK")
             else:
                 print_lg(f"✈️ [PILOT MODE] Resume file missing: {default_resume_path} - using LinkedIn's saved resume")
             useNewResume = False
@@ -4120,8 +4485,22 @@ def main() -> None:
     except Exception as e:
         critical_error_log("In Applier Main", e)
         if not pilot_mode_enabled:
-            pyautogui.alert(e,alert_title)
+            _safe_pyautogui_alert(str(e), alert_title)
     finally:
+        emit_dashboard_event("bot_session_completed", {
+            "session_id": _get_session_id() if callable(_get_session_id) else "n/a",
+            "easy_applied": easy_applied_count,
+            "external_jobs": external_jobs_count,
+            "failed": failed_count,
+            "skipped": skip_count,
+        })
+        # Sync final counters into session context for caller (scheduler) to read
+        if _session_ctx is not None:
+            try:
+                _session_ctx.sync_from_globals(sys.modules[__name__])
+                print_lg(f"[Session {_session_ctx.session_id}] Final sync: applied={_session_ctx.easy_applied_count}, failed={_session_ctx.failed_count}")
+            except Exception:
+                pass
         summary = "Total runs: {}\nJobs Easy Applied: {}\nExternal job links collected: {}\nTotal applied or collected: {}\nFailed jobs: {}\nIrrelevant jobs skipped: {}\n".format(total_runs,easy_applied_count,external_jobs_count,easy_applied_count + external_jobs_count,failed_count,skip_count)
         print_lg(summary)
         print_lg("\n\nTotal runs:                     {}".format(total_runs))
@@ -4154,12 +4533,12 @@ def main() -> None:
             timeSavedMsg = f"In this run, you saved approx {round(timeSaved/60)} mins ({timeSaved} secs)!"
         msg = f"{quotes}\n\n\n{timeSavedMsg}\n\nSummary:\n{summary}\n\n\nBest regards,\nSuraj Panwar\nhttps://www.linkedin.com/in/surajpanwar/\n\n{sponsors}"
         if not pilot_mode_enabled:
-            pyautogui.alert(msg, "Exiting..")
+            _safe_pyautogui_alert(msg, "Exiting..")
         print_lg(msg,"Closing the browser...")
         if tabs_count >= 10:
             msg = "NOTE: IF YOU HAVE MORE THAN 10 TABS OPENED, PLEASE CLOSE OR BOOKMARK THEM!\n\nOr it's highly likely that application will just open browser and not do anything next time!" 
             if not pilot_mode_enabled:
-                pyautogui.alert(msg,"Info")
+                _safe_pyautogui_alert(msg,"Info")
             print_lg("\n"+msg)
         ##> ------ Yang Li : MARKYangL - Feature ------
         if use_AI and aiClient:

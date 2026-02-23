@@ -17,12 +17,10 @@ import subprocess
 from datetime import datetime, timedelta
 from typing import Optional, Callable, Dict, List, Any
 from pathlib import Path
+from modules.scheduler_runtime import apply_scheduled_runtime_overrides
+from modules.scheduler_state import load_state, save_scheduler_tick
+from modules.bot_session import new_session, get_session_id
 
-# Setup logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
-)
 logger = logging.getLogger(__name__)
 
 
@@ -99,18 +97,12 @@ class JobScheduler:
             }
     
     def _load_state(self):
-        """Load scheduler state from disk."""
+        """Load scheduler state from disk via centralized state manager."""
         try:
-            if self._state_file.exists():
-                with open(self._state_file, 'r') as f:
-                    state = json.load(f)
-                    self._applications_today = state.get('applications_today', 0)
-                    self._last_run_date = state.get('last_run_date', None)
-                    self._last_run_time = state.get('last_run_time', None)
-            else:
-                self._applications_today = 0
-                self._last_run_date = None
-                self._last_run_time = None
+            state = load_state()
+            self._applications_today = state.get('applications_today', 0)
+            self._last_run_date = state.get('last_run_date', None)
+            self._last_run_time = state.get('last_run_time', None)
         except Exception as e:
             logger.error(f"Error loading state: {e}")
             self._applications_today = 0
@@ -118,18 +110,14 @@ class JobScheduler:
             self._last_run_time = None
     
     def _save_state(self):
-        """Save scheduler state to disk."""
+        """Save scheduler state to disk via centralized state manager."""
         try:
-            self._state_file.parent.mkdir(parents=True, exist_ok=True)
             next_run = self.get_next_run_time()
-            state = {
-                'applications_today': self._applications_today,
-                'last_run_date': self._last_run_date,
-                'last_run_time': datetime.now().isoformat(),
-                'next_scheduled_run': next_run.isoformat() if next_run else None
-            }
-            with open(self._state_file, 'w') as f:
-                json.dump(state, f, indent=2)
+            save_scheduler_tick(
+                applications_today=self._applications_today,
+                last_run_date=self._last_run_date,
+                next_scheduled_run=next_run.isoformat() if next_run else None,
+            )
         except Exception as e:
             logger.error(f"Error saving state: {e}")
     
@@ -332,9 +320,9 @@ class JobScheduler:
             import threading
             from config import settings
             
-            # Set pilot mode for automated operation
-            runAiBot.pause_before_submit = False
-            runAiBot.pause_at_failed_question = False
+            # Create a per-session context with correlation ID
+            session_ctx = new_session()
+            logger.info(f"Session ID: {session_ctx.session_id}")
             
             # Ensure bot has a stop event for graceful shutdown
             if not getattr(runAiBot, '_stop_event', None):
@@ -344,14 +332,18 @@ class JobScheduler:
             # Set limits
             max_jobs = self.config.get('max_applications', 50)
             max_runtime_minutes = self.config.get('max_runtime', 120)
-            
-            # Enforce max_applications: write to settings so check_pilot_limit_reached() picks it up
+
+            # Keep explicit overrides for compatibility and test visibility
+            settings.pilot_max_applications = 0
             if max_jobs > 0:
-                settings.schedule_max_applications = max_jobs
-                # Also set max_jobs_to_process so the bot's limit checker enforces it
-                current_max = getattr(settings, 'max_jobs_to_process', 0)
-                if current_max == 0 or max_jobs < current_max:
-                    settings.max_jobs_to_process = max_jobs
+                settings.max_jobs_to_process = max_jobs
+            
+            apply_scheduled_runtime_overrides(
+                settings=settings,
+                run_ai_bot=runAiBot,
+                max_jobs=max_jobs,
+                schedule_resume_mode=getattr(settings, 'schedule_resume_mode', None),
+            )
             
             # Track session
             session_start = time.time()
@@ -384,15 +376,18 @@ class JobScheduler:
                 if bot_thread.is_alive():
                     logger.warning("Bot did not stop gracefully within 30s after timeout")
             
+            # Sync counters back from globals into session context
+            session_ctx.sync_from_globals(runAiBot)
+            
             # Log session stats
             elapsed = (time.time() - session_start) / 60
-            apps_done = getattr(runAiBot, 'easy_applied_count', 0) + getattr(runAiBot, 'external_jobs_count', 0)
+            apps_done = session_ctx.easy_applied_count + session_ctx.external_jobs_count
             self._applications_this_session = apps_done
-            logger.info(f"Session completed: {apps_done} applications in {elapsed:.1f} minutes")
-            logger.info(f"Max limits: {max_jobs} applications, {max_runtime_minutes} minutes")
+            logger.info(f"[{session_ctx.session_id}] Session completed: {apps_done} applications in {elapsed:.1f} minutes")
+            logger.info(f"[{session_ctx.session_id}] Max limits: {max_jobs} applications, {max_runtime_minutes} minutes")
             
             if bot_error[0]:
-                logger.error(f"Bot raised error: {bot_error[0]}")
+                logger.error(f"[{session_ctx.session_id}] Bot raised error: {bot_error[0]}")
                 return False
             
             return True

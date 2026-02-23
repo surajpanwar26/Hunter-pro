@@ -236,7 +236,7 @@ def print_update_instructions():
 ║                                                                          ║
 ║  3. RELOAD EXTENSION (if you changed JS files)                           ║
 ║     a) Go to chrome://extensions                                         ║
-║     b) Turn OFF the toggle for "Universal Job Auto-Fill"                 ║
+║     b) Turn OFF the toggle for "AI Hunter pro"                            ║
 ║     c) Turn it back ON                                                   ║
 ║     d) Or click the refresh button on the extension card                 ║
 ║                                                                          ║

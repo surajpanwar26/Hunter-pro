@@ -31,6 +31,14 @@ from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from typing import Iterator, Literal
 
 
+def _emit_event(event: str, data: dict | None = None) -> None:
+    try:
+        from modules.dashboard import log_handler
+        log_handler.publish_event(event=event, data=data or {}, source="openai")
+    except Exception:
+        pass
+
+
 apiCheckInstructions = """
 
 1. Make sure your AI API connection details like url, key, model names, etc are correct.
@@ -203,13 +211,17 @@ def ai_extract_skills(client: OpenAI, job_description: str, stream: bool = strea
     """
     print_lg("-- EXTRACTING SKILLS FROM JOB DESCRIPTION")
     try:        
+        _emit_event("jd_analysis_started", {"provider": "openai"})
         prompt = extract_skills_prompt.format(job_description)
 
         messages = [{"role": "user", "content": prompt}]
         ##> ------ Dheeraj Deshwal : dheeraj20194@iiitd.ac.in/dheerajdeshwal9811@gmail.com - Bug fix ------
-        return ai_completion(client, messages, response_format=extract_skills_response_format, stream=stream)
+        result = ai_completion(client, messages, response_format=extract_skills_response_format, stream=stream)
+        _emit_event("jd_analysis_completed", {"provider": "openai"})
+        return result
     ##<
     except Exception as e:
+        _emit_event("jd_analysis_failed", {"provider": "openai", "error": str(e)})
         ai_error_alert(f"Error occurred while extracting skills from job description. {apiCheckInstructions}", e)
 
 
@@ -239,6 +251,7 @@ def ai_answer_question(
 
     print_lg("-- ANSWERING QUESTION using AI")
     try:
+        _emit_event("form_filling_started", {"provider": "openai", "question": str(question)[:120]})
         prompt = ai_answer_prompt.format(user_information_all or "N/A", question)
          # Append optional details if provided
         if job_description and job_description != "Unknown":
@@ -249,8 +262,10 @@ def ai_answer_question(
         messages = [{"role": "user", "content": prompt}]
         print_lg("Prompt we are passing to AI: ", prompt)
         response =  ai_completion(client, messages, stream=stream)
+        _emit_event("form_filling_completed", {"provider": "openai"})
         # print_lg("Response from AI: ", response)
         return response
     except Exception as e:
+        _emit_event("form_filling_failed", {"provider": "openai", "error": str(e)})
         ai_error_alert(f"Error occurred while answering question. {apiCheckInstructions}", e)
 ##<

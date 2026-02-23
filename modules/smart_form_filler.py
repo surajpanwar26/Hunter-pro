@@ -428,10 +428,17 @@ class AnswerEngine:
         (r'veteran', 'veteran_status'),
         (r'disability|disabled', 'disability_status'),
         
+        # Education
+        (r'university|college|school|institution', 'university'),
+        (r'degree|qualification', 'degree'),
+        (r'major|field\s*of\s*study|specializ|specialis|discipline', 'field_of_study'),
+        (r'gpa|cgpa|grade|percentage', 'gpa'),
+        
         # Other
         (r'cover\s*letter', 'cover_letter'),
         (r'summary|objective|about', 'summary'),
         (r'headline', 'linkedin_headline'),
+        (r'phone\s*country\s*code|country\s*code', 'phone_country_code'),
     }
     
     # Yes/No question patterns
@@ -513,9 +520,22 @@ class AnswerEngine:
         label = element.label_lower
         options = element.options
         
-        # Check for specific patterns
+        # Check learned dropdown mappings first
+        if label in self.learned:
+            return self._find_option(options, [self.learned[label]])
+        
+        # Email dropdown - match from config
+        if 'email' in label:
+            return self._find_option(options, [self.config.get('email', '')])
+        # Phone country code dropdown
+        if 'country code' in label or ('phone' in label and 'country' in label):
+            return self._find_option(options, [self.config.get('phone_country_code', ''), 'India (+91)', 'india'])
+        # Country dropdown
         if 'country' in label:
             return self._find_option(options, [self.config.get('country', ''), 'united states', 'usa', 'us'])
+        # Education degree dropdown
+        if 'degree' in label or 'education' in label or 'qualification' in label:
+            return self._find_option(options, [self.config.get('degree', ''), "Bachelor's", "Master's"])
         if 'state' in label or 'province' in label:
             return self._find_option(options, [self.config.get('state', '')])
         if 'gender' in label:
@@ -798,13 +818,13 @@ class SmartFormFiller:
     Coordinates PageAnalyzer, AnswerEngine, and FormExecutor.
     """
     
-    def __init__(self, driver: WebDriver, user_config: dict, fast_mode: bool = True):
+    def __init__(self, driver: WebDriver, user_config: dict, fast_mode: bool = True, learned_answers: dict | None = None):
         self.driver = driver
         self.config = user_config
         self.fast_mode = fast_mode
         
         self.analyzer = PageAnalyzer(driver)
-        self.answers = AnswerEngine(user_config)
+        self.answers = AnswerEngine(user_config, learned_answers=learned_answers)
         self.executor = FormExecutor(driver, self.answers)
         
         self._pages_filled = 0
@@ -924,6 +944,20 @@ def create_smart_filler(driver: WebDriver) -> SmartFormFiller:
     )
     from config.secrets import username as email
     
+    # Import new fields with safe fallbacks
+    try:
+        from config.personals import email as config_email
+    except ImportError:
+        config_email = email
+    try:
+        from config.personals import phone_country_code
+    except ImportError:
+        phone_country_code = ""
+    try:
+        from config.personals import university, degree, field_of_study, gpa
+    except ImportError:
+        university = degree = field_of_study = gpa = ""
+    
     full_name = f"{first_name} {middle_name} {last_name}".replace("  ", " ").strip()
     
     user_config = {
@@ -931,8 +965,9 @@ def create_smart_filler(driver: WebDriver) -> SmartFormFiller:
         'middle_name': middle_name,
         'last_name': last_name,
         'full_name': full_name,
-        'email': email,
+        'email': config_email or email,
         'phone_number': phone_number,
+        'phone_country_code': phone_country_code,
         'city': current_city,
         'state': state,
         'country': country,
@@ -941,7 +976,7 @@ def create_smart_filler(driver: WebDriver) -> SmartFormFiller:
         'linkedin_url': linkedIn,
         'website': website,
         'years_of_experience': years_of_experience,
-        'work_authorized': 'Yes',  # Work authorization is independent of citizenship (H-1B, Green Card, EAD holders are authorized)
+        'work_authorized': 'Yes',
         'visa_sponsorship': require_visa,
         'gender': gender,
         'disability_status': disability_status,
@@ -956,7 +991,25 @@ def create_smart_filler(driver: WebDriver) -> SmartFormFiller:
         'current_employer': recent_employer,
         'confidence_level': confidence_level,
         'referral_source': 'LinkedIn',
+        # Education fields
+        'university': university,
+        'degree': degree,
+        'field_of_study': field_of_study,
+        'gpa': gpa,
     }
+    
+    # Load learned answers for V2 filler
+    learned = {}
+    try:
+        from modules.self_learning import get_all_learned
+        all_learned = get_all_learned()
+        # Flatten dropdown_mappings into learned dict for AnswerEngine
+        for bucket_key in ('dropdown_mappings', 'select_answers', 'text_answers'):
+            bucket = all_learned.get(bucket_key, {})
+            for k, v in bucket.items():
+                learned[k.strip().lower()] = v
+    except ImportError:
+        pass
     
     # Get fast mode from settings
     try:
@@ -965,4 +1018,4 @@ def create_smart_filler(driver: WebDriver) -> SmartFormFiller:
     except:
         fast_mode = True
     
-    return SmartFormFiller(driver, user_config, fast_mode)
+    return SmartFormFiller(driver, user_config, fast_mode, learned_answers=learned)

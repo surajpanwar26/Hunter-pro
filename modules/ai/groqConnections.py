@@ -15,10 +15,18 @@ import json
 import time
 import urllib.request
 import urllib.error
-from typing import Optional, Any
+from typing import Optional
 from dataclasses import dataclass
 
 from modules.helpers import print_lg
+
+
+def _emit_event(event: str, data: dict | None = None) -> None:
+    try:
+        from modules.dashboard import log_handler
+        log_handler.publish_event(event=event, data=data or {}, source="groq")
+    except Exception:
+        pass
 
 
 @dataclass
@@ -359,9 +367,12 @@ def groq_extract_skills(client, job_description: str) -> list:
         return []
     
     try:
+        _emit_event("jd_analysis_started", {"provider": "groq"})
         analysis = client.analyze_job_description(job_description)
+        _emit_event("jd_analysis_completed", {"provider": "groq"})
         return analysis.get('required_skills', []) + analysis.get('preferred_skills', [])
     except Exception as e:
+        _emit_event("jd_analysis_failed", {"provider": "groq", "error": str(e)})
         print_lg(f"Error extracting skills: {e}")
         return []
 
@@ -383,8 +394,12 @@ def groq_answer_question(client, question: str, user_info: str, context: str = "
         return ""
     
     try:
-        return client.answer_question(question, user_info, context)
+        _emit_event("form_filling_started", {"provider": "groq", "question": str(question)[:120]})
+        result = client.answer_question(question, user_info, context)
+        _emit_event("form_filling_completed", {"provider": "groq"})
+        return result
     except Exception as e:
+        _emit_event("form_filling_failed", {"provider": "groq", "error": str(e)})
         print_lg(f"Error answering question: {e}")
         return ""
 
@@ -406,7 +421,11 @@ def groq_tailor_resume(client, resume_text: str, job_description: str, instructi
         return resume_text
     
     try:
-        return client.tailor_resume(resume_text, job_description, instructions)
+        _emit_event("resume_tailoring_started", {"provider": "groq"})
+        result = client.tailor_resume(resume_text, job_description, instructions)
+        _emit_event("resume_tailoring_completed", {"provider": "groq"})
+        return result
     except Exception as e:
+        _emit_event("resume_tailoring_failed", {"provider": "groq", "error": str(e)})
         print_lg(f"Error tailoring resume: {e}")
         return resume_text

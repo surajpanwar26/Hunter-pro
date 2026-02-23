@@ -3,8 +3,17 @@ from config.secrets import llm_model, llm_api_key
 from config.settings import showAiErrorAlerts
 from modules.helpers import print_lg, critical_error_log, convert_to_json
 from modules.ai.prompts import *
+from modules.retry_policy import retry, classify_error, RetryExhausted
 from pyautogui import confirm
 from typing import Literal
+
+
+def _emit_event(event: str, data: dict | None = None) -> None:
+    try:
+        from modules.dashboard import log_handler
+        log_handler.publish_event(event=event, data=data or {}, source="gemini")
+    except Exception:
+        pass
 
 def gemini_get_models_list():
     """
@@ -90,11 +99,21 @@ def gemini_completion(model, prompt: str, is_json: bool = False) -> dict | str:
         ]
 
         print_lg("Calling Gemini API for completion...")
-        response = model.generate_content(prompt, safety_settings=safety_settings)
-        
-        # The response might be blocked. Check for that.
-        if not response.parts:
-             raise ValueError("The response from the Gemini API was empty. This might be due to the safety filters blocking the prompt or the response. The prompt was:\n" + prompt)
+
+        # Use classified retry: transient/rate-limit errors get retried with
+        # bounded exponential backoff; deterministic errors fail immediately.
+        @retry(max_attempts=3, base_delay=2.0, max_delay=30.0, categories={"transient", "resource"},
+               on_retry=lambda attempt, delay, exc: print_lg(f"[retry {attempt}/3] Gemini API error ({classify_error(exc)}): {exc} — retrying in {delay:.1f}s"))
+        def _call_gemini():
+            resp = model.generate_content(prompt, safety_settings=safety_settings)
+            if not resp.parts:
+                raise ValueError("The response from the Gemini API was empty. This might be due to the safety filters blocking the prompt or the response.")
+            return resp
+
+        try:
+            response = _call_gemini()
+        except RetryExhausted as re:
+            raise re.last_exception
 
         result = response.text
 
@@ -120,10 +139,14 @@ def gemini_extract_skills(model, job_description: str) -> list[str] | None:
     * Returns a `dict` object representing JSON response.
     """
     try:
+        _emit_event("jd_analysis_started", {"provider": "gemini"})
         print_lg("Extracting skills from job description using Gemini...")
         prompt = extract_skills_prompt.format(job_description) + "\n\nImportant: Respond with only the JSON object, without any markdown formatting or other text."
-        return gemini_completion(model, prompt, is_json=True)
+        result = gemini_completion(model, prompt, is_json=True)
+        _emit_event("jd_analysis_completed", {"provider": "gemini"})
+        return result
     except Exception as e:
+        _emit_event("jd_analysis_failed", {"provider": "gemini", "error": str(e)})
         critical_error_log("Error occurred while extracting skills with Gemini!", e)
         return {"error": str(e)}
 
@@ -137,6 +160,7 @@ def gemini_answer_question(
     Answers a question using the Gemini API.
     """
     try:
+        _emit_event("form_filling_started", {"provider": "gemini", "question": str(question)[:120]})
         print_lg(f"Answering question using Gemini AI: {question}")
         user_info = user_information_all or ""
         prompt = ai_answer_prompt.format(user_info, question)
@@ -155,7 +179,10 @@ def gemini_answer_question(
         if about_company:
             prompt += f"\n\nABOUT COMPANY:\n{about_company}"
 
-        return gemini_completion(model, prompt)
+        result = gemini_completion(model, prompt)
+        _emit_event("form_filling_completed", {"provider": "gemini"})
+        return result
     except Exception as e:
+        _emit_event("form_filling_failed", {"provider": "gemini", "error": str(e)})
         critical_error_log("Error occurred while answering question with Gemini!", e)
         return {"error": str(e)}

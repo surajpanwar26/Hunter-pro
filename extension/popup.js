@@ -7,10 +7,23 @@
 // UTILITY: HTML Sanitization
 // ================================
 function escapeHtml(str) {
+    const helper = (typeof window !== 'undefined' && window.PopupHelpers?.escapeHtml)
+        ? window.PopupHelpers.escapeHtml
+        : null;
+    if (helper) return helper(str);
     if (!str) return '';
     const div = document.createElement('div');
     div.textContent = String(str);
     return div.innerHTML;
+}
+
+function sanitizeDownloadFilename(name, fallback = 'export.json') {
+    const helper = (typeof window !== 'undefined' && window.PopupHelpers?.sanitizeFilename)
+        ? window.PopupHelpers.sanitizeFilename
+        : null;
+    if (helper) return helper(name, fallback);
+    const safe = String(name || '').replace(/[<>:"/\\|?*\x00-\x1F]+/g, '_').trim();
+    return safe || fallback;
 }
 
 // ================================
@@ -22,7 +35,45 @@ const HISTORY_KEY = 'universalAutoFillHistory';
 const LEARNED_KEY = 'universalAutoFillLearned';
 const UNRESOLVED_KEY = 'universalAutoFillUnresolvedFields';
 const STORAGE_FALLBACK_KEY = 'universalAutoFillDataLocal';
+const TELEMETRY_KEY = 'v2TelemetryEvents';
+const PROVIDER_KEY = 'aiProviderConfig';
+const PRIVACY_EXPORT_VERSION = '1.0.0';
+const TOP_SECTION_COLLAPSE_KEY = 'popupTopSectionCollapsed';
 const isSidePanelView = new URLSearchParams(window.location.search).get('view') === 'sidepanel';
+
+const SUPPORTED_PORTAL_PATTERNS = [
+    /https:\/\/(?:www\.)?linkedin\.com\//i,
+    /https:\/\/(?:www\.)?indeed\.com\//i,
+    /https:\/\/[^/]*\.indeed\.com\//i,
+    /https:\/\/(?:www\.)?glassdoor\.com\//i,
+    /https:\/\/[^/]*\.glassdoor\.com\//i,
+    /https:\/\/[^/]*\.myworkday\.com\//i,
+    /https:\/\/[^/]*\.workday\.com\//i,
+    /https:\/\/[^/]*\.greenhouse\.io\//i,
+    /https:\/\/boards\.greenhouse\.io\//i,
+    /https:\/\/[^/]*\.lever\.co\//i,
+    /https:\/\/jobs\.lever\.co\//i,
+    /https:\/\/[^/]*\.smartrecruiters\.com\//i,
+    /https:\/\/[^/]*\.bamboohr\.com\//i,
+    /https:\/\/[^/]*\.icims\.com\//i,
+    /https:\/\/[^/]*\.taleo\.net\//i,
+    /https:\/\/[^/]*\.successfactors\.com\//i,
+    /https:\/\/[^/]*\.jobvite\.com\//i,
+    /https:\/\/[^/]*\.ashbyhq\.com\//i,
+    /https:\/\/[^/]*\.breezy\.hr\//i,
+    /https:\/\/[^/]*\.recruitee\.com\//i,
+    /https:\/\/[^/]*\.jazz\.co\//i,
+    /https:\/\/[^/]*\.wellfound\.com\//i,
+    /https:\/\/angel\.co\//i,
+    /https:\/\/[^/]*\.monster\.com\//i,
+    /https:\/\/[^/]*\.ziprecruiter\.com\//i,
+    /https:\/\/[^/]*\.careerbuilder\.com\//i,
+    /https:\/\/[^/]*\.dice\.com\//i,
+    /https:\/\/stackoverflow\.com\/jobs\//i,
+    /https:\/\/[^/]*\.remoteok\.com\//i,
+    /https:\/\/[^/]*\.weworkremotely\.com\//i,
+    /https:\/\/[^/]*\.flexjobs\.com\//i,
+];
 
 if (isSidePanelView) {
     document.documentElement.classList.add('sidepanel-mode');
@@ -72,7 +123,9 @@ const elements = {
     autopilotAction: document.getElementById('autopilotAction'),
     autopilotWait: document.getElementById('autopilotWait'),
     autopilotNote: document.getElementById('autopilotNote'),
+    btnAutoPilotPreview: document.getElementById('btnAutoPilotPreview'),
     statusBadge: document.getElementById('statusBadge'),
+    btnToggleTopSection: document.getElementById('btnToggleTopSection'),
     
     // Portal Detection
     portalBanner: document.getElementById('portalBanner'),
@@ -110,6 +163,8 @@ const elements = {
     btnPreviewResume: document.getElementById('btnPreviewResume'),
     btnDownloadDocx: document.getElementById('btnDownloadDocx'),
     btnDownloadPdf: document.getElementById('btnDownloadPdf'),
+    btnOpenDocx: document.getElementById('btnOpenDocx'),
+    btnOpenPdf: document.getElementById('btnOpenPdf'),
     
     // Tabs
     tabs: document.querySelectorAll('.tab'),
@@ -149,12 +204,21 @@ const elements = {
     maxRetries: document.getElementById('maxRetries'),
     btnOpenSidePanel: document.getElementById('btnOpenSidePanel'),
     autofillResumeOptions: document.querySelectorAll('input[name="autofillResumeSource"]'),
+    autopilotTailorModeOptions: document.querySelectorAll('input[name="autopilotTailorMode"]'),
     autofillResumeUpload: document.getElementById('autofillResumeUpload'),
     autofillResumeFile: document.getElementById('autofillResumeFile'),
     autofillResumeFormat: document.getElementById('autofillResumeFormat'),
     previewBeforeUpload: document.getElementById('previewBeforeUpload'),
     autofillResumeInfo: document.getElementById('autofillResumeInfo'),
+    autopilotTailorModeInfo: document.getElementById('autopilotTailorModeInfo'),
     btnResetSettings: document.getElementById('btnResetSettings'),
+    telemetryOptIn: document.getElementById('telemetryOptIn'),
+    btnExportPersonalData: document.getElementById('btnExportPersonalData'),
+    btnClearPersonalData: document.getElementById('btnClearPersonalData'),
+    btnSendDiagnostics: document.getElementById('btnSendDiagnostics'),
+    privacyDataSummary: document.getElementById('privacyDataSummary'),
+    apiHealthStatus: document.getElementById('apiHealthStatus'),
+    autopilotApiBackupOnOffline: document.getElementById('autopilotApiBackupOnOffline'),
     
     // Learning Tab
     learnedFieldsCount: document.getElementById('learnedFieldsCount'),
@@ -174,6 +238,11 @@ const elements = {
     unknownFieldsHomeList: document.getElementById('unknownFieldsHomeList'),
     unknownFieldsHomeSummary: document.getElementById('unknownFieldsHomeSummary'),
     btnSaveUnknownAnswersHome: document.getElementById('btnSaveUnknownAnswersHome'),
+    tailorFailureActions: document.getElementById('tailorFailureActions'),
+    btnRetryTailorGuided: document.getElementById('btnRetryTailorGuided'),
+    btnOpenManualEditor: document.getElementById('btnOpenManualEditor'),
+    btnDownloadCurrentDraft: document.getElementById('btnDownloadCurrentDraft'),
+    btnSendHumanReview: document.getElementById('btnSendHumanReview'),
     
     // History
     totalFilled: document.getElementById('totalFilled'),
@@ -191,11 +260,16 @@ const elements = {
     closeResume: document.getElementById('closeResume'),
     btnModalDownloadDocx: document.getElementById('btnModalDownloadDocx'),
     btnModalDownloadPdf: document.getElementById('btnModalDownloadPdf'),
+    btnModalOpenDocx: document.getElementById('btnModalOpenDocx'),
+    btnModalOpenPdf: document.getElementById('btnModalOpenPdf'),
     btnUseResume: document.getElementById('btnUseResume'),
     
     // Loading
     loadingOverlay: document.getElementById('loadingOverlay'),
     loadingText: document.getElementById('loadingText'),
+    loadingProgress: document.getElementById('loadingProgress'),
+    loadingProgressBar: document.getElementById('loadingProgressBar'),
+    loadingProgressText: document.getElementById('loadingProgressText'),
     
     // Toast
     toast: document.getElementById('toast')
@@ -205,12 +279,67 @@ const elements = {
 // API BRIDGE CONFIGURATION
 // ================================
 const API_BASE_URL = 'http://127.0.0.1:5001';
+const API_BASE_URL_CANDIDATES = ['http://127.0.0.1:5001', 'http://localhost:5001'];
 let apiServerAvailable = false;
 const JD_SCHEMA_VERSION = '1.1.0';
+const apiCircuitState = {
+    failCount: 0,
+    openUntil: 0,
+    lastError: '',
+};
+
+function nowTs() {
+    return Date.now();
+}
+
+function isApiCircuitOpen() {
+    return nowTs() < Number(apiCircuitState.openUntil || 0);
+}
+
+function markApiSuccess() {
+    apiCircuitState.failCount = 0;
+    apiCircuitState.openUntil = 0;
+    apiCircuitState.lastError = '';
+    if (elements.apiHealthStatus) {
+        elements.apiHealthStatus.innerHTML = '<small>✅ Local API reachable</small>';
+    }
+}
+
+function markApiFailure(errorMessage = '') {
+    apiCircuitState.failCount = Math.min(10, Number(apiCircuitState.failCount || 0) + 1);
+    apiCircuitState.lastError = String(errorMessage || 'API request failed');
+    const coolOffMs = Math.min(10000, 1000 * Math.pow(2, Math.max(0, apiCircuitState.failCount - 1)));
+    apiCircuitState.openUntil = nowTs() + coolOffMs;
+    if (elements.apiHealthStatus) {
+        elements.apiHealthStatus.innerHTML = `<small>⚠️ Local API offline (cooldown ${Math.ceil(coolOffMs / 1000)}s). Fallback mode enabled.</small>`;
+    }
+}
+
+function getBackoffMs(attempt, base = 600, max = 10000) {
+    const helper = (typeof window !== 'undefined' && window.PopupHelpers?.getExponentialBackoffMs)
+        ? window.PopupHelpers.getExponentialBackoffMs
+        : null;
+    if (helper) return helper(attempt, base, max);
+    const safeAttempt = Math.max(1, Number(attempt) || 1);
+    const jitter = Math.floor(Math.random() * 120);
+    return Math.min(Number(base) * Math.pow(2, safeAttempt - 1) + jitter, Number(max));
+}
+
+function anonymizeTelemetryData(data) {
+    const helper = (typeof window !== 'undefined' && window.PopupHelpers?.anonymizeTelemetryData)
+        ? window.PopupHelpers.anonymizeTelemetryData
+        : null;
+    return helper ? helper(data) : {};
+}
+
+function isTelemetryEnabled() {
+    return !!settings.telemetryOptIn;
+}
 
 function emitTelemetry(type, data = {}) {
+    if (!isTelemetryEnabled()) return;
     try {
-        chrome.runtime.sendMessage({ action: 'telemetryEvent', type, data });
+        chrome.runtime.sendMessage({ action: 'telemetryEvent', type, data: anonymizeTelemetryData(data) });
     } catch {
         // ignore telemetry failures
     }
@@ -221,7 +350,13 @@ function emitTelemetry(type, data = {}) {
  * Falls back to client-side scoring if server unavailable.
  */
 async function callAPI(endpoint, data = null, options = {}) {
-    const url = `${API_BASE_URL}${endpoint}`;
+    if (!options.bypassCircuit && isApiCircuitOpen()) {
+        const seconds = Math.max(1, Math.ceil((apiCircuitState.openUntil - nowTs()) / 1000));
+        throw new Error(`Local API temporarily unavailable (retry in ~${seconds}s)`);
+    }
+
+    const baseUrl = String(options.baseUrl || API_BASE_URL).trim() || API_BASE_URL;
+    const url = `${baseUrl}${endpoint}`;
     const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 30000;
     const retries = Number(options.retries) > 0 ? Number(options.retries) : 0;
     const opts = {
@@ -241,20 +376,27 @@ async function callAPI(endpoint, data = null, options = {}) {
             clearTimeout(timeoutId);
             if (!response.ok) {
                 const err = await response.json().catch(() => ({}));
-                throw new Error(err.error || `API ${response.status}`);
+                const msg = err.error || `API ${response.status}`;
+                markApiFailure(msg);
+                throw new Error(msg);
             }
-            return await response.json();
+            const body = await response.json();
+            markApiSuccess();
+            return body;
         } catch (e) {
             clearTimeout(timeoutId);
             const timedOut = e?.name === 'AbortError';
             if (timedOut && attempt < retries) {
+                await sleep(getBackoffMs(attempt + 1, 350, 2800));
                 attempt += 1;
                 continue;
             }
             if (timedOut) {
                 emitTelemetry('api_timeout', { endpoint, timeoutMs, retries });
+                markApiFailure('API timeout');
                 throw new Error(`API request timed out (${Math.round(timeoutMs / 1000)}s)`);
             }
+            markApiFailure(e?.message || String(e));
             throw e;
         }
     }
@@ -264,14 +406,49 @@ async function callAPI(endpoint, data = null, options = {}) {
  * Check if the local API server is running.
  */
 async function checkAPIServer() {
+    const probes = API_BASE_URL_CANDIDATES.map(baseUrl => `${baseUrl}/api/health`);
+
     try {
-        const result = await callAPI('/api/health', null, { timeoutMs: 8000, retries: 0 });
-        apiServerAvailable = result.status === 'ok';
-        return apiServerAvailable;
+        for (const probeUrl of probes) {
+            try {
+                const response = await fetch(probeUrl, {
+                    method: 'GET',
+                    headers: { 'Content-Type': 'application/json' },
+                    cache: 'no-store',
+                    signal: AbortSignal.timeout(8000)
+                });
+                if (!response.ok) continue;
+                const result = await response.json().catch(() => ({}));
+                apiServerAvailable = result.status === 'ok';
+                if (apiServerAvailable) {
+                    markApiSuccess();
+                    return true;
+                }
+            } catch {
+                continue;
+            }
+        }
+
+        apiServerAvailable = false;
+        markApiFailure('health check failed');
+        return false;
     } catch {
         apiServerAvailable = false;
+        markApiFailure('health check failed');
         return false;
     }
+}
+
+async function waitForApiRecovery(maxAttempts = 6, delayMs = 1800) {
+    const attempts = Math.max(1, Number(maxAttempts) || 1);
+    for (let i = 1; i <= attempts; i++) {
+        const ok = await checkAPIServer();
+        if (ok) return true;
+        if (i < attempts) {
+            await sleep(Math.max(250, Number(delayMs) || 1200));
+        }
+    }
+    return false;
 }
 
 // ================================
@@ -288,11 +465,14 @@ let settings = {
     fillDelay: 100,
     maxRetries: 3,
     autofillResumeSource: 'tailored',
+    autopilotTailoringMode: 'master_preserve',
+    autopilotApiBackupOnOffline: false,
     autofillResumeFormat: 'pdf',
     previewBeforeUpload: true,
     useSidePanelMode: false,
     enableLearning: true,
     syncToConfig: true,
+    telemetryOptIn: false,
     detectionMode: 'universal',
     extensionEnabled: true
 };
@@ -312,6 +492,9 @@ let defaultReviewerInstructions = '';
 let toastTimerId = null;
 let autopilotWaitTimerId = null;
 let pendingUploadPreviewResolver = null;
+let autopilotResumeSourceOverride = null;
+let currentOperationMode = 'default';
+let topSectionCollapsed = false;
 
 // ================================
 // UTILITY FUNCTIONS
@@ -330,6 +513,12 @@ function showToast(message, type = 'success') {
     }, 5000);
 }
 
+function isSupportedPortalUrl(url) {
+    const value = String(url || '').trim();
+    if (!value) return false;
+    return SUPPORTED_PORTAL_PATTERNS.some(pattern => pattern.test(value));
+}
+
 function updateStatus(status, text) {
     const badge = elements.statusBadge;
     badge.className = `status-badge ${status}`;
@@ -340,6 +529,9 @@ function showLoading(message = 'Processing...') {
     if (elements.loadingOverlay) {
         elements.loadingText.textContent = message;
         elements.loadingOverlay.style.display = 'flex';
+        if (elements.loadingProgress) {
+            elements.loadingProgress.style.display = 'none';
+        }
     }
 }
 
@@ -347,6 +539,71 @@ function hideLoading() {
     if (elements.loadingOverlay) {
         elements.loadingOverlay.style.display = 'none';
     }
+    if (elements.loadingProgress) {
+        elements.loadingProgress.style.display = 'none';
+    }
+}
+
+function setLoadingProgress(percent, text = '') {
+    const value = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+    if (elements.loadingProgress) {
+        elements.loadingProgress.style.display = 'block';
+    }
+    if (elements.loadingProgressBar) {
+        elements.loadingProgressBar.style.width = `${value}%`;
+    }
+    if (elements.loadingProgressText) {
+        elements.loadingProgressText.textContent = `${value}%`;
+    }
+    if (text && elements.loadingText) {
+        elements.loadingText.textContent = text;
+    }
+}
+
+function startLoadingProgressTicker(initialPercent = 8, initialText = 'Preparing AI request...') {
+    let progress = Math.max(0, Math.min(95, Number(initialPercent) || 8));
+    setLoadingProgress(progress, initialText);
+    const timerId = setInterval(() => {
+        const delta = progress < 60 ? 4 : (progress < 82 ? 2 : 1);
+        progress = Math.min(92, progress + delta);
+        setLoadingProgress(progress);
+    }, 1200);
+
+    let stopped = false;
+    return (finalText = 'Finalizing results...') => {
+        if (stopped) return;
+        stopped = true;
+        clearInterval(timerId);
+        setLoadingProgress(100, finalText);
+    };
+}
+
+function toPercentScore(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return null;
+    if (numeric >= 0 && numeric <= 1) return Math.round(numeric * 100);
+    if (numeric >= 0 && numeric <= 100) return Math.round(numeric);
+    return null;
+}
+
+function deriveDisplayScores(result) {
+    const after = result?.scoresAfter || {};
+    const rawAts = toPercentScore(after.ats) ?? toPercentScore(result?.atsScore) ?? 0;
+    const rawMatch = toPercentScore(after.match) ?? toPercentScore(result?.matchScore) ?? 0;
+
+    const weightedQuality =
+        toPercentScore(result?.quality?.weightedScore) ??
+        toPercentScore(result?.quality?.overallScore) ??
+        toPercentScore(result?.reviewer?.overallScore);
+
+    if (weightedQuality === null) {
+        return { ats: rawAts, match: rawMatch };
+    }
+
+    return {
+        ats: Math.round((rawAts * 0.85) + (weightedQuality * 0.15)),
+        match: Math.round((rawMatch * 0.7) + (weightedQuality * 0.3)),
+    };
 }
 
 function clearAutopilotWaitCountdown() {
@@ -437,6 +694,128 @@ function getPortalDisplayName(portal) {
     return names[portal] || 'Job Portal';
 }
 
+function activateTab(targetId = 'profile') {
+    elements.tabs.forEach(tab => {
+        tab.classList.toggle('active', tab.getAttribute('data-tab') === targetId);
+    });
+    elements.tabPanels.forEach(panel => {
+        panel.classList.toggle('active', panel.id === targetId);
+    });
+}
+
+function setModeVisibility(mode = 'default') {
+    currentOperationMode = mode;
+
+    const quickActionsSection = document.querySelector('.quick-actions');
+    const workflowActionsSection = document.querySelector('.workflow-actions');
+    const tabsNav = document.querySelector('.tabs');
+    const tabContent = document.querySelector('.tab-content');
+    const profileForm = elements.profileForm;
+    const jdHeaderButtons = document.querySelector('.jd-header-buttons');
+
+    const isAutopilot = mode === 'autopilot';
+    const isTailoring = mode === 'tailoring';
+    const isAutofill = mode === 'autofill';
+
+    if (quickActionsSection) quickActionsSection.style.display = 'grid';
+    if (workflowActionsSection) workflowActionsSection.style.display = isAutopilot ? 'none' : 'grid';
+
+    if (elements.btnFillForm) elements.btnFillForm.style.display = isAutopilot ? 'none' : 'inline-flex';
+    if (elements.btnAutoPilot) elements.btnAutoPilot.style.display = 'inline-flex';
+    if (elements.btnQuickSidePanel) elements.btnQuickSidePanel.style.display = isAutopilot ? 'none' : 'inline-flex';
+
+    if (tabsNav) tabsNav.style.display = (isTailoring || isAutopilot) ? 'none' : 'flex';
+    if (tabContent) tabContent.style.display = isTailoring ? 'none' : 'block';
+    if (profileForm) profileForm.style.display = isAutopilot ? 'none' : 'block';
+
+    if (elements.jdSection) {
+        elements.jdSection.style.display = isAutopilot
+            ? 'none'
+            : ((isTailoring || mode === 'default') ? 'block' : 'none');
+    }
+    if (elements.atsSection) {
+        const hasResult = !!currentTailoredResume;
+        elements.atsSection.style.display = (hasResult && !isAutopilot && (isTailoring || mode === 'default')) ? 'block' : 'none';
+    }
+
+    if (elements.autopilotProgress) {
+        if (!isAutopilot && elements.autopilotProgress.style.display !== 'none') {
+            elements.autopilotProgress.style.display = 'none';
+        }
+    }
+
+    if (elements.unknownFieldsHomeSection && isAutopilot) {
+        elements.unknownFieldsHomeSection.style.display = 'block';
+        if (elements.unknownFieldsHomeSummary && (!Array.isArray(unresolvedFields) || unresolvedFields.length === 0)) {
+            elements.unknownFieldsHomeSummary.textContent = 'No unresolved fields yet. Auto Pilot will list them here as it fills this step.';
+        }
+    }
+
+    if (jdHeaderButtons) {
+        jdHeaderButtons.style.display = isAutopilot ? 'none' : 'flex';
+    }
+
+    if (isAutofill) {
+        activateTab('profile');
+    }
+    if (isAutopilot) {
+        activateTab('profile');
+    }
+
+    applyTopSectionCollapsedState();
+}
+
+function applyTopSectionCollapsedState() {
+    const quickActionsSection = document.querySelector('.quick-actions');
+    const workflowActionsSection = document.querySelector('.workflow-actions');
+    const shouldHideTop = topSectionCollapsed === true;
+
+    if (elements.portalBanner) {
+        elements.portalBanner.style.display = shouldHideTop ? 'none' : elements.portalBanner.style.display;
+    }
+    if (quickActionsSection) {
+        quickActionsSection.style.display = shouldHideTop ? 'none' : 'grid';
+    }
+    if (workflowActionsSection) {
+        workflowActionsSection.style.display = shouldHideTop ? 'none' : (currentOperationMode === 'autopilot' ? 'none' : 'grid');
+    }
+    if (elements.autopilotProgress) {
+        elements.autopilotProgress.style.display = shouldHideTop ? 'none' : elements.autopilotProgress.style.display;
+    }
+    if (elements.jdSection) {
+        elements.jdSection.style.display = shouldHideTop ? 'none' : elements.jdSection.style.display;
+    }
+    if (elements.atsSection && shouldHideTop) {
+        elements.atsSection.style.display = 'none';
+    }
+
+    document.body.classList.toggle('top-collapsed', shouldHideTop);
+    if (elements.btnToggleTopSection) {
+        elements.btnToggleTopSection.textContent = shouldHideTop ? '⤡' : '⤢';
+        elements.btnToggleTopSection.title = shouldHideTop ? 'Expand top section' : 'Collapse top section';
+    }
+}
+
+function setTopSectionCollapsedState(collapsed, persist = true) {
+    topSectionCollapsed = !!collapsed;
+    applyTopSectionCollapsedState();
+    if (!persist) return;
+    try {
+        localStorage.setItem(TOP_SECTION_COLLAPSE_KEY, topSectionCollapsed ? '1' : '0');
+    } catch {
+        // non-fatal
+    }
+}
+
+function loadTopSectionCollapsedState() {
+    try {
+        topSectionCollapsed = localStorage.getItem(TOP_SECTION_COLLAPSE_KEY) === '1';
+    } catch {
+        topSectionCollapsed = false;
+    }
+    applyTopSectionCollapsedState();
+}
+
 async function getActiveTab() {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     return tab;
@@ -449,6 +828,10 @@ async function getActiveTab() {
  */
 async function ensureContentScriptLoaded(tabId) {
     try {
+        const tab = await chrome.tabs.get(tabId).catch(() => null);
+        if (!tab?.url || !isSupportedPortalUrl(tab.url)) {
+            return false;
+        }
         // Try a ping to check if content script is loaded
         return await new Promise((resolve) => {
             chrome.tabs.sendMessage(tabId, { action: 'ping' }, response => {
@@ -478,9 +861,18 @@ async function ensureContentScriptLoaded(tabId) {
 }
 
 async function sendMessageToContent(action, data = {}) {
+    const passiveActions = new Set(['ping', 'getPortal', 'isApplicationPage']);
+    if (settings.extensionEnabled === false && !passiveActions.has(String(action || ''))) {
+        throw new Error('Extension automation is disabled in settings');
+    }
+
     const tab = await getActiveTab();
     if (!tab) {
         throw new Error('No active tab found');
+    }
+
+    if (!isSupportedPortalUrl(tab.url || '')) {
+        throw new Error('Unsupported site. Open a supported job portal page to continue.');
     }
     
     // Check if we're on a supported page, or try to inject content script
@@ -532,11 +924,14 @@ async function loadBundledConfig() {
             if (configSettings.extensionEnabled === false) {
                 console.log('⚠ Extension is disabled in Python config');
             }
+            if (configSettings.extensionEnabled !== undefined) settings.extensionEnabled = !!configSettings.extensionEnabled;
             if (configSettings.autoSync !== undefined) settings.syncToConfig = configSettings.autoSync;
             if (configSettings.enableLearning !== undefined) settings.enableLearning = configSettings.enableLearning;
             if (configSettings.detectionMode !== undefined) settings.detectionMode = configSettings.detectionMode;
             if (configSettings.autofillResumeFormat !== undefined) settings.autofillResumeFormat = configSettings.autofillResumeFormat;
             if (configSettings.previewBeforeUpload !== undefined) settings.previewBeforeUpload = !!configSettings.previewBeforeUpload;
+            if (configSettings.autopilotTailoringMode !== undefined) settings.autopilotTailoringMode = normalizeTailoringMode(configSettings.autopilotTailoringMode);
+            if (configSettings.autopilotApiBackupOnOffline !== undefined) settings.autopilotApiBackupOnOffline = !!configSettings.autopilotApiBackupOnOffline;
             await saveSettings();
             console.log('✓ Applied extension settings from Python config');
         }
@@ -666,6 +1061,11 @@ async function loadSettings() {
 async function saveSettings() {
     try {
         await chrome.storage.sync.set({ [SETTINGS_KEY]: settings });
+        try {
+            await sendMessageToContent('setRuntimeSettings', { settings });
+        } catch {
+            // Content script may not be available on current tab
+        }
     } catch (e) {
         console.error('Error saving settings:', e);
         throw e;
@@ -732,6 +1132,12 @@ function populateSettingsForm() {
     }
     elements.fillDelay.value = settings.fillDelay;
     elements.maxRetries.value = settings.maxRetries;
+    if (elements.telemetryOptIn) {
+        elements.telemetryOptIn.checked = !!settings.telemetryOptIn;
+    }
+    if (elements.autopilotApiBackupOnOffline) {
+        elements.autopilotApiBackupOnOffline.checked = !!settings.autopilotApiBackupOnOffline;
+    }
 
     const source = settings.autofillResumeSource || 'tailored';
     const uploadFormat = (settings.autofillResumeFormat || 'pdf').toLowerCase() === 'docx' ? 'docx' : 'pdf';
@@ -753,6 +1159,19 @@ function populateSettingsForm() {
         const sourceLabel = source === 'tailored' ? 'Tailored Resume' : (source === 'master' ? 'Master Resume' : 'Uploaded Resume');
         const previewLabel = settings.previewBeforeUpload === false ? 'Off' : 'On';
         elements.autofillResumeInfo.innerHTML = `<small>Current source: ${escapeHtml(sourceLabel)} | Upload format: ${escapeHtml(uploadFormat.toUpperCase())} | Preview before upload: ${escapeHtml(previewLabel)}</small>`;
+    }
+
+    const tailoringMode = normalizeTailoringMode(settings.autopilotTailoringMode || 'master_preserve');
+    if (elements.autopilotTailorModeOptions && elements.autopilotTailorModeOptions.length) {
+        elements.autopilotTailorModeOptions.forEach(r => {
+            r.checked = r.value === tailoringMode;
+        });
+    }
+    if (elements.autopilotTailorModeInfo) {
+        const modeLabel = tailoringMode === 'scratch'
+            ? 'From Scratch (aggressive JD optimization)'
+            : 'Master-Based (strict preserve of format/sections)';
+        elements.autopilotTailorModeInfo.innerHTML = `<small>Current mode: ${escapeHtml(modeLabel)}</small>`;
     }
 }
 
@@ -788,19 +1207,184 @@ function collectProfileData() {
 
 function collectSettings() {
     const selectedResumeSource = document.querySelector('input[name="autofillResumeSource"]:checked')?.value || 'tailored';
+    const selectedTailoringMode = normalizeTailoringMode(document.querySelector('input[name="autopilotTailorMode"]:checked')?.value || 'master_preserve');
     const selectedUploadFormat = (elements.autofillResumeFormat?.value || 'pdf').toLowerCase() === 'docx' ? 'docx' : 'pdf';
     return {
         autoDetect: elements.autoDetect.checked,
         autoFill: elements.autoFill.checked,
         showNotifications: elements.showNotifications.checked,
         debugMode: elements.debugMode.checked,
+        extensionEnabled: settings.extensionEnabled !== false,
+        detectionMode: settings.detectionMode || 'universal',
         useSidePanelMode: !!elements.useSidePanelMode?.checked,
         fillDelay: parseInt(elements.fillDelay.value) || 100,
         maxRetries: parseInt(elements.maxRetries.value) || 3,
+        telemetryOptIn: !!elements.telemetryOptIn?.checked,
         autofillResumeSource: selectedResumeSource,
+        autopilotTailoringMode: selectedTailoringMode,
+        autopilotApiBackupOnOffline: !!elements.autopilotApiBackupOnOffline?.checked,
         autofillResumeFormat: selectedUploadFormat,
         previewBeforeUpload: !!elements.previewBeforeUpload?.checked
     };
+}
+
+function summarizeStoredData(payload = {}) {
+    const profile = payload.profile || {};
+    const learned = payload.learned || {};
+    const historyPayload = payload.history || {};
+    const unresolvedPayload = payload.unresolved || [];
+    const telemetryPayload = payload.telemetry || [];
+
+    const profileFields = Object.keys(profile || {}).filter(k => {
+        const value = profile[k];
+        return value !== null && value !== undefined && String(value).trim() !== '';
+    }).length;
+
+    return {
+        profileFields,
+        learnedCount: Object.keys(learned || {}).length,
+        historyEntries: Array.isArray(historyPayload?.entries) ? historyPayload.entries.length : 0,
+        unresolvedCount: Array.isArray(unresolvedPayload) ? unresolvedPayload.length : 0,
+        telemetryCount: Array.isArray(telemetryPayload) ? telemetryPayload.length : 0,
+    };
+}
+
+async function refreshPrivacySummary() {
+    if (!elements.privacyDataSummary) return;
+    try {
+        const [syncStore, localStore] = await Promise.all([
+            chrome.storage.sync.get([STORAGE_KEY, LEARNED_KEY, SETTINGS_KEY]),
+            chrome.storage.local.get([STORAGE_KEY, LEARNED_KEY, HISTORY_KEY, UNRESOLVED_KEY, TELEMETRY_KEY, 'activeTailoredResume'])
+        ]);
+
+        const summary = summarizeStoredData({
+            profile: syncStore?.[STORAGE_KEY] || localStore?.[STORAGE_KEY] || {},
+            learned: syncStore?.[LEARNED_KEY] || localStore?.[LEARNED_KEY] || {},
+            history: localStore?.[HISTORY_KEY] || {},
+            unresolved: localStore?.[UNRESOLVED_KEY] || [],
+            telemetry: localStore?.[TELEMETRY_KEY] || [],
+        });
+
+        elements.privacyDataSummary.innerHTML = `
+            <small>
+                Profile fields: <strong>${summary.profileFields}</strong> ·
+                Learned mappings: <strong>${summary.learnedCount}</strong> ·
+                History entries: <strong>${summary.historyEntries}</strong> ·
+                Unresolved fields: <strong>${summary.unresolvedCount}</strong> ·
+                Telemetry events: <strong>${summary.telemetryCount}</strong>
+            </small>
+        `;
+    } catch {
+        elements.privacyDataSummary.innerHTML = '<small>Unable to read stored data summary.</small>';
+    }
+}
+
+async function exportPersonalDataBundle(kind = 'personal-data') {
+    const [syncStore, localStore] = await Promise.all([
+        chrome.storage.sync.get(null),
+        chrome.storage.local.get(null)
+    ]);
+
+    const redactForDiagnostics = (value, depth = 0) => {
+        if (depth > 6) return '[truncated]';
+        if (value === null || value === undefined) return value;
+        if (typeof value === 'string') {
+            return anonymizeTelemetryData(value);
+        }
+        if (typeof value === 'number' || typeof value === 'boolean') return value;
+        if (Array.isArray(value)) {
+            return value.slice(0, 50).map(item => redactForDiagnostics(item, depth + 1));
+        }
+        if (typeof value === 'object') {
+            const blockedKeys = new Set([
+                'resumeText', 'masterText', 'tailoredText', 'jobDescription', 'description', 'rawDescription',
+                'email', 'phone', 'firstName', 'lastName', 'address', 'city', 'linkedinUrl', 'portfolioUrl', 'githubUrl',
+                'fileBytes', 'text', 'content'
+            ]);
+            const next = {};
+            for (const [key, val] of Object.entries(value)) {
+                if (blockedKeys.has(String(key))) {
+                    next[key] = '[redacted]';
+                } else {
+                    next[key] = redactForDiagnostics(val, depth + 1);
+                }
+            }
+            return next;
+        }
+        return '[redacted]';
+    };
+
+    const payload = {
+        exportedAt: new Date().toISOString(),
+        version: PRIVACY_EXPORT_VERSION,
+        type: kind,
+        data: kind === 'diagnostics'
+            ? {
+                summary: summarizeStoredData({
+                    profile: syncStore?.[STORAGE_KEY] || localStore?.[STORAGE_KEY] || {},
+                    learned: syncStore?.[LEARNED_KEY] || localStore?.[LEARNED_KEY] || {},
+                    history: localStore?.[HISTORY_KEY] || {},
+                    unresolved: localStore?.[UNRESOLVED_KEY] || [],
+                    telemetry: localStore?.[TELEMETRY_KEY] || [],
+                }),
+                sync: redactForDiagnostics(syncStore || {}),
+                local: redactForDiagnostics(localStore || {}),
+            }
+            : {
+                sync: syncStore || {},
+                local: localStore || {},
+            }
+    };
+
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = sanitizeDownloadFilename(`${kind}_${new Date().toISOString().replace(/[:.]/g, '-')}.json`, `${kind}.json`);
+    a.click();
+    URL.revokeObjectURL(url);
+}
+
+async function clearAllPersonalData() {
+    const keys = [
+        STORAGE_KEY,
+        STORAGE_FALLBACK_KEY,
+        LEARNED_KEY,
+        HISTORY_KEY,
+        UNRESOLVED_KEY,
+        'activeTailoredResume',
+        TELEMETRY_KEY,
+        PROVIDER_KEY,
+    ];
+
+    await Promise.allSettled([
+        chrome.storage.sync.remove(keys),
+        chrome.storage.local.remove(keys),
+    ]);
+
+    userData = {};
+    learnedFields = {};
+    unresolvedFields = [];
+    history = { totalFilled: 0, fieldsFilled: 0, entries: [] };
+    currentTailoredResume = null;
+    setReviewGateState(false);
+
+    if (settings.syncToConfig !== false) {
+        try {
+            await callAPI('/api/extension-learning', {
+                learnedFields: {},
+                customAnswers: {},
+            }, { timeoutMs: 10000, retries: 0 });
+        } catch {
+            // ignore when API is offline
+        }
+    }
+
+    populateProfileForm();
+    updateLearningUI();
+    updateHistoryUI();
+    renderUnknownFields([]);
+    await refreshPrivacySummary();
 }
 
 async function openSidePanelForActiveTab() {
@@ -906,19 +1490,24 @@ function addHistoryEntry(result) {
 // ================================
 function showAnalysisModal(analysis) {
     const content = elements.analysisContent;
+    const safeAnalysis = {
+        detected: Array.isArray(analysis?.detected) ? analysis.detected : [],
+        undetected: Array.isArray(analysis?.undetected) ? analysis.undetected : [],
+        filled: Array.isArray(analysis?.filled) ? analysis.filled : [],
+    };
     
     let html = '<div class="analysis-sections">';
     
     // Detected fields
     html += `
         <div class="analysis-section">
-            <h3>✅ Detected Fields (${analysis.detected.length})</h3>
-            ${analysis.detected.length > 0 ? `
+            <h3>✅ Detected Fields (${safeAnalysis.detected.length})</h3>
+            ${safeAnalysis.detected.length > 0 ? `
                 <ul class="field-list">
-                    ${analysis.detected.map(f => `
+                    ${safeAnalysis.detected.map(f => `
                         <li>
-                            <span class="field-label">${f.label || 'Unknown'}</span>
-                            <span class="field-type">${f.fieldType}</span>
+                            <span class="field-label">${escapeHtml(f.label || 'Unknown')}</span>
+                            <span class="field-type">${escapeHtml(f.fieldType || 'unknown')}</span>
                         </li>
                     `).join('')}
                 </ul>
@@ -927,15 +1516,15 @@ function showAnalysisModal(analysis) {
     `;
     
     // Undetected fields
-    if (analysis.undetected.length > 0) {
+    if (safeAnalysis.undetected.length > 0) {
         html += `
             <div class="analysis-section">
-                <h3>⚠️ Unknown Fields (${analysis.undetected.length})</h3>
+                <h3>⚠️ Unknown Fields (${safeAnalysis.undetected.length})</h3>
                 <ul class="field-list warning">
-                    ${analysis.undetected.map(f => `
+                    ${safeAnalysis.undetected.map(f => `
                         <li>
-                            <span class="field-label">${f.label || 'Unknown'}</span>
-                            <span class="field-type">${f.type}</span>
+                            <span class="field-label">${escapeHtml(f.label || 'Unknown')}</span>
+                            <span class="field-type">${escapeHtml(f.type || 'unknown')}</span>
                         </li>
                     `).join('')}
                 </ul>
@@ -944,15 +1533,15 @@ function showAnalysisModal(analysis) {
     }
     
     // Already filled
-    if (analysis.filled.length > 0) {
+    if (safeAnalysis.filled.length > 0) {
         html += `
             <div class="analysis-section">
-                <h3>📝 Already Filled (${analysis.filled.length})</h3>
+                <h3>📝 Already Filled (${safeAnalysis.filled.length})</h3>
                 <ul class="field-list filled">
-                    ${analysis.filled.map(f => `
+                    ${safeAnalysis.filled.map(f => `
                         <li>
-                            <span class="field-label">${f.label || 'Unknown'}</span>
-                            <span class="field-value">${truncate(f.currentValue, 20)}</span>
+                            <span class="field-label">${escapeHtml(f.label || 'Unknown')}</span>
+                            <span class="field-value">${escapeHtml(truncate(f.currentValue, 20))}</span>
                         </li>
                     `).join('')}
                 </ul>
@@ -996,10 +1585,32 @@ function getDisplayOptionsForUnknownField(item) {
         return { options: [], note: '' };
     }
 
+    const cleanedLabel = String(item?.label || '').trim().toLowerCase();
+    const cleanedCurrent = String(item?.currentValue || '').trim().toLowerCase();
+    const normalizedOptions = [];
+    const seen = new Set();
+
+    for (const option of rawOptions) {
+        const normalized = option.replace(/\s+/g, ' ').trim();
+        if (!normalized) continue;
+        const key = normalized.toLowerCase();
+        if (seen.has(key)) continue;
+        if (cleanedLabel && key === cleanedLabel) continue;
+        if (cleanedCurrent && key === cleanedCurrent) continue;
+        if (key.length > 90 && !/\b(yes|no|true|false|decline|accept)\b/i.test(key)) continue;
+
+        seen.add(key);
+        normalizedOptions.push(normalized);
+    }
+
+    if (!normalizedOptions.length) {
+        return { options: [], note: '' };
+    }
+
     const country = getCountryValueForUnknownUi();
     const isIndia = country.includes('india');
     if (!isIndia || !looksLikeStateField(item)) {
-        return { options: rawOptions, note: '' };
+        return { options: normalizedOptions.slice(0, 30), note: '' };
     }
 
     const usStateNames = new Set([
@@ -1011,8 +1622,8 @@ function getDisplayOptionsForUnknownField(item) {
         'utah', 'vermont', 'virginia', 'washington', 'west virginia', 'wisconsin', 'wyoming', 'district of columbia'
     ]);
 
-    const filtered = rawOptions.filter(opt => !usStateNames.has(opt.toLowerCase()));
-    if (filtered.length === 0 && rawOptions.length > 0) {
+    const filtered = normalizedOptions.filter(opt => !usStateNames.has(opt.toLowerCase()));
+    if (filtered.length === 0 && normalizedOptions.length > 0) {
         return {
             options: [],
             note: 'Detected option list appears US-state based while your profile country is India. Type your state manually and save it.'
@@ -1213,7 +1824,8 @@ function renderUnknownFields(fields = [], autoSwitchToLearning = false) {
             summaryEl.textContent = summaryText;
         }
         if (!unresolvedFields.length) {
-            sectionEl.style.display = 'none';
+            const keepVisible = currentOperationMode === 'autopilot' && sectionEl === elements.unknownFieldsHomeSection;
+            sectionEl.style.display = keepVisible ? 'block' : 'none';
             listEl.innerHTML = '<div class="unknown-fields-empty">No unresolved fields. Autofill covered all detected fields.</div>';
             return;
         }
@@ -1258,7 +1870,7 @@ async function saveUnknownAnswersFromUI() {
         showToast('No unresolved fields to save', 'info');
         return;
     }
-    const answersToSave = [];
+    const answerByKey = new Map();
     const rows = [
         ...(elements.unknownFieldsHomeList?.querySelectorAll('.unknown-field-item') || []),
         ...(elements.unknownFieldsList?.querySelectorAll('.unknown-field-item') || []),
@@ -1273,8 +1885,13 @@ async function saveUnknownAnswersFromUI() {
         const rawAnswer = String(answerControl.value || '').trim();
         if (!rawAnswer) return;
 
-        answersToSave.push({ item, answer: rawAnswer });
+        const key = String(item.normalizedLabel || normalizeFieldKey(item.label || item.name || item.id || '')).trim()
+            || String(item.label || item.name || item.id || '').trim().toLowerCase();
+        if (!key) return;
+        answerByKey.set(key, { item, answer: rawAnswer });
     });
+
+    const answersToSave = Array.from(answerByKey.values());
 
     if (!answersToSave.length) {
         showToast('Enter at least one answer to save', 'warning');
@@ -1323,33 +1940,73 @@ async function saveUnknownAnswersFromUI() {
     }
 
     await saveUserData();
-    await saveLearnedFields();
+    try {
+        await sendMessageToContent('updateUserData', { data: userData });
+    } catch {
+        // non-fatal; fill call below will still load latest storage snapshot when possible
+    }
+    await saveLearnedFields(false);
+    let backendSynced = false;
+    try {
+        backendSynced = await syncLearnedToBackend({ strict: true, retries: 2 });
+    } catch (syncErr) {
+        backendSynced = false;
+        console.warn('Strict backend sync failed while saving unknown answers:', syncErr?.message || syncErr);
+    }
     updateLearningUI();
 
-    renderUnknownFields([]);
-
     try {
-        const refill = await sendMessageToContent('fillForm', {});
+        const refill = await sendMessageToContent('fillUnknownAnswers', {
+            answers: answersToSave.map(({ item, answer }) => ({
+                label: item?.label || '',
+                normalizedLabel: item?.normalizedLabel || normalizeFieldKey(item?.label || ''),
+                type: item?.type || 'text',
+                fieldType: item?.fieldType || null,
+                name: item?.name || '',
+                id: item?.id || '',
+                answer,
+            }))
+        });
         if (refill?.success) {
             const nextUnresolved = Array.isArray(refill.unresolvedFields) ? refill.unresolvedFields : [];
             renderUnknownFields(nextUnresolved, nextUnresolved.length > 0);
             if (nextUnresolved.length === 0) {
-                showToast(`Saved ${answersToSave.length} answer(s) and refilled current form`, 'success');
+                showToast(`Saved ${answersToSave.length} answer(s), synced to config, and refilled current form`, 'success');
                 return;
             }
         }
     } catch {
-        // Non-fatal if page no longer available for refill
+        // fallback path for older content script
+        try {
+            const refillFallback = await sendMessageToContent('fillForm', {});
+            if (refillFallback?.success) {
+                const nextUnresolved = Array.isArray(refillFallback.unresolvedFields) ? refillFallback.unresolvedFields : [];
+                renderUnknownFields(nextUnresolved, nextUnresolved.length > 0);
+                if (nextUnresolved.length === 0) {
+                    showToast(`Saved ${answersToSave.length} answer(s), synced to config, and refilled current form`, 'success');
+                    return;
+                }
+            }
+        } catch {
+            // Non-fatal if page no longer available for refill
+        }
     }
 
-    showToast(`Saved ${answersToSave.length} field answer(s) for future autofill`, 'success');
+    if (backendSynced) {
+        showToast(`Saved ${answersToSave.length} field answer(s) and synced to config`, 'success');
+    } else {
+        showToast(`Saved ${answersToSave.length} field answer(s) locally (backend sync pending)`, 'warning');
+    }
 }
 
-async function executeAutofillFlow() {
+async function executeAutofillFlow({ strictResumeUpload = false } = {}) {
     let resumeUpload = null;
     try {
         resumeUpload = await buildResumeUploadPayload();
     } catch (uploadErr) {
+        if (strictResumeUpload) {
+            throw new Error(`Resume upload required but unavailable: ${uploadErr.message}`);
+        }
         showToast(`Resume upload skipped: ${uploadErr.message}`, 'warning');
     }
 
@@ -1378,7 +2035,7 @@ function sleep(ms) {
     return new Promise(resolve => setTimeout(resolve, Math.max(0, Number(ms) || 0)));
 }
 
-async function detectCurrentPageJDForAutopilot() {
+async function detectCurrentPageJDForAutopilot({ render = false } = {}) {
     try {
         const response = await sendMessageToContent('detectJD');
         if (!response?.success || !response.jd) {
@@ -1396,19 +2053,45 @@ async function detectCurrentPageJDForAutopilot() {
         });
         if (!normalized) return null;
         currentJD = normalized;
+        if (render) {
+            renderJDPreview(currentJD);
+            renderStructuredJD(currentJD);
+            if (Array.isArray(response.jd.skills) && response.jd.skills.length > 0 && elements.jdSkills && elements.skillTags) {
+                elements.jdSkills.style.display = 'block';
+                elements.skillTags.innerHTML = response.jd.skills.map(skill =>
+                    `<span class="skill-tag">${escapeHtml(skill)}</span>`
+                ).join('');
+            } else if (elements.jdSkills) {
+                elements.jdSkills.style.display = 'none';
+            }
+            showJDTailoringControls();
+        }
         return normalized;
     } catch {
         return null;
     }
 }
 
+function showJDTailoringControls() {
+    const resumeSource = document.getElementById('resumeSource');
+    if (elements.jdContent) elements.jdContent.style.display = 'block';
+    if (resumeSource) resumeSource.style.display = 'block';
+    if (elements.instructionBox) elements.instructionBox.style.display = 'block';
+    setInstructionPanel(false);
+    if (elements.jdActions) elements.jdActions.style.display = 'block';
+    if (elements.atsSection) elements.atsSection.style.display = 'block';
+    if (elements.resumeActions) elements.resumeActions.style.display = 'flex';
+    setReviewGateState(false);
+}
+
 function cacheTailoringResult(result) {
     if (!result || !result.success) return;
+    const displayScores = deriveDisplayScores(result);
 
     currentTailoredResume = {
         success: true,
-        atsScore: result.scoresAfter?.ats || 0,
-        matchScore: result.scoresAfter?.match || 0,
+        atsScore: displayScores.ats,
+        matchScore: displayScores.match,
         reviewRounds: result.reviewIterations || 1,
         tailoredResume: result.tailoredText || '',
         masterText: result.masterText || '',
@@ -1438,6 +2121,251 @@ function cacheTailoringResult(result) {
     } catch {
         // non-fatal caching
     }
+
+    if (elements.btnAutoPilotPreview) {
+        elements.btnAutoPilotPreview.style.display = currentTailoredResume ? 'inline-flex' : 'none';
+    }
+}
+
+async function callTailorApiDetailed(payload, options = {}) {
+    const url = `${API_BASE_URL}/api/tailor`;
+    const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 300000;
+    const retries = Number(options.retries) > 0 ? Number(options.retries) : 0;
+
+    let attempt = 0;
+    while (attempt <= retries) {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            const response = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload || {}),
+                signal: controller.signal,
+            });
+            clearTimeout(timeoutId);
+            const body = await response.json().catch(() => ({}));
+            if (response.ok) {
+                return { ok: true, status: response.status, data: body };
+            }
+            return { ok: false, status: response.status, data: body };
+        } catch (e) {
+            clearTimeout(timeoutId);
+            const timedOut = e?.name === 'AbortError';
+            if (timedOut && attempt < retries) {
+                attempt += 1;
+                continue;
+            }
+            if (timedOut) {
+                throw new Error(`Tailor API request timed out (${Math.round(timeoutMs / 1000)}s)`);
+            }
+            throw e;
+        }
+    }
+
+    return { ok: false, status: 0, data: { error: 'Tailor API unreachable' } };
+}
+
+function buildTailorRetryInstructions(baseInstructions, failureData, attempt) {
+    const base = String(baseInstructions || '').trim();
+    const reviewer = failureData?.reviewer || {};
+    const summaryItems = Array.isArray(reviewer?.summary) ? reviewer.summary.filter(Boolean).slice(0, 6) : [];
+    const passLog = Array.isArray(failureData?.reviewPassLog) ? failureData.reviewPassLog : [];
+    const latestPass = passLog.length ? passLog[passLog.length - 1] : null;
+
+    const extra = [];
+    if (Number.isFinite(Number(reviewer?.overallScore))) {
+        extra.push(`Overall score: ${Number(reviewer.overallScore).toFixed(1)}%`);
+    }
+    if (reviewer?.criticalIssues !== undefined) {
+        extra.push(`Critical issues: ${Number(reviewer.criticalIssues) || 0}`);
+    }
+    if (reviewer?.issues !== undefined) {
+        extra.push(`Total issues: ${Number(reviewer.issues) || 0}`);
+    }
+    if (latestPass?.feedback) {
+        extra.push(`Latest reviewer feedback: ${String(latestPass.feedback).slice(0, 600)}`);
+    }
+    if (summaryItems.length) {
+        extra.push(`Top fixes required: ${summaryItems.join(' | ')}`);
+    }
+
+    if (!extra.length) {
+        extra.push('Fix all remaining reviewer issues and return reviewer-ready resume text.');
+    }
+
+    return `${base}\n\nAUTO REVIEW FIX LOOP ATTEMPT ${attempt}:\n${extra.join('\n')}\nKeep facts unchanged. Fix critical/high issues first. Preserve one-page structure.`.trim();
+}
+
+function normalizeTailoringMode(value) {
+    return String(value || '').toLowerCase() === 'scratch' ? 'scratch' : 'master_preserve';
+}
+
+function buildTailoringInstructionForMode(baseInstructions, modeValue) {
+    const mode = normalizeTailoringMode(modeValue);
+    const base = String(baseInstructions || '').trim();
+    const resumeContentMethod = [
+        'RESUME CONTENT IMPROVEMENT METHOD (MANDATORY):',
+        '- Add 3 to 5 quantified impact bullets for each recent role (percent, dollars, latency, scale where factual).',
+        '- Mirror exact JD nouns/phrases in Core Skills and Experience bullets naturally (no keyword stuffing).',
+        '- Start each bullet with action + result, then tooling/context.',
+        '- Keep one-page hierarchy tight: Summary, Core Skills, Experience, Projects, Education.',
+    ];
+    const modeRules = mode === 'scratch'
+        ? [
+            'TAILORING MODE: FROM_SCRATCH',
+            'Build resume content from scratch optimized to the job description.',
+            'Preserve factual truth only; never invent details.',
+            'Maximize ATS and role fit while keeping one-page readability.'
+        ]
+        : [
+            'TAILORING MODE: MASTER_PRESERVE_STRICT',
+            'Strictly preserve original section order and overall formatting style from master resume.',
+            'Rewrite bullets/content only where needed to match JD.',
+            'Do not drop critical sections or change chronology/factual details.',
+            'Keep one-page structure and reviewer-ready quality.'
+        ];
+    return `${base}\n\n${resumeContentMethod.join('\n')}\n\n${modeRules.join('\n')}`.trim();
+}
+
+function buildReviewerInstructionForMode(baseInstructions, modeValue) {
+    const mode = normalizeTailoringMode(modeValue);
+    const base = String(baseInstructions || '').trim();
+    const modeChecks = mode === 'scratch'
+        ? [
+            'Reviewer checks for FROM_SCRATCH mode:',
+            '- Reject if JD-critical keywords are still missing.',
+            '- Reject if content quality is weak or not submission-ready.',
+            '- Continue fix loop until approved.'
+        ]
+        : [
+            'Reviewer checks for MASTER_PRESERVE_STRICT mode:',
+            '- Reject if original section order/structure was altered unnecessarily.',
+            '- Reject if factual chronology/details changed or content is not one-page friendly.',
+            '- Continue fix loop until approved.'
+        ];
+    return `${base}\n\n${modeChecks.join('\n')}`.trim();
+}
+
+function buildOfflineTailorFallback(resumeText, jdText) {
+    const safeResume = String(resumeText || '').trim();
+    const safeJD = String(jdText || '').trim();
+    if (!safeResume) {
+        return null;
+    }
+
+    let scores = { ats: 0, match: 0, found: [], missing: [] };
+    try {
+        if (window.ResumeEngine && safeJD) {
+            scores = window.ResumeEngine.scoreMatch(safeResume, safeJD);
+        }
+    } catch {
+        // keep defaults
+    }
+
+    return {
+        success: true,
+        fallbackUsed: true,
+        atsScore: Number(scores.ats || 0),
+        matchScore: Number(scores.match || 0),
+        reviewRounds: 0,
+        tailoredResume: safeResume,
+        masterText: safeResume,
+        scoresBefore: scores,
+        scoresAfter: scores,
+        reviewLog: [{ iteration: 0, note: 'Offline fallback used (API unavailable)' }],
+        reviewPassLog: [],
+        reviewerPassed: false,
+        reviewer: {
+            overallScore: Number(scores.match || 0),
+            criticalIssues: 1,
+            issues: Number((scores.missing || []).length || 0),
+            fixed: 0,
+            summary: ['Local API offline: using degraded fallback preview.'],
+        },
+        files: {},
+        quality: {
+            passed: false,
+            reason: 'Local API unavailable. Generated fallback preview only.',
+        },
+    };
+}
+
+function setTailorFailureActionsVisible(visible) {
+    if (!elements.tailorFailureActions) return;
+    elements.tailorFailureActions.style.display = visible ? 'block' : 'none';
+}
+
+async function runTailorUntilApproved({
+    resumeText,
+    jdText,
+    jobTitle,
+    instructions,
+    reviewerInstructions,
+    tailoringMode,
+    maxAttempts = 3,
+    onAttempt,
+} = {}) {
+    const normalizedMode = normalizeTailoringMode(tailoringMode || settings.autopilotTailoringMode || 'master_preserve');
+    const baseInstructionsForMode = buildTailoringInstructionForMode(String(instructions || ''), normalizedMode);
+    const reviewerInstructionsForMode = buildReviewerInstructionForMode(String(reviewerInstructions || ''), normalizedMode);
+    let attemptInstructions = baseInstructionsForMode;
+    let lastFailure = null;
+    const safeMaxAttempts = Math.max(1, Math.min(12, Number(maxAttempts) || 1));
+
+    for (let attempt = 1; attempt <= safeMaxAttempts; attempt++) {
+        if (typeof onAttempt === 'function') {
+            onAttempt(attempt);
+        }
+
+        const response = await callTailorApiDetailed({
+            resumeText,
+            jobDescription: jdText || '',
+            jobTitle: jobTitle || 'Position',
+            instructions: attemptInstructions,
+            reviewerInstructions: reviewerInstructionsForMode,
+            reviewIterations: 2,
+            reviewerMaxPasses: 10,
+        }, { timeoutMs: 300000, retries: 1 });
+
+        if (response?.ok && response?.data?.success) {
+            return {
+                success: true,
+                result: response.data,
+                attempts: attempt,
+            };
+        }
+
+        lastFailure = response?.data || {};
+        const reason = String(lastFailure?.error || `Tailor API ${response?.status || 'failed'}`).trim();
+        const retriable = /reviewer did not pass|quality|critical|issues/i.test(reason);
+
+        if (!retriable || attempt >= safeMaxAttempts) {
+            return {
+                success: false,
+                reason,
+                attempts: attempt,
+                details: lastFailure,
+            };
+        }
+
+        const waitMs = getBackoffMs(attempt, 700, 12000);
+        if (typeof onAttempt === 'function') {
+            onAttempt(attempt, {
+                waitingMs: waitMs,
+                retryReason: reason,
+            });
+        }
+        await sleep(waitMs);
+        attemptInstructions = buildTailorRetryInstructions(baseInstructionsForMode, lastFailure, attempt + 1);
+    }
+
+    return {
+        success: false,
+        reason: String(lastFailure?.error || 'Tailoring failed after retries'),
+        attempts: safeMaxAttempts,
+        details: lastFailure || {},
+    };
 }
 
 function startAutopilotTailoringTask(jd) {
@@ -1449,8 +2377,16 @@ function startAutopilotTailoringTask(jd) {
         try {
             const serverUp = await checkAPIServer();
             if (!serverUp) {
-                showToast('Auto Pilot: API server not reachable, resume tailoring skipped.', 'warning');
-                return { success: false, reason: 'API server not reachable' };
+                setAutopilotProgress({
+                    visible: true,
+                    phase: 'Tailoring',
+                    action: 'Recover API',
+                    note: 'API not reachable yet. Waiting for recovery before strict Auto Pilot continues...'
+                });
+                const recovered = await waitForApiRecovery(8, 2000);
+                if (!recovered) {
+                    return { success: false, reason: 'API server not reachable after recovery retries' };
+                }
             }
 
             const resumeSourceValue = document.querySelector('input[name="resumeSource"]:checked')?.value || 'master';
@@ -1461,23 +2397,40 @@ function startAutopilotTailoringTask(jd) {
             }
 
             const instructionText = (elements.tailoringInstruction?.value || defaultTailoringInstructions || '').trim();
-            const result = await callAPI('/api/tailor', {
+            const reviewerText = (elements.reviewerInstruction?.value || defaultReviewerInstructions || '').trim();
+            const selectedMode = normalizeTailoringMode(settings.autopilotTailoringMode || 'master_preserve');
+            const outcome = await runTailorUntilApproved({
                 resumeText,
-                jobDescription: jd.description || '',
+                jdText: jd.description || '',
                 jobTitle: jd.title || 'Position',
                 instructions: instructionText,
-                reviewIterations: 2,
-                reviewerMaxPasses: 6,
-            }, { timeoutMs: 300000, retries: 1 });
+                reviewerInstructions: reviewerText,
+                tailoringMode: selectedMode,
+                maxAttempts: 10,
+                onAttempt: (attemptNo, meta = {}) => {
+                    setAutopilotProgress({
+                        visible: true,
+                        phase: 'Tailoring',
+                        action: `AI loop ${attemptNo}/10`,
+                        note: attemptNo > 1
+                            ? 'Reviewer found issues. Sending feedback back to AI to fix and retry...'
+                            : 'Generating and reviewing tailored resume...'
+                    });
+                    if (meta.waitingMs) {
+                        startAutopilotWaitCountdown(meta.waitingMs, `Retrying tailoring in ${Math.ceil(meta.waitingMs / 1000)}s...`);
+                    }
+                }
+            });
 
-            if (result?.success) {
-                cacheTailoringResult(result);
-                showToast('Auto Pilot: tailored resume prepared in background.', 'success');
-                return { success: true, result };
+            if (outcome?.success && outcome?.result) {
+                cacheTailoringResult(outcome.result);
+                showToast(`Auto Pilot: reviewer-approved tailored resume ready (attempt ${outcome.attempts}/4).`, 'success');
+                return { success: true, result: outcome.result };
             }
 
-            showToast(`Auto Pilot: tailoring failed (${result?.error || 'unknown error'})`, 'warning');
-            return { success: false, reason: result?.error || 'tailoring failed' };
+            setTailorFailureActionsVisible(true);
+            showToast(`Auto Pilot: tailoring failed (${outcome?.reason || 'unknown error'}). Try guided retry or manual review.`, 'warning');
+            return { success: false, reason: outcome?.reason || 'tailoring failed' };
         } catch (e) {
             showToast(`Auto Pilot: tailoring error (${e.message || e})`, 'warning');
             return { success: false, reason: e?.message || String(e) || 'tailoring error' };
@@ -1822,21 +2775,35 @@ function setInstructionPanel(expanded) {
     }
 }
 
-function ensureReviewGate() {
+function ensureReviewGate(action = 'upload') {
+    if (action !== 'upload') {
+        if (!reviewGatePassed) {
+            showToast('Previewing non-approved draft. Run AI Review to unlock upload-safe mode.', 'warning');
+        }
+        return true;
+    }
     if (reviewGatePassed) return true;
     if (elements.reviewGateNote) elements.reviewGateNote.style.display = 'block';
-    showToast('Run Review with AI before Preview, Download, or Use Resume', 'warning');
+    showToast('Run Review with AI before using this resume for upload', 'warning');
     return false;
 }
 
 function setReviewGateState(passed) {
     reviewGatePassed = !!passed;
-    if (elements.btnPreviewResume) elements.btnPreviewResume.disabled = !reviewGatePassed;
-    if (elements.btnDownloadDocx) elements.btnDownloadDocx.disabled = !reviewGatePassed;
-    if (elements.btnDownloadPdf) elements.btnDownloadPdf.disabled = !reviewGatePassed;
-    if (elements.btnModalDownloadDocx) elements.btnModalDownloadDocx.disabled = !reviewGatePassed;
-    if (elements.btnModalDownloadPdf) elements.btnModalDownloadPdf.disabled = !reviewGatePassed;
+    if (elements.btnPreviewResume) elements.btnPreviewResume.disabled = !currentTailoredResume;
+    if (elements.btnDownloadDocx) elements.btnDownloadDocx.disabled = !currentTailoredResume;
+    if (elements.btnDownloadPdf) elements.btnDownloadPdf.disabled = !currentTailoredResume;
+    if (elements.btnOpenDocx) elements.btnOpenDocx.disabled = !currentTailoredResume;
+    if (elements.btnOpenPdf) elements.btnOpenPdf.disabled = !currentTailoredResume;
+    if (elements.btnModalDownloadDocx) elements.btnModalDownloadDocx.disabled = !currentTailoredResume;
+    if (elements.btnModalDownloadPdf) elements.btnModalDownloadPdf.disabled = !currentTailoredResume;
+    if (elements.btnModalOpenDocx) elements.btnModalOpenDocx.disabled = !currentTailoredResume;
+    if (elements.btnModalOpenPdf) elements.btnModalOpenPdf.disabled = !currentTailoredResume;
     if (elements.btnUseResume) elements.btnUseResume.disabled = !reviewGatePassed;
+    if (elements.btnAutoPilotPreview) {
+        elements.btnAutoPilotPreview.disabled = !currentTailoredResume;
+        elements.btnAutoPilotPreview.style.display = currentTailoredResume ? 'inline-flex' : 'none';
+    }
     if (elements.reviewGateNote) elements.reviewGateNote.style.display = reviewGatePassed ? 'none' : 'block';
 }
 
@@ -1853,6 +2820,14 @@ function normalizeUploadFormat(value) {
 
 function getPreferredUploadFormat() {
     return normalizeUploadFormat(settings.autofillResumeFormat || 'pdf');
+}
+
+function buildGeneratedResumeFilename(format = 'pdf') {
+    const extension = normalizeUploadFormat(format);
+    const personName = [userData?.firstName, userData?.lastName].filter(Boolean).join(' ').trim() || 'Candidate';
+    const roleName = String(currentJD?.title || currentTailoredResume?.jobTitle || 'resume').trim() || 'resume';
+    const proposed = `${personName} ${roleName}.${extension}`;
+    return sanitizeDownloadFilename(proposed, `tailored_resume.${extension}`);
 }
 
 async function validateResumePayloadContent(payload) {
@@ -1897,7 +2872,16 @@ async function validateUploadedResumeFile(file) {
 }
 
 function getPreferredAutofillResumeSource() {
+    if (autopilotResumeSourceOverride) {
+        return String(autopilotResumeSourceOverride).toLowerCase();
+    }
     return (settings.autofillResumeSource || 'tailored').toLowerCase();
+}
+
+function getAutopilotBackupResumeSource() {
+    const hasUploadedResume = !!elements.autofillResumeFile?.files?.[0];
+    if (hasUploadedResume) return 'upload';
+    return 'master';
 }
 
 async function getTailoredResumePath() {
@@ -1910,6 +2894,21 @@ async function getTailoredResumePath() {
         const stored = await chrome.storage.local.get('activeTailoredResume');
         const storedFiles = stored?.activeTailoredResume?.files || {};
         return preferred === 'pdf' ? (storedFiles.pdf || '') : (storedFiles.docx || '');
+    } catch {
+        return '';
+    }
+}
+
+async function getTailoredResumePathByFormat(format = 'pdf') {
+    const normalized = normalizeUploadFormat(format);
+    const files = currentTailoredResume?.files || {};
+    const direct = normalized === 'pdf' ? (files.pdf || '') : (files.docx || '');
+    if (direct) return direct;
+
+    try {
+        const stored = await chrome.storage.local.get('activeTailoredResume');
+        const storedFiles = stored?.activeTailoredResume?.files || {};
+        return normalized === 'pdf' ? (storedFiles.pdf || '') : (storedFiles.docx || '');
     } catch {
         return '';
     }
@@ -1958,7 +2957,7 @@ function showTailoredResumePreviewModal({ requireApproval = false } = {}) {
     if (!currentTailoredResume) {
         throw new Error('No tailored resume available for preview');
     }
-    if (!ensureReviewGate()) {
+    if (requireApproval && !ensureReviewGate('upload')) {
         throw new Error('Tailored resume is not reviewer-approved');
     }
 
@@ -2042,9 +3041,32 @@ async function buildResumeUploadPayload() {
     }
 
     if (source === 'tailored') {
-        const activeTailored = await getActiveTailoredResumeRecord();
-        const reviewerPassed = !!activeTailored?.reviewerPassed;
-        const tailoredText = String(activeTailored?.tailoredResume || activeTailored?.text || '').trim();
+        let activeTailored = await getActiveTailoredResumeRecord();
+        let reviewerPassed = !!activeTailored?.reviewerPassed;
+        let tailoredText = String(activeTailored?.tailoredResume || activeTailored?.text || '').trim();
+
+        if (!reviewerPassed && currentJD?.description) {
+            const baseResumeText = tailoredText && tailoredText.length >= 120
+                ? tailoredText
+                : await resolveResumeTextForTailoring('master');
+            if (baseResumeText && baseResumeText.trim().length >= 120) {
+                const recoveryInstructions = (elements.tailoringInstruction?.value || defaultTailoringInstructions || '').trim();
+                const recovered = await runTailorUntilApproved({
+                    resumeText: baseResumeText,
+                    jdText: currentJD.description || '',
+                    jobTitle: currentJD.title || 'Position',
+                    instructions: recoveryInstructions,
+                    maxAttempts: 3,
+                });
+                if (recovered?.success && recovered?.result) {
+                    cacheTailoringResult(recovered.result);
+                    activeTailored = await getActiveTailoredResumeRecord();
+                    reviewerPassed = !!activeTailored?.reviewerPassed;
+                    tailoredText = String(activeTailored?.tailoredResume || activeTailored?.text || '').trim();
+                    showToast('Recovered reviewer-approved tailored resume for upload.', 'success');
+                }
+            }
+        }
 
         if (!reviewerPassed) {
             throw new Error('Tailored resume is not reviewer-approved. Run tailoring/review first before auto-upload.');
@@ -2070,7 +3092,7 @@ async function buildResumeUploadPayload() {
         const arrayBuffer = await blob.arrayBuffer();
         const payload = {
             source,
-            fileName,
+            fileName: buildGeneratedResumeFilename(preferredFormat),
             fileType: blob.type || guessMimeType(fileName),
             fileBytes: Array.from(new Uint8Array(arrayBuffer)),
         };
@@ -2146,10 +3168,11 @@ async function resolveResumeTextForTailoring(resumeSourceValue) {
     return latestText;
 }
 
-async function downloadResumeByPath(filePath, fallbackName) {
+async function downloadResumeByPath(filePath, fallbackName, preferredName = '') {
     if (!filePath) throw new Error('Resume file path missing');
     const blob = await fetchResumeBlobFromApi(filePath);
-    const fileName = filePath.split(/[\\/]/).pop() || fallbackName;
+    const derivedName = filePath.split(/[\\/]/).pop() || fallbackName;
+    const fileName = sanitizeDownloadFilename(preferredName || derivedName, fallbackName);
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -2159,6 +3182,22 @@ async function downloadResumeByPath(filePath, fallbackName) {
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
     return fileName;
+}
+
+async function openResumeByPath(filePath, fallbackName = 'tailored_resume.pdf') {
+    if (!filePath) throw new Error('Resume file path missing');
+    const blob = await fetchResumeBlobFromApi(filePath);
+    const fileName = filePath.split(/[\\/]/).pop() || fallbackName;
+    const objectUrl = URL.createObjectURL(blob);
+
+    try {
+        await chrome.tabs.create({ url: objectUrl });
+        setTimeout(() => URL.revokeObjectURL(objectUrl), 120000);
+        return fileName;
+    } catch (e) {
+        URL.revokeObjectURL(objectUrl);
+        throw e;
+    }
 }
 
 async function loadDefaultTailoringInstructions() {
@@ -2213,21 +3252,16 @@ async function loadDefaultTailoringInstructions() {
 // Tab switching
 elements.tabs.forEach(tab => {
     tab.addEventListener('click', () => {
-        // Update active tab
-        elements.tabs.forEach(t => t.classList.remove('active'));
-        tab.classList.add('active');
-        
-        // Update active panel
         const targetId = tab.getAttribute('data-tab');
-        elements.tabPanels.forEach(panel => {
-            panel.classList.toggle('active', panel.id === targetId);
-        });
+        setModeVisibility('default');
+        activateTab(targetId || 'profile');
     });
 });
 
 // Fill Form button
 elements.btnFillForm.addEventListener('click', async () => {
     try {
+        setModeVisibility('autofill');
         updateStatus('loading', 'Filling...');
         elements.btnFillForm.disabled = true;
         await executeAutofillFlow();
@@ -2237,6 +3271,7 @@ elements.btnFillForm.addEventListener('click', async () => {
         showToast(e.message || 'Failed to fill form', 'error');
     } finally {
         elements.btnFillForm.disabled = false;
+        setModeVisibility('default');
         setTimeout(() => updateStatus('ready', 'Ready'), 2000);
     }
 });
@@ -2244,6 +3279,13 @@ elements.btnFillForm.addEventListener('click', async () => {
 if (elements.btnAutoPilot) {
     elements.btnAutoPilot.addEventListener('click', async () => {
         try {
+            setModeVisibility('autopilot');
+            autopilotResumeSourceOverride = null;
+            let autopilotBackupModeActive = false;
+            if (elements.btnAutoPilotPreview) {
+                elements.btnAutoPilotPreview.style.display = 'none';
+                elements.btnAutoPilotPreview.disabled = true;
+            }
             updateStatus('loading', 'Auto Pilot...');
             elements.btnAutoPilot.disabled = true;
             elements.btnFillForm.disabled = true;
@@ -2264,7 +3306,7 @@ if (elements.btnAutoPilot) {
                 action: 'Detect JD',
                 note: 'Scanning current page and extracting job description...'
             });
-            const jd = await detectCurrentPageJDForAutopilot();
+            const jd = await detectCurrentPageJDForAutopilot({ render: false });
             const tailoringTask = startAutopilotTailoringTask(jd);
 
             if (shouldAutopilotWaitForTailoredResume()) {
@@ -2278,7 +3320,21 @@ if (elements.btnAutoPilot) {
                 const tailoredOutcome = await tailoringTask;
                 if (!tailoredOutcome?.success) {
                     const reason = String(tailoredOutcome?.reason || 'reviewed tailored resume not ready').trim();
-                    throw new Error(`Auto Pilot stopped: ${reason}. Fix tailoring/reviewer issues first.`);
+                    const backupModeEnabled = !!settings.autopilotApiBackupOnOffline;
+                    const apiUnavailable = /api server not reachable|local api temporarily unavailable|health check failed/i.test(reason);
+                    if (backupModeEnabled && apiUnavailable) {
+                        autopilotBackupModeActive = true;
+                        autopilotResumeSourceOverride = getAutopilotBackupResumeSource();
+                        setAutopilotProgress({
+                            visible: true,
+                            phase: 'Tailoring',
+                            action: 'Backup mode',
+                            note: `API unavailable. Backup mode enabled: using ${autopilotResumeSourceOverride} resume source for this run.`
+                        });
+                        showToast(`Auto Pilot backup mode: API unavailable, using ${autopilotResumeSourceOverride} resume source for this run.`, 'warning');
+                    } else {
+                        throw new Error(`Auto Pilot stopped: ${reason}. Tailored reviewer-approved resume is required.`);
+                    }
                 }
             }
 
@@ -2324,7 +3380,29 @@ if (elements.btnAutoPilot) {
                         : 'No fillable fields on this step. Moving to workflow action checks.'
                 });
                 if (workflow.hasFillableFields) {
-                    const { unresolved } = await executeAutofillFlow();
+                    const strictResumeUpload = !autopilotBackupModeActive;
+                    let fillOutcome;
+                    try {
+                        fillOutcome = await executeAutofillFlow({ strictResumeUpload });
+                    } catch (fillErr) {
+                        const backupAllowed = !!settings.autopilotApiBackupOnOffline;
+                        const canFallback = /reviewer-approved|tailored resume|resume upload required but unavailable|tailored resume .* not/i.test(String(fillErr?.message || ''));
+                        if (backupAllowed && canFallback) {
+                            autopilotBackupModeActive = true;
+                            autopilotResumeSourceOverride = getAutopilotBackupResumeSource();
+                            setAutopilotProgress({
+                                visible: true,
+                                phase: 'Filling',
+                                action: 'Backup upload retry',
+                                note: `Tailored upload unavailable. Retrying with ${autopilotResumeSourceOverride} source.`
+                            });
+                            fillOutcome = await executeAutofillFlow({ strictResumeUpload: false });
+                        } else {
+                            throw fillErr;
+                        }
+                    }
+
+                    const unresolved = Array.isArray(fillOutcome?.unresolved) ? fillOutcome.unresolved : [];
                     if (unresolved.length > 0) {
                         updateStatus('warning', 'Needs Answers');
                         setAutopilotProgress({
@@ -2418,9 +3496,11 @@ if (elements.btnAutoPilot) {
             });
             showToast(e.message || 'Auto Pilot failed', 'error');
         } finally {
+            autopilotResumeSourceOverride = null;
             clearAutopilotWaitCountdown();
             elements.btnAutoPilot.disabled = false;
             elements.btnFillForm.disabled = false;
+            setModeVisibility('default');
             setTimeout(() => updateStatus('ready', 'Ready'), 2000);
         }
     });
@@ -2492,6 +3572,51 @@ elements.profileForm.addEventListener('submit', async (e) => {
     });
 });
 
+if (elements.telemetryOptIn) {
+    elements.telemetryOptIn.addEventListener('change', async () => {
+        settings = collectSettings();
+        await saveSettings();
+        await refreshPrivacySummary();
+        showToast(settings.telemetryOptIn ? 'Diagnostics telemetry enabled' : 'Diagnostics telemetry disabled');
+    });
+}
+
+if (elements.btnExportPersonalData) {
+    elements.btnExportPersonalData.addEventListener('click', async () => {
+        try {
+            await exportPersonalDataBundle('personal-data');
+            showToast('Personal data export generated', 'success');
+        } catch (e) {
+            showToast(`Data export failed: ${e.message}`, 'error');
+        }
+    });
+}
+
+if (elements.btnSendDiagnostics) {
+    elements.btnSendDiagnostics.addEventListener('click', async () => {
+        try {
+            await exportPersonalDataBundle('diagnostics');
+            showToast('Diagnostics bundle exported (share manually if needed)', 'success');
+        } catch (e) {
+            showToast(`Diagnostics export failed: ${e.message}`, 'error');
+        }
+    });
+}
+
+if (elements.btnClearPersonalData) {
+    elements.btnClearPersonalData.addEventListener('click', async () => {
+        if (!confirm('Clear all profile, learning, history, unresolved, and telemetry data from extension storage?')) {
+            return;
+        }
+        try {
+            await clearAllPersonalData();
+            showToast('All personal data cleared from extension storage', 'success');
+        } catch (e) {
+            showToast(`Clear data failed: ${e.message}`, 'error');
+        }
+    });
+}
+
 [elements.fillDelay, elements.maxRetries].forEach(el => {
     el.addEventListener('change', async () => {
         settings = collectSettings();
@@ -2501,6 +3626,16 @@ elements.profileForm.addEventListener('submit', async (e) => {
 
 if (elements.autofillResumeOptions && elements.autofillResumeOptions.length) {
     elements.autofillResumeOptions.forEach(el => {
+        el.addEventListener('change', async () => {
+            settings = collectSettings();
+            populateSettingsForm();
+            await saveSettings();
+        });
+    });
+}
+
+if (elements.autopilotTailorModeOptions && elements.autopilotTailorModeOptions.length) {
+    elements.autopilotTailorModeOptions.forEach(el => {
         el.addEventListener('change', async () => {
             settings = collectSettings();
             populateSettingsForm();
@@ -2550,6 +3685,16 @@ if (elements.previewBeforeUpload) {
     });
 }
 
+if (elements.autopilotApiBackupOnOffline) {
+    elements.autopilotApiBackupOnOffline.addEventListener('change', async () => {
+        settings = collectSettings();
+        await saveSettings();
+        showToast(settings.autopilotApiBackupOnOffline
+            ? 'Auto Pilot API backup mode enabled'
+            : 'Auto Pilot API backup mode disabled', 'success');
+    });
+}
+
 if (elements.useSidePanelMode) {
     elements.useSidePanelMode.addEventListener('change', async () => {
         settings = collectSettings();
@@ -2583,17 +3728,23 @@ elements.btnResetSettings.addEventListener('click', async () => {
         autoFill: false,
         showNotifications: true,
         debugMode: false,
+        extensionEnabled: true,
+        detectionMode: 'universal',
         fillDelay: 100,
         maxRetries: 3,
         autofillResumeSource: 'tailored',
+        autopilotTailoringMode: 'master_preserve',
+        autopilotApiBackupOnOffline: false,
         autofillResumeFormat: 'pdf',
         previewBeforeUpload: true,
         useSidePanelMode: false,
-        syncToConfig: true
+        syncToConfig: true,
+        telemetryOptIn: false
     };
     
     populateSettingsForm();
     await saveSettings();
+    await refreshPrivacySummary();
     showToast('Settings reset to defaults');
 });
 
@@ -2604,10 +3755,22 @@ if (btnRefreshFromConfig) {
         if (confirm('This will clear your extension storage and reload from the project config (user_config.json).\n\nMake sure you have run config_loader.py first to generate the config.\n\nContinue?')) {
             try {
                 showLoading('Clearing storage and reloading...');
-                
-                // Clear all storage
-                await chrome.storage.sync.clear();
-                await chrome.storage.local.clear();
+
+                const extensionKeys = [
+                    STORAGE_KEY,
+                    STORAGE_FALLBACK_KEY,
+                    SETTINGS_KEY,
+                    HISTORY_KEY,
+                    LEARNED_KEY,
+                    UNRESOLVED_KEY,
+                    'activeTailoredResume',
+                    TELEMETRY_KEY,
+                    PROVIDER_KEY,
+                ];
+
+                // Clear extension-owned storage only
+                await chrome.storage.sync.remove(extensionKeys);
+                await chrome.storage.local.remove(extensionKeys);
                 console.log('✓ Storage cleared');
                 
                 // Reset local state
@@ -2617,13 +3780,18 @@ if (btnRefreshFromConfig) {
                     autoFill: false,
                     showNotifications: true,
                     debugMode: false,
+                    extensionEnabled: true,
+                    detectionMode: 'universal',
                     fillDelay: 100,
                     maxRetries: 3,
                     autofillResumeSource: 'tailored',
+                    autopilotTailoringMode: 'master_preserve',
+                    autopilotApiBackupOnOffline: false,
                     autofillResumeFormat: 'pdf',
                     previewBeforeUpload: true,
                     useSidePanelMode: false,
-                    syncToConfig: true
+                    syncToConfig: true,
+                    telemetryOptIn: false
                 };
                 history = {
                     totalFilled: 0,
@@ -2649,6 +3817,7 @@ if (btnRefreshFromConfig) {
                 // Refresh UI
                 populateSettingsForm();
                 updateHistoryUI();
+                await refreshPrivacySummary();
                 
             } catch (e) {
                 hideLoading();
@@ -2776,6 +3945,7 @@ if (btnImportConfig && importConfigInput) {
             // Apply extension settings from config if present
             const configSettings = config.settings || {};
             if (Object.keys(configSettings).length > 0) {
+                if (configSettings.extensionEnabled !== undefined) settings.extensionEnabled = !!configSettings.extensionEnabled;
                 if (configSettings.autoSync !== undefined) settings.syncToConfig = configSettings.autoSync;
                 if (configSettings.enableLearning !== undefined) settings.enableLearning = configSettings.enableLearning;
                 if (configSettings.detectionMode !== undefined) settings.detectionMode = configSettings.detectionMode;
@@ -2804,6 +3974,7 @@ if (btnImportConfig && importConfigInput) {
 
 // Manual JD paste toggle
 const btnPasteJD = document.getElementById('btnPasteJD');
+const btnQuickTailorResume = document.getElementById('btnQuickTailorResume');
 const jdManualInput = document.getElementById('jdManualInput');
 const manualJDText = document.getElementById('manualJDText');
 const btnAnalyzeManualJD = document.getElementById('btnAnalyzeManualJD');
@@ -2825,6 +3996,20 @@ if (btnPasteJD) {
     });
 }
 
+if (btnQuickTailorResume) {
+    btnQuickTailorResume.addEventListener('click', async () => {
+        if (!currentJD) {
+            showToast('Detect or paste a job description first', 'warning');
+            return;
+        }
+        if (!elements.btnTailorResume) {
+            showToast('Tailor action is unavailable', 'error');
+            return;
+        }
+        elements.btnTailorResume.click();
+    });
+}
+
 // Cancel manual JD input
 if (btnCancelManualJD) {
     btnCancelManualJD.addEventListener('click', () => {
@@ -2842,6 +4027,7 @@ if (btnAnalyzeManualJD) {
         }
         
         try {
+            setModeVisibility('tailoring');
             showLoading('Analyzing job description...');
             
             const jdText = manualJDText.value.trim();
@@ -2940,6 +4126,7 @@ document.querySelectorAll('input[name="resumeSource"]').forEach(radio => {
 if (elements.btnDetectJD) {
     elements.btnDetectJD.addEventListener('click', async () => {
         try {
+            setModeVisibility('tailoring');
             elements.btnDetectJD.disabled = true;
             showLoading('Detecting job description...');
             
@@ -2983,12 +4170,8 @@ if (elements.btnDetectJD) {
                     elements.jdSkills.style.display = 'none';
                 }
                 
-                // Show resume source and tailor button
-                if (resumeSource) resumeSource.style.display = 'block';
-                if (elements.instructionBox) elements.instructionBox.style.display = 'block';
-                setInstructionPanel(false);
-                elements.jdActions.style.display = 'block';
-                setReviewGateState(false);
+                // Show resume source and tailoring controls
+                showJDTailoringControls();
                 
                 showToast('Job description detected successfully!', 'success');
             } else {
@@ -3033,10 +4216,15 @@ if (elements.btnTailorResume) {
             showToast('Please detect a job description first', 'error');
             return;
         }
+
+        let stopProgressTicker = null;
         
         try {
+            setModeVisibility('tailoring');
+            setTailorFailureActionsVisible(false);
             elements.btnTailorResume.disabled = true;
             showLoading('Connecting to AI engine...');
+            stopProgressTicker = startLoadingProgressTicker(8, 'Preparing resume tailoring...');
             
             // Show AI review status
             if (aiReviewStatus) aiReviewStatus.style.display = 'block';
@@ -3048,6 +4236,7 @@ if (elements.btnTailorResume) {
             
             // Get resume text based on source
             let resumeText = await resolveResumeTextForTailoring(resumeSourceValue);
+            setLoadingProgress(20, 'Uploading resume and job description...');
             
             const jdText = currentJD.description || '';
             const jobTitle = currentJD.title || 'Position';
@@ -3065,71 +4254,81 @@ if (elements.btnTailorResume) {
             if (window.ResumeEngine && resumeText) {
                 scoresBefore = window.ResumeEngine.scoreMatch(resumeText, jdText);
             }
+            setLoadingProgress(30, 'Scoring baseline resume fit...');
             
             // ---- Step 2: Try API server for real AI tailoring ----
             const serverUp = await checkAPIServer();
             let result = null;
 
             if (!serverUp) {
-                throw new Error('API server is required for real tailoring. Start: python -m modules.api_server');
+                setLoadingProgress(72, 'API offline, generating local fallback...');
+                result = buildOfflineTailorFallback(resumeText, jdText);
+                if (!result) {
+                    throw new Error('API offline and fallback could not be generated');
+                }
+                showToast('API server offline. Generated fallback preview from local resume.', 'warning');
             }
 
             if (serverUp) {
-                // Real AI tailoring via local API server
-                if (reviewText) reviewText.textContent = '🤖 AI generating initial draft (Iteration 1)...';
-                if (iterationCount) iterationCount.textContent = '1';
-                
-                try {
-                    const apiResult = await callAPI('/api/tailor', {
-                        resumeText: resumeText,
-                        jobDescription: jdText,
-                        jobTitle: jobTitle,
-                        instructions: instructionText,
-                        reviewIterations: 2,
-                        reviewerMaxPasses: 6,
-                    }, { timeoutMs: 300000, retries: 1 });
-                    
-                    if (apiResult.success) {
-                        // Update progress for each review iteration from log
-                        const log = apiResult.reviewLog || [];
-                        for (let i = 0; i < log.length; i++) {
-                            if (iterationCount) iterationCount.textContent = String(i + 1);
-                            if (reviewText) {
-                                const iter = log[i];
-                                if (iter.error) {
-                                    reviewText.textContent = `⚠️ Iteration ${iter.iteration}: ${iter.error.substring(0, 60)}`;
-                                } else {
-                                    reviewText.textContent = `✅ Iteration ${iter.iteration}: ATS ${iter.atsScore}%, Match ${iter.matchScore}%`;
-                                }
+                const tailoredOutcome = await runTailorUntilApproved({
+                    resumeText,
+                    jdText,
+                    jobTitle,
+                    instructions: instructionText,
+                    reviewerInstructions: (elements.reviewerInstruction?.value || defaultReviewerInstructions || '').trim(),
+                    tailoringMode: normalizeTailoringMode(settings.autopilotTailoringMode || 'master_preserve'),
+                    maxAttempts: 4,
+                    onAttempt: (attemptNo, meta = {}) => {
+                        if (iterationCount) iterationCount.textContent = String(attemptNo);
+                        const phaseProgress = Math.min(90, 38 + ((attemptNo - 1) * 14));
+                        if (reviewText) {
+                            if (meta.waitingMs) {
+                                setLoadingProgress(phaseProgress, `Retry cooldown ${Math.ceil(meta.waitingMs / 1000)}s (attempt ${attemptNo}/4)...`);
+                                reviewText.textContent = `⏳ Cooling down ${Math.ceil(meta.waitingMs / 1000)}s before retrying (attempt ${attemptNo}/4)...`;
+                            } else {
+                                setLoadingProgress(phaseProgress + 8, attemptNo > 1
+                                    ? `Applying reviewer feedback (attempt ${attemptNo}/4)...`
+                                    : 'AI tailoring and reviewer pass in progress...');
+                                reviewText.textContent = attemptNo > 1
+                                    ? `🔁 Reviewer flagged issues. Retrying AI fix loop (attempt ${attemptNo}/4)...`
+                                    : '🤖 AI generating and reviewing tailored resume...';
                             }
                         }
-                        
-                        result = {
-                            success: true,
-                            atsScore: apiResult.scoresAfter?.ats || 0,
-                            matchScore: apiResult.scoresAfter?.match || 0,
-                            reviewRounds: apiResult.reviewIterations || 1,
-                            tailoredResume: apiResult.tailoredText,
-                            masterText: apiResult.masterText || resumeText,
-                            scoresBefore: apiResult.scoresBefore || scoresBefore,
-                            scoresAfter: apiResult.scoresAfter || {},
-                            reviewLog: apiResult.reviewLog || [],
-                            reviewPassLog: apiResult.reviewPassLog || [],
-                            reviewerPassed: !!apiResult.reviewerPassed,
-                            reviewer: apiResult.reviewer || {},
-                            skills: apiResult.skills || {},
-                            files: apiResult.files || {},
-                            quality: apiResult.quality || {},
-                        };
                     }
-                } catch (apiErr) {
-                    throw new Error(apiErr.message || 'Tailoring failed');
+                });
+
+                if (tailoredOutcome?.success && tailoredOutcome?.result) {
+                    const apiResult = tailoredOutcome.result;
+                    result = {
+                        success: true,
+                        atsScore: apiResult.scoresAfter?.ats || 0,
+                        matchScore: apiResult.scoresAfter?.match || 0,
+                        reviewRounds: apiResult.reviewIterations || tailoredOutcome.attempts || 1,
+                        tailoredResume: apiResult.tailoredText,
+                        masterText: apiResult.masterText || resumeText,
+                        scoresBefore: apiResult.scoresBefore || scoresBefore,
+                        scoresAfter: apiResult.scoresAfter || {},
+                        reviewLog: apiResult.reviewLog || [],
+                        reviewPassLog: apiResult.reviewPassLog || [],
+                        reviewerPassed: !!apiResult.reviewerPassed,
+                        reviewer: apiResult.reviewer || {},
+                        skills: apiResult.skills || {},
+                        files: apiResult.files || {},
+                        quality: apiResult.quality || {},
+                    };
+                } else {
+                    throw new Error(tailoredOutcome?.reason || 'Tailoring failed');
                 }
             }
 
             if (!result) {
                 throw new Error('Tailoring failed to produce a valid resume');
             }
+
+            const displayScores = deriveDisplayScores(result);
+            result.atsScore = displayScores.ats;
+            result.matchScore = displayScores.match;
+            setLoadingProgress(96, 'Applying tailored resume results...');
             
             if (reviewText) reviewText.textContent = '✓ Analysis complete!';
             
@@ -3165,6 +4364,7 @@ if (elements.btnTailorResume) {
                 elements.resumeActions.style.display = 'flex';
                 if (btnReviewResume) btnReviewResume.style.display = 'inline-flex';
                 setReviewGateState(!!result.reviewerPassed);
+                setTailorFailureActionsVisible(!result.reviewerPassed);
                 if (result.reviewerPassed) {
                     showToast('Tailored resume passed reviewer checks. Preview/download unlocked.', 'success');
                 } else {
@@ -3179,6 +4379,14 @@ if (elements.btnTailorResume) {
                 } else {
                     showToast(`Resume tailored after ${result.reviewRounds} AI reviews! ATS: ${result.atsScore}%`, 'success');
                 }
+
+                try {
+                    showTailoredResumePreviewModal({ requireApproval: false });
+                } catch {
+                    // preview is optional; actions remain available
+                }
+
+                stopProgressTicker?.('Tailoring complete');
             } else {
                 showToast('Failed to generate resume', 'error');
             }
@@ -3186,8 +4394,80 @@ if (elements.btnTailorResume) {
             console.error('Resume tailoring error:', e);
             showToast('Error: ' + e.message, 'error');
         } finally {
+            stopProgressTicker?.('Finishing...');
             elements.btnTailorResume.disabled = false;
             hideLoading();
+        }
+    });
+}
+
+if (elements.btnRetryTailorGuided) {
+    elements.btnRetryTailorGuided.addEventListener('click', () => {
+        if (elements.settingsTab) {
+            elements.settingsTab.click();
+        }
+        if (elements.tailoringInstruction) {
+            elements.tailoringInstruction.focus();
+        }
+        showToast('Refine instructions and run Tailor Resume again.', 'success');
+    });
+}
+
+if (elements.btnOpenManualEditor) {
+    elements.btnOpenManualEditor.addEventListener('click', () => {
+        if (!currentTailoredResume?.tailoredResume) {
+            showToast('No draft available yet. Run tailoring once first.', 'warning');
+            return;
+        }
+        try {
+            showTailoredResumePreviewModal({ requireApproval: false });
+        } catch (e) {
+            showToast(e.message || 'Unable to open draft editor', 'error');
+        }
+    });
+}
+
+if (elements.btnDownloadCurrentDraft) {
+    elements.btnDownloadCurrentDraft.addEventListener('click', () => {
+        const draft = currentTailoredResume?.tailoredResume || '';
+        if (!draft.trim()) {
+            showToast('No current draft available to download.', 'warning');
+            return;
+        }
+        const blob = new Blob([draft], { type: 'text/plain;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        const titleSlug = sanitizeDownloadFilename((currentJD?.title || 'resume').replace(/\s+/g, '_'), 'resume');
+        link.href = url;
+        link.download = sanitizeDownloadFilename(`${titleSlug}_draft.txt`, 'resume_draft.txt');
+        link.click();
+        URL.revokeObjectURL(url);
+        showToast('Draft exported as text file', 'success');
+    });
+}
+
+if (elements.btnSendHumanReview) {
+    elements.btnSendHumanReview.addEventListener('click', async () => {
+        try {
+            const reviewPayload = {
+                generatedAt: new Date().toISOString(),
+                jobTitle: currentJD?.title || '',
+                reviewerPassed: !!currentTailoredResume?.reviewerPassed,
+                atsScore: Number(currentTailoredResume?.atsScore || 0),
+                matchScore: Number(currentTailoredResume?.matchScore || 0),
+                reviewNotes: currentTailoredResume?.reviewer || {},
+                draft: String(currentTailoredResume?.tailoredResume || ''),
+            };
+            const blob = new Blob([JSON.stringify(reviewPayload, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = sanitizeDownloadFilename('human_review_packet.json', 'human_review_packet.json');
+            link.click();
+            URL.revokeObjectURL(url);
+            showToast('Human review packet exported', 'success');
+        } catch (e) {
+            showToast(`Unable to export review packet: ${e.message}`, 'error');
         }
     });
 }
@@ -3222,11 +4502,14 @@ if (btnReviewResume) {
 
             if (reviewResult.success) {
                 currentTailoredResume.tailoredResume = reviewResult.improvedText;
-                currentTailoredResume.atsScore = reviewResult.scoresAfter?.ats || currentTailoredResume.atsScore;
-                currentTailoredResume.matchScore = reviewResult.scoresAfter?.match || currentTailoredResume.matchScore;
+                currentTailoredResume.reviewer = reviewResult.reviewer || currentTailoredResume.reviewer || {};
+                currentTailoredResume.quality = reviewResult.quality || currentTailoredResume.quality || {};
                 currentTailoredResume.scoresAfter = reviewResult.scoresAfter;
                 currentTailoredResume.reviewRounds = (currentTailoredResume.reviewRounds || 0) + 1;
                 currentTailoredResume.reviewerPassed = !!reviewResult.reviewerPassed;
+                const displayScores = deriveDisplayScores(currentTailoredResume);
+                currentTailoredResume.atsScore = displayScores.ats;
+                currentTailoredResume.matchScore = displayScores.match;
                 setReviewGateState(!!reviewResult.reviewerPassed);
                 if (!reviewResult.reviewerPassed) {
                     showToast('Reviewer found issues. Please run review again or adjust instructions.', 'warning');
@@ -3289,6 +4572,20 @@ if (elements.btnPreviewResume) {
     });
 }
 
+if (elements.btnAutoPilotPreview) {
+    elements.btnAutoPilotPreview.addEventListener('click', () => {
+        if (!currentTailoredResume) {
+            showToast('No tailored resume available yet', 'warning');
+            return;
+        }
+        try {
+            showTailoredResumePreviewModal({ requireApproval: false });
+        } catch (e) {
+            showToast(e.message || 'Failed to open Auto Pilot preview', 'error');
+        }
+    });
+}
+
 // Close resume modal
 if (elements.closeResume) {
     elements.closeResume.addEventListener('click', () => {
@@ -3314,7 +4611,7 @@ if (elements.resumeModal) {
 
 if (elements.btnDownloadDocx) {
     elements.btnDownloadDocx.addEventListener('click', async () => {
-        if (!ensureReviewGate()) return;
+        if (!ensureReviewGate('view')) return;
         if (!currentTailoredResume) {
             showToast('No resume to download', 'error');
             return;
@@ -3325,7 +4622,7 @@ if (elements.btnDownloadDocx) {
             return;
         }
         try {
-            const downloaded = await downloadResumeByPath(docxPath, 'tailored_resume.docx');
+            const downloaded = await downloadResumeByPath(docxPath, 'tailored_resume.docx', buildGeneratedResumeFilename('docx'));
             showToast(`Downloaded ${downloaded}`, 'success');
         } catch (e) {
             showToast(`DOCX download failed: ${e.message}`, 'error');
@@ -3335,7 +4632,7 @@ if (elements.btnDownloadDocx) {
 
 if (elements.btnDownloadPdf) {
     elements.btnDownloadPdf.addEventListener('click', async () => {
-        if (!ensureReviewGate()) return;
+        if (!ensureReviewGate('view')) return;
         if (!currentTailoredResume) {
             showToast('No resume to download', 'error');
             return;
@@ -3346,10 +4643,44 @@ if (elements.btnDownloadPdf) {
             return;
         }
         try {
-            const downloaded = await downloadResumeByPath(pdfPath, 'tailored_resume.pdf');
+            const downloaded = await downloadResumeByPath(pdfPath, 'tailored_resume.pdf', buildGeneratedResumeFilename('pdf'));
             showToast(`Downloaded ${downloaded}`, 'success');
         } catch (e) {
             showToast(`PDF download failed: ${e.message}`, 'error');
+        }
+    });
+}
+
+if (elements.btnOpenDocx) {
+    elements.btnOpenDocx.addEventListener('click', async () => {
+        if (!ensureReviewGate('view')) return;
+        try {
+            const docxPath = await getTailoredResumePathByFormat('docx');
+            if (!docxPath) {
+                showToast('DOCX file was not generated by API', 'error');
+                return;
+            }
+            const opened = await openResumeByPath(docxPath, buildGeneratedResumeFilename('docx'));
+            showToast(`Opened ${opened}`, 'success');
+        } catch (e) {
+            showToast(`DOCX open failed: ${e.message}`, 'error');
+        }
+    });
+}
+
+if (elements.btnOpenPdf) {
+    elements.btnOpenPdf.addEventListener('click', async () => {
+        if (!ensureReviewGate('view')) return;
+        try {
+            const pdfPath = await getTailoredResumePathByFormat('pdf');
+            if (!pdfPath) {
+                showToast('PDF file was not generated by API', 'error');
+                return;
+            }
+            const opened = await openResumeByPath(pdfPath, buildGeneratedResumeFilename('pdf'));
+            showToast(`Opened ${opened}`, 'success');
+        } catch (e) {
+            showToast(`PDF open failed: ${e.message}`, 'error');
         }
     });
 }
@@ -3367,10 +4698,22 @@ if (elements.btnModalDownloadPdf) {
     });
 }
 
+if (elements.btnModalOpenDocx) {
+    elements.btnModalOpenDocx.addEventListener('click', () => {
+        elements.btnOpenDocx?.click();
+    });
+}
+
+if (elements.btnModalOpenPdf) {
+    elements.btnModalOpenPdf.addEventListener('click', () => {
+        elements.btnOpenPdf?.click();
+    });
+}
+
 // Use This Resume button
 if (elements.btnUseResume) {
     elements.btnUseResume.addEventListener('click', async () => {
-        if (!ensureReviewGate()) return;
+        if (!ensureReviewGate('upload')) return;
         if (!currentTailoredResume?.tailoredResume) {
             showToast('No resume available', 'error');
             return;
@@ -3436,14 +4779,16 @@ function mergeTimestampedMaps(baseMap, incomingMap) {
     return merged;
 }
 
-async function syncLearnedToBackend() {
-    if (settings.syncToConfig === false) return;
+async function syncLearnedToBackend(options = {}) {
+    if (settings.syncToConfig === false) return false;
+    const strict = options?.strict === true;
+    const retries = Number.isFinite(Number(options?.retries)) ? Math.max(0, Number(options.retries)) : 0;
     try {
         const payload = {
             learnedFields: learnedFields || {},
             customAnswers: userData.customAnswers || {}
         };
-        const result = await callAPI('/api/extension-learning', payload, { timeoutMs: 12000, retries: 0 });
+        const result = await callAPI('/api/extension-learning', payload, { timeoutMs: 15000, retries, bypassCircuit: strict });
         if (result?.success) {
             if (result.learnedFields && typeof result.learnedFields === 'object') {
                 learnedFields = mergeTimestampedMaps(learnedFields, result.learnedFields);
@@ -3454,9 +4799,18 @@ async function syncLearnedToBackend() {
             }
             await chrome.storage.sync.set({ [LEARNED_KEY]: learnedFields });
             updateLearningUI();
+            return true;
         }
+        if (strict) {
+            throw new Error('Learning sync response was not successful');
+        }
+        return false;
     } catch (e) {
+        if (strict) {
+            throw e;
+        }
         console.log('Learning sync skipped:', e.message || e);
+        return false;
     }
 }
 
@@ -3528,9 +4882,9 @@ function updateLearningUI() {
     if (fieldCount > 0) {
         const listHtml = Object.entries(learnedFields).map(([key, value]) => `
             <div class="learned-field-item">
-                <span class="field-pattern">${key}</span>
-                <span class="field-type">${value.type}</span>
-                <button class="btn-remove" data-key="${key}">×</button>
+                <span class="field-pattern">${escapeHtml(key)}</span>
+                <span class="field-type">${escapeHtml(value?.type || 'custom')}</span>
+                <button class="btn-remove" data-key="${escapeHtml(key)}">×</button>
             </div>
         `).join('');
         
@@ -3666,6 +5020,8 @@ async function init() {
         // Try to load master resume from API server
         await loadMasterResume();
         await loadDefaultTailoringInstructions();
+        await refreshPrivacySummary();
+        setTailorFailureActionsVisible(false);
         
         // Check current tab and detect portal
         const tab = await getActiveTab();
@@ -3739,5 +5095,15 @@ async function init() {
 document.addEventListener('DOMContentLoaded', () => {
     setReviewGateState(false);
     setInstructionPanel(false);
+    setModeVisibility('default');
+    loadTopSectionCollapsedState();
+
+    if (elements.btnToggleTopSection) {
+        elements.btnToggleTopSection.addEventListener('click', () => {
+            setTopSectionCollapsedState(!topSectionCollapsed, true);
+            showToast(topSectionCollapsed ? 'Top section collapsed' : 'Top section expanded', 'success');
+        });
+    }
+
     init();
 });

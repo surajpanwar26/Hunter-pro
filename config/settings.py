@@ -35,7 +35,7 @@ Note: Will be treated as False if `run_in_background = False`
 
 # Settings for processing multiple jobs (not single job)
 run_non_stop = True                # Ensure continuous run for multiple jobs
-max_jobs_to_process = 2            # 0 means unlimited jobs
+max_jobs_to_process = 0            # 0 means unlimited jobs
 alternate_sortby = False            # Alternate between sorting options (Most Recent/Most Relevant)
 cycle_date_posted = True           # Cycle through date posted for more jobs
 stop_date_cycle_at_24hr = True     # Stop cycling at 24hr if needed
@@ -67,7 +67,7 @@ pilot_mode_enabled = True           # True = Fully automated, False = Normal mod
 pilot_resume_mode = "preselected"   # Resume handling mode - using LinkedIn's pre-selected resume
 
 # Maximum applications per pilot session (0 = unlimited)
-pilot_max_applications = 2          # Set limit to prevent excessive applications
+pilot_max_applications = 5          # Set limit to prevent excessive applications
 
 # Delay between applications in pilot mode (seconds) - helps avoid detection
 pilot_application_delay = 5         # Seconds to wait between applications
@@ -106,20 +106,36 @@ autopilot_commute_ok = "Yes"                 # Yes/No - Can you commute to offic
 autopilot_chrome_wait_time = 10              # Seconds to wait for Chrome to stabilize
 
 
+# >>>>>>>>>>> STUCK / TIMEOUT RECOVERY SETTINGS <<<<<<<<<<<
+# Protect against the bot getting stuck on a single job or form page
+
+# Maximum time (seconds) to spend on a SINGLE job application
+# If exceeded, the bot skips this job and moves to the next one
+per_job_timeout = 180                        # 3 minutes per job (0 = no limit)
+
+# Maximum time (seconds) to spend in the Easy Apply form-filling loop
+# This is a wall-clock deadline inside smart_easy_apply()
+form_fill_timeout = 120                      # 2 minutes for form filling (0 = no limit)
+
+# Auto-dismiss pyautogui dialogs in pilot/scheduled mode
+# When True, dialogs that would block the bot are auto-dismissed after timeout
+dialog_auto_dismiss_timeout = 15             # Seconds before auto-dismissing dialogs (0 = never)
+
+
 # >>>>>>>>>>> SCHEDULING SETTINGS <<<<<<<<<<<
 # Schedule automatic job application runs (run without opening dashboard)
 
 # Enable scheduling feature
-scheduling_enabled = False           # True = Enable scheduled runs
+scheduling_enabled = True            # True = Enable scheduled runs
 
 # Schedule type: "interval", "daily", "weekly" 
-schedule_type = "interval"           # Type of schedule
+schedule_type = "daily"              # Type of schedule
 
 # Interval scheduling - hours between runs
 schedule_interval_hours = 4          # Run every X hours
 
 # Daily schedule times (24-hour format)
-schedule_daily_times = ["09:00", "17:00"]  # Times to run daily
+schedule_daily_times = ["09:00"]             # Times to run daily (9 AM IST)
 
 # Weekly schedule (day: [times])
 schedule_weekly = {
@@ -133,10 +149,17 @@ schedule_weekly = {
 }
 
 # Maximum runtime per scheduled session (minutes)
-schedule_max_runtime = 120           # Stop after X minutes
+schedule_max_runtime = 60            # Stop after X minutes
 
 # Applications per scheduled session
-schedule_max_applications = 50       # Max apps per scheduled run
+schedule_max_applications = 5        # Max apps per scheduled run
+
+# Resume mode for scheduled runs (independent from pilot mode resume)
+#   "preselected"  - Use LinkedIn's pre-selected resume (RECOMMENDED for scheduled runs)
+#   "tailored"     - AI-tailored resume for each job
+#   "default"      - Upload project's default resume
+#   "skip"         - Don't touch resume at all
+schedule_resume_mode = "preselected"  # Scheduler uses its own resume mode
 
 
 # >>>>>>>>>>> JOB SEARCH MODE SETTINGS <<<<<<<<<<<
@@ -272,7 +295,7 @@ pause_before_submit = False         # True = Ask for confirmation before submitt
 pause_at_failed_question = False    # True = Pause when question can't be answered, False = Skip/fail
 
 # If you want to disable extensions then set disable_extensions as True (Better for performance)
-disable_extensions = True           # True or False, Note: True or False are case-sensitive
+disable_extensions = False          # True or False, Note: True or False are case-sensitive
 
 # Run in safe mode. Set this true if chrome is taking too long to open or if you have multiple profiles in browser. This will open chrome in guest profile!
 safe_mode = False                   # True or False, Note: True or False are case-sensitive (Set False to use existing profile with login)

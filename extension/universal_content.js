@@ -32,6 +32,100 @@
         VERIFY_RETRY_COUNT: 1
     };
     const STORAGE_FALLBACK_KEY = 'universalAutoFillDataLocal';
+    const RUNTIME_SETTINGS_KEY = 'universalAutoFillSettings';
+    let runtimeSettings = {
+        extensionEnabled: true,
+        detectionMode: 'universal',
+    };
+    let lastFormDetectedAt = 0;
+
+    let __extensionContextAlive = true;
+    // mark context dead on unload/navigation so background calls stop early
+    try {
+        window.addEventListener('unload', () => { __extensionContextAlive = false; });
+        window.addEventListener('beforeunload', () => { __extensionContextAlive = false; });
+    } catch {
+        // ignore if page restricts listeners
+    }
+
+    function isExtensionContextValid() {
+        try {
+            return __extensionContextAlive && !!(chrome?.runtime?.id);
+        } catch {
+            return false;
+        }
+    }
+
+    function safeRuntimeSendMessage(payload) {
+        if (!isExtensionContextValid() || !chrome?.runtime?.sendMessage) {
+            return Promise.resolve(null);
+        }
+        try {
+            const maybePromise = chrome.runtime.sendMessage(payload);
+            if (maybePromise && typeof maybePromise.then === 'function') {
+                return maybePromise.catch(() => null);
+            }
+            return Promise.resolve(maybePromise || null);
+        } catch (e) {
+            const msg = String(e?.message || e || '');
+            if (/Extension context invalidated/i.test(msg)) {
+                log('Extension context invalidated while sending runtime message');
+                return Promise.resolve(null);
+            }
+            throw e;
+        }
+    }
+
+    function safeSendResponse(sendResponse, payload) {
+        try {
+            if (typeof sendResponse === 'function') {
+                sendResponse(payload);
+            }
+        } catch (e) {
+            const msg = String(e?.message || e || '');
+            if (/Extension context invalidated/i.test(msg)) {
+                log('Extension context invalidated while sending response to runtime message');
+                return;
+            }
+            // swallow other sendResponse errors to avoid breaking the page
+            log('Error in safeSendResponse:', msg);
+        }
+    }
+
+    function applyRuntimeSettings(nextSettings = {}) {
+        runtimeSettings = {
+            ...runtimeSettings,
+            ...(nextSettings || {}),
+        };
+    }
+
+    async function refreshRuntimeSettings() {
+        try {
+            const result = await chrome.storage.sync.get(RUNTIME_SETTINGS_KEY);
+            applyRuntimeSettings(result?.[RUNTIME_SETTINGS_KEY] || {});
+        } catch {
+            // keep defaults if settings are unavailable
+        }
+    }
+
+    function isAutomationEnabled() {
+        return runtimeSettings.extensionEnabled !== false;
+    }
+
+    function isDetectionModeEnabled() {
+        const mode = String(runtimeSettings.detectionMode || 'universal').trim().toLowerCase();
+        return !mode || mode === 'universal';
+    }
+
+    function getRuntimeGateError(actionName = 'action') {
+        if (!isAutomationEnabled()) {
+            return `Extension automation is disabled by settings (${actionName} blocked)`;
+        }
+        if (!isDetectionModeEnabled()) {
+            return `Detection mode "${String(runtimeSettings.detectionMode || '')}" is not supported in universal content runtime`;
+        }
+        return '';
+    }
     
     // ================================
     // SUPPORTED JOB PORTALS
@@ -394,6 +488,103 @@
         return '';
     }
 
+    function sanitizeOptionText(value) {
+        return cleanText(String(value || ''))
+            .replace(/[\u00A0\t\r\n]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
+    function isOptionPlaceholder(text) {
+        return /^(select|choose|please select|--|none|n\/a|na)$/i.test(String(text || '').trim());
+    }
+
+    function shouldSkipEchoOption(optionText, fieldInfo) {
+        const candidate = sanitizeOptionText(optionText).toLowerCase();
+        if (!candidate) return true;
+
+        const questionLabel = sanitizeOptionText(fieldInfo?.label || '').toLowerCase();
+        const currentValue = sanitizeOptionText(fieldInfo?.currentValue || '').toLowerCase();
+
+        if (questionLabel && candidate === questionLabel) return true;
+        if (currentValue && candidate === currentValue) return true;
+
+        const similarityToQuestion = questionLabel ? labelSimilarity(candidate, questionLabel) : 0;
+        if (similarityToQuestion >= 0.85 && candidate.split(/\s+/).length >= 5) return true;
+
+        if (!/\b(yes|no|true|false|decline|accept|prefer|option\s+[a-z0-9]+)\b/i.test(candidate)) {
+            if (candidate.length > 80) return true;
+            if (!/[a-z]/i.test(candidate)) return true;
+        }
+
+        return false;
+    }
+
+    function dedupeOptions(options, fieldInfo) {
+        const unique = [];
+        const seen = new Set();
+
+        for (const raw of options || []) {
+            const normalized = sanitizeOptionText(raw);
+            if (!normalized) continue;
+            if (isOptionPlaceholder(normalized)) continue;
+            if (shouldSkipEchoOption(normalized, fieldInfo)) continue;
+
+            const key = normalized.toLowerCase();
+            if (seen.has(key)) continue;
+            seen.add(key);
+            unique.push(normalized);
+        }
+
+        return unique;
+    }
+
+    function extractRadioOptionLabel(radioEl, groupLabel = '') {
+        if (!radioEl) return '';
+
+        const candidates = [];
+
+        if (radioEl.id) {
+            const explicit = document.querySelector(`label[for="${radioEl.id}"]`);
+            if (explicit) candidates.push(getTextContent(explicit));
+        }
+
+        if (radioEl.getAttribute('aria-label')) {
+            candidates.push(radioEl.getAttribute('aria-label'));
+        }
+
+        const parentLabel = radioEl.closest('label');
+        if (parentLabel) {
+            let text = getTextContent(parentLabel);
+            const nested = parentLabel.querySelector('input, [role="radio"]');
+            if (nested) {
+                const nestedText = getTextContent(nested);
+                if (nestedText) {
+                    text = text.replace(nestedText, ' ').replace(/\s+/g, ' ').trim();
+                }
+            }
+            candidates.push(text);
+        }
+
+        const siblingText = radioEl.nextElementSibling ? getTextContent(radioEl.nextElementSibling) : '';
+        if (siblingText) candidates.push(siblingText);
+
+        const rawValue = sanitizeOptionText(radioEl.value || radioEl.getAttribute('value') || '');
+        if (rawValue) candidates.push(rawValue);
+
+        const groupNormalized = sanitizeOptionText(groupLabel).toLowerCase();
+        const normalizedCandidates = dedupeOptions(candidates, { label: groupLabel });
+
+        for (const option of normalizedCandidates) {
+            const optionLower = option.toLowerCase();
+            if (groupNormalized && optionLower === groupNormalized) continue;
+            if (groupNormalized && labelSimilarity(optionLower, groupNormalized) >= 0.85 && optionLower.split(/\s+/).length >= 4) continue;
+            return option;
+        }
+
+        return '';
+    }
+
     function getFieldOptions(info) {
         if (!info) return [];
 
@@ -405,17 +596,18 @@
                 ? liveOptions
                 : (Array.isArray(info.options) ? info.options : []);
 
-            return sourceOptions
+            const extracted = sourceOptions
                 .map(opt => cleanText(opt?.text || opt?.value || ''))
-                .filter(opt => opt && !/^(select|choose|please select|--|none)$/i.test(opt))
-                ;
+                .filter(Boolean);
+            return dedupeOptions(extracted, info);
         }
 
         if ((info.type === 'radio' || info.type === 'radioCustom') && Array.isArray(info.radios)) {
-            return info.radios
+            const extracted = info.radios
                 .map(opt => cleanText(opt?.label || opt?.value || ''))
                 .filter(Boolean)
                 ;
+            return dedupeOptions(extracted, info);
         }
 
         if (info.type === 'checkbox' || info.type === 'toggle') {
@@ -441,8 +633,101 @@
         };
     }
 
+    function findMatchingFieldInfoForUnknown(unknownField, latestElements = []) {
+        if (!unknownField || !Array.isArray(latestElements) || latestElements.length === 0) return null;
+
+        const targetNorm = normalizeFieldLabelKey(unknownField.normalizedLabel || unknownField.label || '');
+        const targetType = String(unknownField.type || '').toLowerCase();
+        const targetName = String(unknownField.name || '').toLowerCase();
+        const targetId = String(unknownField.id || '').toLowerCase();
+
+        let best = null;
+        let bestScore = -1;
+
+        for (const info of latestElements) {
+            const infoNorm = normalizeFieldLabelKey(info?.label || info?.name || info?.id || '');
+            const infoType = String(info?.type || '').toLowerCase();
+            const infoName = String(info?.name || '').toLowerCase();
+            const infoId = String(info?.id || '').toLowerCase();
+
+            let score = 0;
+            if (targetNorm && infoNorm) {
+                if (targetNorm === infoNorm) score += 10;
+                else score += labelSimilarity(targetNorm, infoNorm) * 6;
+            }
+            if (targetType && infoType && targetType === infoType) score += 3;
+            if (targetName && infoName && targetName === infoName) score += 4;
+            if (targetId && infoId && targetId === infoId) score += 4;
+
+            if (score > bestScore) {
+                bestScore = score;
+                best = info;
+            }
+        }
+
+        if (bestScore >= 5) return best;
+
+        const fallback = latestElements.find(info => {
+            const infoNorm = normalizeFieldLabelKey(info?.label || info?.name || info?.id || '');
+            if (!targetNorm || !infoNorm) return false;
+            return labelSimilarity(targetNorm, infoNorm) >= 0.45;
+        });
+
+        return fallback || null;
+    }
+
+    function refreshUnresolvedFieldsWithLatestOptions(unresolvedFields, latestElements = []) {
+        if (!Array.isArray(unresolvedFields) || unresolvedFields.length === 0) return unresolvedFields;
+
+        return unresolvedFields.map((item) => {
+            const matched = findMatchingFieldInfoForUnknown(item, latestElements);
+            if (!matched) return item;
+
+            const refreshedOptions = getFieldOptions(matched);
+            const refreshedValue = cleanText(readCurrentValueForVerify(matched));
+
+            return {
+                ...item,
+                options: Array.isArray(refreshedOptions) ? refreshedOptions : (item.options || []),
+                currentValue: refreshedValue || item.currentValue || '',
+                label: cleanText(matched.label || item.label || item.name || item.id || 'Unknown field'),
+                normalizedLabel: normalizeFieldLabelKey(matched.label || item.label || item.name || item.id || 'Unknown field'),
+                id: matched.id || item.id || '',
+                name: matched.name || item.name || '',
+            };
+        });
+    }
+
+    async function refreshUnresolvedFieldSnapshot(unresolvedFields) {
+        if (!Array.isArray(unresolvedFields) || unresolvedFields.length === 0) return unresolvedFields;
+        try {
+            await sleep(Math.max(CONFIG.FILL_DELAY, 120));
+            const latestContainer = detectApplicationForm();
+            const latestElements = getAllFormElements(latestContainer);
+            return refreshUnresolvedFieldsWithLatestOptions(unresolvedFields, latestElements);
+        } catch (e) {
+            log(`Unable to refresh unresolved field snapshot: ${e.message}`);
+            return unresolvedFields;
+        }
+    }
+
+
     function normalizeUserDataForFill(data = {}) {
         const next = { ...data };
+        // Coerce all expected fields to string or default
+        const stringFields = [
+            'firstName', 'lastName', 'middleName', 'email', 'emailAddress', 'city', 'currentCity', 'street', 'address', 'state', 'zip', 'zipcode', 'country',
+            'currentCompany', 'recentEmployer', 'currentTitle', 'linkedinHeadline', 'yearsExperience', 'expectedSalary', 'desiredSalary', 'currentCtc', 'noticePeriod',
+            'linkedinUrl', 'portfolioUrl', 'githubUrl', 'ethnicity', 'gender', 'disabilityStatus', 'veteranStatus', 'sponsorship', 'requireVisa', 'workAuthorization', 'usCitizenship',
+            'coverLetter', 'linkedinSummary', 'userInformationAll', 'confidenceLevel'
+        ];
+        for (const key of stringFields) {
+            if (next[key] === undefined || next[key] === null) {
+                next[key] = '';
+            } else if (typeof next[key] !== 'string') {
+                next[key] = String(next[key]);
+            }
+        }
 
         if (!next.email && (next.emailAddress || next.emailId || next.mail)) {
             next.email = next.emailAddress || next.emailId || next.mail;
@@ -594,6 +879,19 @@
             if (type === 'email') return 'email';
             if (type === 'tel') return 'phone';
             if (type === 'url') return 'otherUrl';
+
+            const attrs = [
+                element.getAttribute('autocomplete'),
+                element.getAttribute('name'),
+                element.getAttribute('id'),
+                element.getAttribute('aria-label'),
+                element.getAttribute('placeholder')
+            ].filter(Boolean).join(' ').toLowerCase();
+
+            if (/\bemail\b|e-?mail|mail\b/.test(attrs)) return 'email';
+            if (/\bphone\b|mobile|cell|telephone|tel\b/.test(attrs)) return 'phone';
+            if (/first.?name|given.?name|forename/.test(attrs)) return 'firstName';
+            if (/last.?name|family.?name|surname/.test(attrs)) return 'lastName';
         }
         
         return null;
@@ -696,15 +994,16 @@
         
         radioGroups.forEach((radios, name) => {
             const container = radios[0].closest('fieldset, .radio-group, div');
+            const groupLabel = findLabelForElement(container || radios[0]);
             elements.push({
                 element: container || radios[0].parentElement,
                 type: 'radio',
                 name: name,
-                label: findLabelForElement(container || radios[0]),
+                label: groupLabel,
                 radios: radios.map(r => ({
                     element: r,
                     value: r.value,
-                    label: findLabelForElement(r) || r.nextSibling?.textContent?.trim()
+                    label: extractRadioOptionLabel(r, groupLabel) || cleanText(r.value || '')
                 })),
                 currentValue: radios.find(r => r.checked)?.value || ''
             });
@@ -768,7 +1067,7 @@
         
         // File inputs (resume, cover letter)
         container.querySelectorAll('input[type="file"]').forEach(fileInput => {
-            if (isVisibleAndEnabled(fileInput)) {
+            if (isVisibleAndEnabled(fileInput) || isFileInputCandidate(fileInput)) {
                 elements.push(createElementInfo(fileInput, 'file'));
             }
         });
@@ -795,6 +1094,14 @@
         const rect = element.getBoundingClientRect();
         if (rect.width === 0 && rect.height === 0) return false;
         
+        return true;
+    }
+
+    function isFileInputCandidate(element) {
+        if (!element || String(element.tagName || '').toLowerCase() !== 'input') return false;
+        if (String(element.type || '').toLowerCase() !== 'file') return false;
+        if (element.disabled) return false;
+        if (element.getAttribute('aria-hidden') === 'true') return false;
         return true;
     }
     
@@ -932,6 +1239,20 @@
                 return !isNaN(optNum) && Math.abs(optNum - num) <= 2;
             });
         }
+
+        // Yes/No semantic match for boolean-like answers
+        if (!matched) {
+            const isYes = /^(yes|true|1|checked|y)$/i.test(String(targetValue || '').trim());
+            const isNo = /^(no|false|0|unchecked|n)$/i.test(String(targetValue || '').trim());
+            if (isYes || isNo) {
+                const yesPattern = /\b(yes|true|authorized|agree|accept|eligible)\b/i;
+                const noPattern = /\b(no|false|decline|disagree|not\s+authorized|ineligible)\b/i;
+                matched = options.find(opt => {
+                    const candidate = `${opt.text || ''} ${opt.value || ''}`.trim();
+                    return isYes ? yesPattern.test(candidate) : noPattern.test(candidate);
+                });
+            }
+        }
         
         // Never force-select arbitrary fallback for location-like fields
         if (!matched && isLocationField) {
@@ -949,9 +1270,10 @@
         return false;
     }
     
-    async function selectRadioOption(elementInfo, targetValue) {
+    async function selectRadioOption(elementInfo, targetValue, options = {}) {
         const radios = elementInfo.radios || [];
-        const targetLower = targetValue.toLowerCase();
+        const targetLower = String(targetValue || '').toLowerCase();
+        const allowUnsafeFallback = options.allowUnsafeFallback !== false;
         
         // Find matching radio
         let matched = radios.find(r => {
@@ -972,8 +1294,8 @@
             }
         }
         
-        // Default to first option
-        if (!matched && radios.length > 0) {
+        // Default to first option only for generic autofill (not explicit saved unknown answers)
+        if (!matched && allowUnsafeFallback && radios.length > 0) {
             matched = radios[0];
         }
         
@@ -1017,9 +1339,10 @@
         return true;
     }
 
-    async function selectAriaRadioOption(elementInfo, targetValue) {
+    async function selectAriaRadioOption(elementInfo, targetValue, options = {}) {
         const radios = elementInfo.radios || [];
         if (!radios.length) return false;
+        const allowUnsafeFallback = options.allowUnsafeFallback !== false;
 
         const targetLower = String(targetValue || '').toLowerCase().trim();
         let matched = radios.find(r => {
@@ -1038,7 +1361,7 @@
             }
         }
 
-        if (!matched) matched = radios[0];
+        if (!matched && allowUnsafeFallback) matched = radios[0];
         if (!matched || !matched.element) return false;
 
         matched.element.scrollIntoView({ block: 'center', behavior: 'smooth' });
@@ -1052,7 +1375,8 @@
         const source = String(label || '') + ' ' + String(element?.name || '') + ' ' + String(element?.id || '');
         const normalized = source.toLowerCase();
         if (!normalized.trim()) return true;
-        return FIELD_PATTERNS.resume.test(normalized) || /curriculum|cv\b/i.test(normalized);
+        if (FIELD_PATTERNS.resume.test(normalized) || /curriculum|cv\b/i.test(normalized)) return true;
+        return /attach|upload|document|supporting|cover\s*letter|file/i.test(normalized);
     }
 
     function buildFileFromPayload(resumeUpload) {
@@ -1069,7 +1393,13 @@
         const file = buildFileFromPayload(resumeUpload);
         if (!file) return 0;
 
-        const fileInputs = (elements || []).filter(info => info && info.type === 'file' && info.element);
+        let fileInputs = (elements || []).filter(info => info && info.type === 'file' && info.element);
+        if (!fileInputs.length) {
+            const fallbackInputs = Array.from(document.querySelectorAll('input[type="file"]'))
+                .filter(input => isFileInputCandidate(input))
+                .map(input => createElementInfo(input, 'file'));
+            fileInputs = fallbackInputs;
+        }
         if (!fileInputs.length) return 0;
 
         let uploaded = 0;
@@ -1092,6 +1422,24 @@
                 await sleep(Math.max(80, CONFIG.FILL_DELAY));
             } catch (e) {
                 log(`Failed to upload resume in field "${info.label}": ${e.message}`);
+            }
+        }
+
+        if (uploaded === 0 && fileInputs.length > 0) {
+            // Fallback: when portals do not clearly label the file input as resume,
+            // attach to first available upload control so Auto Pilot can proceed.
+            const first = fileInputs.find(info => info?.element && String(info.element.type).toLowerCase() === 'file');
+            if (first?.element) {
+                try {
+                    const dt = new DataTransfer();
+                    dt.items.add(file);
+                    first.element.files = dt.files;
+                    first.element.dispatchEvent(new Event('input', { bubbles: true }));
+                    first.element.dispatchEvent(new Event('change', { bubbles: true }));
+                    uploaded = 1;
+                } catch {
+                    // keep uploaded=0
+                }
             }
         }
 
@@ -1277,6 +1625,8 @@
         if (options.resumeUpload) {
             fileUploaded = await fillResumeFileInputs(elements, options.resumeUpload);
         }
+
+        const finalUnresolvedFields = await refreshUnresolvedFieldSnapshot(unresolvedFields);
         
         log(`Filled ${filled} of ${total} fields (${skipped} skipped)`);
         if (strictVerify) {
@@ -1290,9 +1640,125 @@
             retried,
             verificationFailed,
             fileUploaded,
-            unresolvedFields,
+            unresolvedFields: finalUnresolvedFields,
             strictVerify,
             portal: getCurrentPortal()
+        };
+    }
+
+    async function fillUnknownAnswersInPage(answers = []) {
+        await loadUserData();
+
+        const validAnswers = Array.isArray(answers)
+            ? answers.filter(item => item && String(item.answer || '').trim())
+            : [];
+
+        if (!validAnswers.length) {
+            return {
+                success: true,
+                filled: 0,
+                total: 0,
+                unresolvedFields: [],
+                portal: getCurrentPortal(),
+            };
+        }
+
+        const container = detectApplicationForm();
+        const elements = getAllFormElements(container);
+        const unresolvedFields = [];
+        const unresolvedKeys = new Set();
+        let filled = 0;
+
+        for (const entry of validAnswers) {
+            const unknown = {
+                label: cleanText(entry.label || entry.normalizedLabel || entry.name || entry.id || 'Unknown field'),
+                normalizedLabel: normalizeFieldLabelKey(entry.normalizedLabel || entry.label || ''),
+                type: entry.type || 'text',
+                fieldType: entry.fieldType || null,
+                name: entry.name || '',
+                id: entry.id || '',
+            };
+
+            const info = findMatchingFieldInfoForUnknown(unknown, elements);
+            if (!info) {
+                const fallbackUnknown = {
+                    ...unknown,
+                    reason: 'field_not_found',
+                    required: false,
+                    currentValue: '',
+                    options: [],
+                };
+                const key = `${fallbackUnknown.normalizedLabel}::${fallbackUnknown.type}::${fallbackUnknown.name || fallbackUnknown.id || ''}`;
+                if (!unresolvedKeys.has(key)) {
+                    unresolvedKeys.add(key);
+                    unresolvedFields.push(fallbackUnknown);
+                }
+                continue;
+            }
+
+            const rawAnswer = String(entry.answer || '').trim();
+            let success = false;
+            try {
+                switch (info.type) {
+                    case 'text':
+                    case 'textarea':
+                        success = await fillTextInput(info.element, rawAnswer);
+                        break;
+                    case 'select':
+                        success = await selectDropdownOption(info.element, rawAnswer, info);
+                        break;
+                    case 'radio':
+                        success = await selectRadioOption(info, rawAnswer, { allowUnsafeFallback: false });
+                        break;
+                    case 'radioCustom':
+                        success = await selectAriaRadioOption(info, rawAnswer, { allowUnsafeFallback: false });
+                        break;
+                    case 'checkbox': {
+                        const shouldCheck = /^(yes|true|1|checked)$/i.test(rawAnswer);
+                        success = await fillCheckbox(info.element, shouldCheck);
+                        break;
+                    }
+                    case 'toggle': {
+                        const shouldCheck = /^(yes|true|1|checked)$/i.test(rawAnswer);
+                        success = await fillAriaToggle(info.element, shouldCheck);
+                        break;
+                    }
+                    case 'customDropdown':
+                        success = await handleCustomDropdown(info.element, rawAnswer);
+                        break;
+                    default:
+                        success = await fillTextInput(info.element, rawAnswer);
+                        break;
+                }
+            } catch {
+                success = false;
+            }
+
+            const expectedValue = (info.type === 'checkbox' || info.type === 'toggle')
+                ? /^(yes|true|1|checked)$/i.test(rawAnswer)
+                : rawAnswer;
+            const verified = verifyFieldFilled(info, expectedValue);
+            if (success || verified) {
+                filled += 1;
+                await sleep(Math.max(CONFIG.FILL_DELAY, 80));
+                continue;
+            }
+
+            const unresolved = buildUnknownFieldEntry(info, 'verification_failed');
+            const key = `${unresolved.normalizedLabel}::${unresolved.type}::${unresolved.name || unresolved.id || ''}`;
+            if (!unresolvedKeys.has(key)) {
+                unresolvedKeys.add(key);
+                unresolvedFields.push(unresolved);
+            }
+        }
+
+        const finalUnresolvedFields = await refreshUnresolvedFieldSnapshot(unresolvedFields);
+        return {
+            success: true,
+            filled,
+            total: validAnswers.length,
+            unresolvedFields: finalUnresolvedFields,
+            portal: getCurrentPortal(),
         };
     }
     
@@ -1309,51 +1775,60 @@
     }
 
     function smartDetectFieldType(label, element) {
-        if (!label) return null;
-        const lbl = label.toLowerCase();
+        const lbl = String(label || '').toLowerCase();
+        const attrText = [
+            element?.getAttribute?.('name') || '',
+            element?.getAttribute?.('id') || '',
+            element?.getAttribute?.('aria-label') || '',
+            element?.getAttribute?.('placeholder') || '',
+            element?.getAttribute?.('autocomplete') || '',
+            element?.getAttribute?.('type') || ''
+        ].join(' ').toLowerCase();
+        const source = `${lbl} ${attrText}`.trim();
+        if (!source) return null;
         
         // Name variations
-        if (/^name$|your name|applicant name|candidate name/i.test(lbl)) return 'fullName';
-        if (/first|given|forename/i.test(lbl) && /name/i.test(lbl)) return 'firstName';
-        if (/last|family|surname/i.test(lbl) && /name/i.test(lbl)) return 'lastName';
+        if (/^name$|your name|applicant name|candidate name/i.test(source)) return 'fullName';
+        if (/first|given|forename/i.test(source) && /name/i.test(source)) return 'firstName';
+        if (/last|family|surname/i.test(source) && /name/i.test(source)) return 'lastName';
         
         // Contact
-        if (/email|e-mail|mail/i.test(lbl)) return 'email';
-        if (/phone|mobile|cell|telephone|contact.*number/i.test(lbl)) return 'phone';
+        if (/email|e-mail|mail|autocomplete\s*email|\btype\s*email\b/i.test(source)) return 'email';
+        if (/phone|mobile|cell|telephone|contact.*number|autocomplete\s*tel|\btype\s*tel\b/i.test(source)) return 'phone';
         
         // Location
-        if (/city|location/i.test(lbl)) return 'city';
-        if (/state|province/i.test(lbl)) return 'state';
-        if (/country/i.test(lbl)) return 'country';
-        if (/address|street/i.test(lbl)) return 'address';
-        if (/zip|postal/i.test(lbl)) return 'zip';
+        if (/city|location/i.test(source)) return 'city';
+        if (/state|province/i.test(source)) return 'state';
+        if (/country/i.test(source)) return 'country';
+        if (/address|street/i.test(source)) return 'address';
+        if (/zip|postal/i.test(source)) return 'zip';
         
         // Professional
-        if (/company|employer|organization/i.test(lbl)) return 'company';
-        if (/title|position|role|designation/i.test(lbl)) return 'title';
-        if (/experience|years/i.test(lbl)) return 'experience';
-        if (/salary|compensation|pay|ctc/i.test(lbl)) return 'salary';
-        if (/notice|availability|start.*date/i.test(lbl)) return 'noticePeriod';
+        if (/company|employer|organization/i.test(source)) return 'company';
+        if (/title|position|role|designation/i.test(source)) return 'title';
+        if (/experience|years/i.test(source)) return 'experience';
+        if (/salary|compensation|pay|ctc/i.test(source)) return 'salary';
+        if (/notice|availability|start.*date/i.test(source)) return 'noticePeriod';
         
         // Links
-        if (/linkedin/i.test(lbl)) return 'linkedin';
-        if (/portfolio|website/i.test(lbl)) return 'portfolio';
-        if (/github/i.test(lbl)) return 'github';
+        if (/linkedin/i.test(source)) return 'linkedin';
+        if (/portfolio|website/i.test(source)) return 'portfolio';
+        if (/github/i.test(source)) return 'github';
         
         // Education
-        if (/degree|qualification/i.test(lbl)) return 'degree';
-        if (/major|field|study/i.test(lbl)) return 'major';
-        if (/school|university|college|institution/i.test(lbl)) return 'school';
-        if (/graduation|grad.*year/i.test(lbl)) return 'graduationYear';
+        if (/degree|qualification/i.test(source)) return 'degree';
+        if (/major|field|study/i.test(source)) return 'major';
+        if (/school|university|college|institution/i.test(source)) return 'school';
+        if (/graduation|grad.*year/i.test(source)) return 'graduationYear';
         
         // Work Authorization
-        if (/authorized|eligible.*work|work.*authorization/i.test(lbl)) return 'workAuth';
-        if (/sponsor|visa/i.test(lbl)) return 'sponsorship';
+        if (/authorized|eligible.*work|work.*authorization/i.test(source)) return 'workAuth';
+        if (/sponsor|visa/i.test(source)) return 'sponsorship';
         
         // Preferences
-        if (/remote|work from home|wfh/i.test(lbl)) return 'remote';
-        if (/relocate|relocation/i.test(lbl)) return 'relocate';
-        if (/travel/i.test(lbl)) return 'travel';
+        if (/remote|work from home|wfh/i.test(source)) return 'remote';
+        if (/relocate|relocation/i.test(source)) return 'relocate';
+        if (/travel/i.test(source)) return 'travel';
         
         return null;
     }
@@ -1540,7 +2015,7 @@
         const seen = new Set();
         const out = [];
         const blocks = String(value || '')
-            .split(/\n{2,}/g)
+            .split(/\n{2,}|(?=\b(?:Our Company|The Opportunity|What you(?:\'|’)ll do|What you will do|What you need to succeed|Requirements|Responsibilities|Bonus)\b)/gi)
             .map(block => normalizeJdText(block))
             .filter(Boolean);
 
@@ -1587,7 +2062,7 @@
     function extractVisaStatus(text) {
         const source = String(text || '');
         const line = source.match(/(visa\s*sponsorship[^\n.]{0,140}|sponsorship[^\n.]{0,140}|work\s+authorization[^\n.]{0,140})/i);
-        if (!line) return '';
+        if (!line) return 'Not specified';
         const sentence = cleanText(line[1]);
         if (/no\s+sponsorship|not\s+available|will\s+not\s+sponsor|cannot\s+sponsor/i.test(sentence)) {
             return 'Not sponsored';
@@ -1595,7 +2070,7 @@
         if (/sponsorship\s+available|will\s+sponsor|can\s+sponsor|require\s+sponsorship|visa\s+support/i.test(sentence)) {
             return 'Sponsorship available';
         }
-        return sentence;
+        return sentence || 'Not specified';
     }
 
     function extractSectionFromJD(text, headings) {
@@ -1647,7 +2122,10 @@
     function decodeHtmlToText(value) {
         if (!value) return '';
         const div = document.createElement('div');
-        div.innerHTML = String(value);
+        const normalized = String(value)
+            .replace(/<\s*br\s*\/?>/gi, '\n')
+            .replace(/<\s*\/\s*(p|div|li|h1|h2|h3|h4|h5|h6|section|article)\s*>/gi, '\n');
+        div.innerHTML = normalized;
         return cleanText(div.textContent || div.innerText || '');
     }
 
@@ -1740,6 +2218,10 @@
             /\bjoin\s+our\s+talent\s+community\b/i,
             /\bcookie\s+settings\b/i,
             /\bsee\s+more\b/i,
+            /\bexplore\s+location\b/i,
+            /\bclose\s+the\s+popup\b/i,
+            /\bapply\s+now\b/i,
+            /\bsave\s+job\b/i,
         ];
 
         let startIndex = 0;
@@ -1760,6 +2242,14 @@
                 break;
             }
         }
+
+        // Remove immediate repeated long clauses introduced by merged extraction sources
+        trimmed = trimmed.replace(/(.{180,}?)(\s*\1){1,}/gis, '$1');
+
+        // Ensure key headings are separated so dedupe logic can work effectively
+        trimmed = trimmed
+            .replace(/(Our Company|The Opportunity|What you(?:\'|’)ll do|What you will do|What you need to succeed|Requirements|Responsibilities|Bonus)(?=[A-Z])/g, '$1\n')
+            .replace(/\n{3,}/g, '\n\n');
 
         return dedupeParagraphs(normalizeJdText(trimmed));
     }
@@ -2186,15 +2676,13 @@
      */
     async function loadBundledConfig() {
         try {
+            if (!chrome?.runtime?.getURL) throw new Error('Extension context invalidated');
             const response = await fetch(chrome.runtime.getURL('user_config.json'));
             if (!response.ok) return null;
-            
             const config = await response.json();
             log('✓ Loaded bundled user_config.json');
-            
             const profile = config.profile || {};
             const questions = config.questions || {};
-            
             return {
                 firstName: profile.firstName || '',
                 lastName: profile.lastName || '',
@@ -2233,13 +2721,18 @@
                 _autoLoaded: true
             };
         } catch (e) {
-            log('Could not load bundled config:', e.message);
+            if (String(e).includes('Extension context invalidated')) {
+                log('Extension context invalidated: reload the page or extension.');
+            } else {
+                log('Could not load bundled config:', e.message || e);
+            }
             return null;
         }
     }
     
     async function loadUserData() {
         try {
+            if (!chrome?.storage?.sync || !chrome?.storage?.local) throw new Error('Extension context invalidated');
             const [syncResult, localResult] = await Promise.all([
                 chrome.storage.sync.get([CONFIG.STORAGE_KEY, CONFIG.LEARNED_FIELDS_KEY]),
                 chrome.storage.local.get([CONFIG.STORAGE_KEY, STORAGE_FALLBACK_KEY, CONFIG.LEARNED_FIELDS_KEY])
@@ -2267,17 +2760,19 @@
                     log('ℹ️ No profile data available - form filling may be limited');
                 }
             }
-            
             // Load learned mappings
             const learnedMappings = syncResult?.[CONFIG.LEARNED_FIELDS_KEY] || localResult?.[CONFIG.LEARNED_FIELDS_KEY];
             if (learnedMappings) {
                 userData.learnedMappings = { ...userData.learnedMappings, ...learnedMappings };
                 log('Learned mappings loaded');
             }
-
             userData = normalizeUserDataForFill(userData);
         } catch (e) {
-            log('Error loading user data:', e);
+            if (String(e).includes('Extension context invalidated')) {
+                log('Extension context invalidated: reload the page or extension.');
+            } else {
+                log('Error loading user data:', e.message || e);
+            }
         }
     }
     
@@ -2313,145 +2808,227 @@
     // ================================
     // MESSAGE HANDLING
     // ================================
-    chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-        log('Received message:', message.action);
-        
-        switch (message.action) {
-            case 'ping':
-                // Used by popup to check if content script is loaded
-                sendResponse({ success: true, loaded: true, portal: getCurrentPortal() });
-                break;
-                
-            case 'fillForm':
-                fillAllForms({
-                    resumeUpload: message.resumeUpload || null,
-                }).then(result => {
-                    sendResponse({ success: true, ...result });
-                }).catch(e => {
-                    sendResponse({ success: false, error: e.message });
-                });
-                return true;
-                
-            case 'analyzeFields':
-                const container = detectApplicationForm();
-                const elements = getAllFormElements(container);
-                const detectedFields = elements.filter(e => e.fieldType).map(e => ({
-                    label: e.label,
-                    type: e.type,
-                    fieldType: e.fieldType,
-                    currentValue: cleanText(readCurrentValueForVerify(e)),
-                    required: !!e.required,
-                    options: getFieldOptions(e),
-                    normalizedLabel: normalizeFieldLabelKey(e.label || e.name || e.id || '')
-                }));
-                const undetectedFields = elements.filter(e => !e.fieldType).map(e => ({
-                    label: e.label,
-                    type: e.type,
-                    fieldType: null,
-                    currentValue: cleanText(readCurrentValueForVerify(e)),
-                    required: !!e.required,
-                    options: getFieldOptions(e),
-                    normalizedLabel: normalizeFieldLabelKey(e.label || e.name || e.id || '')
-                }));
-                const filledFields = elements.filter(e => cleanText(readCurrentValueForVerify(e)) !== '').map(e => ({
-                    label: e.label,
-                    type: e.type,
-                    fieldType: e.fieldType,
-                    currentValue: cleanText(readCurrentValueForVerify(e)),
-                    required: !!e.required,
-                    options: getFieldOptions(e),
-                    normalizedLabel: normalizeFieldLabelKey(e.label || e.name || e.id || '')
-                }));
-                const analysis = {
-                    portal: getCurrentPortal(),
-                    total: elements.length,
-                    detectedCount: detectedFields.length,
-                    undetectedCount: undetectedFields.length,
-                    detected: detectedFields,
-                    undetected: undetectedFields,
-                    filled: filledFields,
-                    fields: [...detectedFields, ...undetectedFields]
-                };
-                sendResponse({ success: true, analysis });
-                break;
-                
-            case 'detectJD':
-                const jdRaw = detectJobDescription();
-                const jdDetails = extractJobDetails();
-                // Merge into single 'jd' object matching popup.js expectations
-                const jdResponse = jdRaw ? {
-                    schemaVersion: JD_SCHEMA_VERSION,
-                    title: jdDetails ? jdDetails.jobTitle : '',
-                    company: jdDetails ? jdDetails.company : '',
-                    description: jdRaw.text || '',
-                    skills: jdDetails ? jdDetails.skills : [],
-                    yearsRequired: jdDetails ? jdDetails.yearsRequired : null,
-                    location: jdDetails ? jdDetails.location : '',
-                    employmentType: jdDetails ? jdDetails.employmentType : '',
-                    structured: jdDetails ? jdDetails.structured : null,
-                    url: jdRaw.url || window.location.href,
-                    portal: jdRaw.portal || 'unknown',
-                    html: jdRaw.html || '',
-                    timestamp: jdRaw.timestamp || Date.now()
-                } : null;
-                sendResponse({ success: !!jdRaw, jd: jdResponse });
-                break;
-
-            case 'workflowAction':
-                const action = (message.step || '').toLowerCase();
-                if (!['apply', 'next', 'review', 'submit'].includes(action)) {
-                    sendResponse({ success: false, error: 'Invalid workflow action' });
-                    break;
-                }
-                sendResponse(runWorkflowActionInPage(action));
-                break;
-
-            case 'workflowStatus':
-                sendResponse(getWorkflowStatusInPage());
-                break;
-                
-            case 'updateUserData':
-                userData = { ...userData, ...message.data };
-                saveUserData().then(() => {
-                    sendResponse({ success: true });
-                });
-                return true;
-                
-            case 'getUserData':
-                sendResponse({ success: true, data: userData });
-                break;
-                
-            case 'getPortal':
-                sendResponse({ success: true, portal: getCurrentPortal() });
-                break;
-                
-            case 'isApplicationPage':
-                const form = detectApplicationForm();
-                const hasForm = form && form !== document.body;
-                sendResponse({ success: true, isApplicationPage: hasForm, portal: getCurrentPortal() });
-                break;
-                
-            case 'saveLearnedField':
-                if (message.label && message.fieldType) {
-                    userData.learnedMappings[message.label] = message.fieldType;
-                    saveUserData().then(() => {
-                        sendResponse({ success: true });
-                    });
-                    return true;
-                }
-                sendResponse({ success: false, error: 'Missing label or fieldType' });
-                break;
-                
-            default:
-                sendResponse({ success: false, error: 'Unknown action' });
+    function registerMessageListener() {
+        if (!isExtensionContextValid() || !chrome?.runtime?.onMessage?.addListener) {
+            log('Extension context unavailable; runtime listener not registered.');
+            return;
         }
-    });
+
+        try {
+            chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+                try {
+                    const actionName = typeof message?.action === 'string' ? message.action : '';
+                    if (!actionName) {
+                        safeSendResponse(sendResponse, { success: false, error: 'Invalid message payload' });
+                        return;
+                    }
+                    log('Received message:', actionName);
+
+                    switch (actionName) {
+                        case 'ping':
+                            // Used by popup to check if content script is loaded
+                            safeSendResponse(sendResponse, { success: true, loaded: true, portal: getCurrentPortal() });
+                            break;
+
+                        case 'fillForm':
+                            {
+                                const gateError = getRuntimeGateError('fillForm');
+                                if (gateError) {
+                                    safeSendResponse(sendResponse, { success: false, error: gateError });
+                                    break;
+                                }
+                            }
+                            fillAllForms({ resumeUpload: message.resumeUpload || null }).then(result => {
+                                safeSendResponse(sendResponse, { success: true, ...result });
+                            }).catch(e => {
+                                safeSendResponse(sendResponse, { success: false, error: e?.message || String(e) });
+                            });
+                            return true;
+
+                        case 'fillUnknownAnswers':
+                            {
+                                const gateError = getRuntimeGateError('fillUnknownAnswers');
+                                if (gateError) {
+                                    safeSendResponse(sendResponse, { success: false, error: gateError });
+                                    break;
+                                }
+                            }
+                            fillUnknownAnswersInPage(Array.isArray(message.answers) ? message.answers : []).then(result => {
+                                safeSendResponse(sendResponse, result);
+                            }).catch(e => {
+                                safeSendResponse(sendResponse, { success: false, error: e?.message || String(e) });
+                            });
+                            return true;
+
+                        case 'analyzeFields': {
+                            const gateError = getRuntimeGateError('analyzeFields');
+                            if (gateError) {
+                                safeSendResponse(sendResponse, { success: false, error: gateError });
+                                break;
+                            }
+                            const container = detectApplicationForm();
+                            const elements = getAllFormElements(container);
+                            const detectedFields = elements.filter(e => e.fieldType).map(e => ({
+                                label: e.label,
+                                type: e.type,
+                                fieldType: e.fieldType,
+                                currentValue: cleanText(readCurrentValueForVerify(e)),
+                                required: !!e.required,
+                                options: getFieldOptions(e),
+                                normalizedLabel: normalizeFieldLabelKey(e.label || e.name || e.id || '')
+                            }));
+                            const undetectedFields = elements.filter(e => !e.fieldType).map(e => ({
+                                label: e.label,
+                                type: e.type,
+                                fieldType: null,
+                                currentValue: cleanText(readCurrentValueForVerify(e)),
+                                required: !!e.required,
+                                options: getFieldOptions(e),
+                                normalizedLabel: normalizeFieldLabelKey(e.label || e.name || e.id || '')
+                            }));
+                            const filledFields = elements.filter(e => cleanText(readCurrentValueForVerify(e)) !== '').map(e => ({
+                                label: e.label,
+                                type: e.type,
+                                fieldType: e.fieldType,
+                                currentValue: cleanText(readCurrentValueForVerify(e)),
+                                required: !!e.required,
+                                options: getFieldOptions(e),
+                                normalizedLabel: normalizeFieldLabelKey(e.label || e.name || e.id || '')
+                            }));
+                            const analysis = {
+                                portal: getCurrentPortal(),
+                                total: elements.length,
+                                detectedCount: detectedFields.length,
+                                undetectedCount: undetectedFields.length,
+                                detected: detectedFields,
+                                undetected: undetectedFields,
+                                filled: filledFields,
+                                fields: [...detectedFields, ...undetectedFields]
+                            };
+                            safeSendResponse(sendResponse, { success: true, analysis });
+                            break;
+                        }
+
+                        case 'detectJD': {
+                            const gateError = getRuntimeGateError('detectJD');
+                            if (gateError) {
+                                safeSendResponse(sendResponse, { success: false, error: gateError });
+                                break;
+                            }
+                            const jdRaw = detectJobDescription();
+                            const jdDetails = extractJobDetails();
+                            // Merge into single 'jd' object matching popup.js expectations
+                            const jdResponse = jdRaw ? {
+                                schemaVersion: JD_SCHEMA_VERSION,
+                                title: jdDetails ? jdDetails.jobTitle : '',
+                                company: jdDetails ? jdDetails.company : '',
+                                description: jdRaw.text || '',
+                                skills: jdDetails ? jdDetails.skills : [],
+                                yearsRequired: jdDetails ? jdDetails.yearsRequired : null,
+                                location: jdDetails ? jdDetails.location : '',
+                                employmentType: jdDetails ? jdDetails.employmentType : '',
+                                structured: jdDetails ? jdDetails.structured : null,
+                                url: jdRaw.url || window.location.href,
+                                portal: jdRaw.portal || 'unknown',
+                                html: jdRaw.html || '',
+                                timestamp: jdRaw.timestamp || Date.now()
+                            } : null;
+                            safeSendResponse(sendResponse, { success: !!jdRaw, jd: jdResponse });
+                            break;
+                        }
+
+                        case 'workflowAction': {
+                            const gateError = getRuntimeGateError('workflowAction');
+                            if (gateError) {
+                                safeSendResponse(sendResponse, { success: false, error: gateError });
+                                break;
+                            }
+                            const action = (message.step || '').toLowerCase();
+                            if (!['apply', 'next', 'review', 'submit'].includes(action)) {
+                                safeSendResponse(sendResponse, { success: false, error: 'Invalid workflow action' });
+                                break;
+                            }
+                            safeSendResponse(sendResponse, runWorkflowActionInPage(action));
+                            break;
+                        }
+
+                        case 'workflowStatus':
+                            safeSendResponse(sendResponse, getWorkflowStatusInPage());
+                            break;
+
+                        case 'updateUserData':
+                            userData = { ...userData, ...message.data };
+                            saveUserData().then(() => {
+                                safeSendResponse(sendResponse, { success: true });
+                            });
+                            return true;
+
+                        case 'getUserData':
+                            safeSendResponse(sendResponse, { success: true, data: userData });
+                            break;
+
+                        case 'getPortal':
+                            safeSendResponse(sendResponse, { success: true, portal: getCurrentPortal() });
+                            break;
+
+                        case 'isApplicationPage': {
+                            const form = detectApplicationForm();
+                            const hasForm = form && form !== document.body;
+                            safeSendResponse(sendResponse, { success: true, isApplicationPage: hasForm, portal: getCurrentPortal() });
+                            break;
+                        }
+
+                        case 'saveLearnedField':
+                            {
+                                const gateError = getRuntimeGateError('saveLearnedField');
+                                if (gateError) {
+                                    safeSendResponse(sendResponse, { success: false, error: gateError });
+                                    break;
+                                }
+                            }
+                            if (message.label && message.fieldType) {
+                                userData.learnedMappings[message.label] = message.fieldType;
+                                saveUserData().then(() => {
+                                    safeSendResponse(sendResponse, { success: true });
+                                });
+                                return true;
+                            }
+                            safeSendResponse(sendResponse, { success: false, error: 'Missing label or fieldType' });
+                            break;
+
+                        case 'setRuntimeSettings':
+                            applyRuntimeSettings(message.settings || {});
+                            safeSendResponse(sendResponse, {
+                                success: true,
+                                runtimeSettings,
+                            });
+                            break;
+
+                        default:
+                            safeSendResponse(sendResponse, { success: false, error: 'Unknown action' });
+                    }
+                } catch (e) {
+                    safeSendResponse(sendResponse, { success: false, error: String(e?.message || e) });
+                }
+            });
+        } catch (e) {
+            log('Failed to register runtime listener:', e?.message || e);
+        }
+    }
     
     // ================================
     // INITIALIZATION
     // ================================
     async function init() {
         log('Universal Form Filler initializing...');
+        if (!isExtensionContextValid()) {
+            log('Extension context invalidated before init; aborting content script startup.');
+            return;
+        }
+        await refreshRuntimeSettings();
+        if (!isAutomationEnabled()) {
+            log('Automation disabled by settings; content runtime initialized in passive mode.');
+        }
         await loadUserData();
         setupFieldLearning();
         
@@ -2462,7 +3039,7 @@
         setTimeout(() => {
             const jd = detectJobDescription();
             if (jd) {
-                chrome.runtime.sendMessage({ action: 'jobDescriptionDetected', details: extractJobDetails() }).catch(() => {});
+                safeRuntimeSendMessage({ action: 'jobDescriptionDetected', details: extractJobDetails() });
             }
         }, 2000);
         
@@ -2473,7 +3050,11 @@
                 if (mutation.addedNodes.length > 0) {
                     const form = detectApplicationForm();
                     if (form && form !== document.body) {
-                        chrome.runtime.sendMessage({ action: 'applicationFormDetected', portal }).catch(() => {});
+                        const now = Date.now();
+                        if ((now - lastFormDetectedAt) >= 1500) {
+                            lastFormDetectedAt = now;
+                            safeRuntimeSendMessage({ action: 'applicationFormDetected', portal });
+                        }
                     }
                 }
             }
@@ -2486,6 +3067,8 @@
         
         log('Universal Form Filler initialized');
     }
+
+    registerMessageListener();
     
     // Start
     if (document.readyState === 'loading') {

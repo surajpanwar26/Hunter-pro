@@ -1,11 +1,58 @@
 {
-    "_description": "Auto-saved answers from user interventions. Edit manually if needed.",
-    "_last_updated": "2026-01-30 21:48:48",
-    "text_answers": {},
-    "select_answers": {
-        "Are you legally authorized to work in the United States? ": "3"
+    "_description": "Auto-saved answers from user interventions and bot learning. Edit manually if needed.",
+    "_last_updated": "2026-02-19 18:13:55",
+    "text_answers": {
+        "First Name": "Suraj",
+        "Last Name": "Panwar",
+        "Full Name": "Suraj Singh Panwar",
+        "Phone Number": "*8108609815",
+        "City": "Mumbai",
+        "Street": "A-901 Raj Classic Indralok phase 6",
+        "State": "Maharashtra",
+        "Zip Code": "401105",
+        "LinkedIn Profile": "https://www.linkedin.com/in/yourprofile",
+        "GPA": "8.7",
+        "University": "University of Mumbai",
+        "School": "University of Mumbai",
+        "Degree": "Bachelor's",
+        "Major": "Computer Science",
+        "Field of Study": "Computer Science",
+        "How many years of work experience do you have with .NET Framework?": "3",
+        "How many years of work experience do you have with C# in .NET?": "3",
+        "sample field": "Yes"
     },
-    "radio_answers": {},
+    "select_answers": {
+        "Email Address": "surajpanwar26@gmail.com",
+        "Phone country code": "India (+91)",
+        "Country": "India",
+        "Email address": "Yes",
+        "Are you currently SC Cleared? ": "Yes",
+        "If no, is there anything stopping you from going through SC clearance? ": "Yes",
+        "work author": "Yes"
+    },
+    "radio_answers": {
+        "Will you now or in the future require sponsorship for employment visa status? [  \"Yes\"<Yes>, \"No\"<No>,": "Yes",
+        "Are you comfortable commuting to this job's location? [  \"Yes\"<Yes>, \"No\"<No>,": "Yes"
+    },
     "textarea_answers": {},
-    "checkbox_answers": {}
+    "checkbox_answers": {},
+    "education": {
+        "university": "University of Mumbai",
+        "degree": "Bachelor's",
+        "field_of_study": "Computer Science",
+        "gpa": "8.7",
+        "gpa_scale": "10",
+        "start_date": "10/2019",
+        "end_date": "06/2022"
+    },
+    "dropdown_mappings": {
+        "email address": "Yes",
+        "email": "surajpanwar26@gmail.com",
+        "phone country code": "India (+91)",
+        "country code": "India (+91)",
+        "mobile phone country code": "India (+91)",
+        "are you currently sc cleared? ": "Yes",
+        "if no, is there anything stopping you from going through sc clearance? ": "Yes",
+        "work author": "Yes"
+    }
 }

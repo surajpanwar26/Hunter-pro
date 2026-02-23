@@ -10,6 +10,14 @@ from openai.types.model import Model
 from openai.types.chat import ChatCompletion, ChatCompletionChunk
 from typing import Iterator, Literal
 
+
+def _emit_event(event: str, data: dict | None = None) -> None:
+    try:
+        from modules.dashboard import log_handler
+        log_handler.publish_event(event=event, data=data or {}, source="deepseek")
+    except Exception:
+        pass
+
 def deepseek_create_client() -> OpenAI | None:
     '''
     Creates a DeepSeek client using the OpenAI compatible API.
@@ -150,6 +158,7 @@ def deepseek_extract_skills(client: OpenAI, job_description: str, stream: bool =
     * Returns a `dict` object representing JSON response
     '''
     try:
+        _emit_event("jd_analysis_started", {"provider": "deepseek"})
         print_lg("Extracting skills from job description using DeepSeek...")
         
         # Using optimized DeepSeek prompt
@@ -171,8 +180,10 @@ def deepseek_extract_skills(client: OpenAI, job_description: str, stream: bool =
         if isinstance(result, str):
             result = convert_to_json(result)
             
+        _emit_event("jd_analysis_completed", {"provider": "deepseek"})
         return result
     except Exception as e:
+        _emit_event("jd_analysis_failed", {"provider": "deepseek", "error": str(e)})
         critical_error_log("Error occurred while extracting skills with DeepSeek!", e)
         return {"error": str(e)}
 
@@ -194,6 +205,7 @@ def deepseek_answer_question(
     * Returns the AI's answer
     '''
     try:
+        _emit_event("form_filling_started", {"provider": "deepseek", "question": str(question)[:120]})
         print_lg(f"Answering question using DeepSeek AI: {question}")
         
         # Prepare user information
@@ -229,8 +241,10 @@ def deepseek_answer_question(
             stream=stream
         )
         
+        _emit_event("form_filling_completed", {"provider": "deepseek"})
         return result
     except Exception as e:
+        _emit_event("form_filling_failed", {"provider": "deepseek", "error": str(e)})
         critical_error_log("Error occurred while answering question with DeepSeek!", e)
         return {"error": str(e)}
 ##< 

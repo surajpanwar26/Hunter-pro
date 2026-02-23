@@ -1,6 +1,6 @@
 # Extension Update Guide
 
-This guide explains how to update the Universal Job Auto-Fill Chrome extension after making changes to config files.
+This guide explains how to update the AI Hunter pro Chrome extension (V2 runtime) after making changes to config files.
 
 ## Quick Update Steps
 
@@ -41,7 +41,7 @@ chrome.storage.local.clear(() => console.log('Local storage cleared'));
 After changing any JavaScript files:
 
 1. Go to `chrome://extensions`
-2. Find "Universal Job Auto-Fill"
+2. Find "AI Hunter pro"
 3. Click the **refresh** icon (↻)
 4. OR toggle the extension off and on
 
@@ -49,6 +49,18 @@ After changing any JavaScript files:
 1. Open the extension popup
 2. Go to **Profile** tab
 3. Your data should be auto-populated with your config values
+
+### 5. Confirm V2 + Groq Defaults
+1. Open the extension popup.
+2. Verify the header shows **AI Hunter pro · V2 Runtime**.
+3. In DevTools console, run:
+```javascript
+chrome.storage.local.get('aiProviderConfig', console.log)
+```
+4. Confirm provider defaults include:
+	- `provider: "groq"`
+	- `apiUrl: "https://api.groq.com/openai/v1"`
+	- `model: "llama-3.3-70b-versatile"`
 
 ## Config File Locations
 

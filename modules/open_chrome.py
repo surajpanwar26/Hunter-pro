@@ -18,6 +18,8 @@ from modules.helpers import get_default_temp_profile, make_directories
 from config.settings import run_in_background, stealth_mode, disable_extensions, safe_mode, file_name, failed_file_name, logs_folder_path, generated_resume_path
 from config.questions import default_resume_path
 
+import os
+
 # Import pilot mode setting to skip alerts
 try:
     from config.settings import pilot_mode_enabled
@@ -71,11 +73,28 @@ def createChromeSession(isRetry: bool = False):
         options.add_experimental_option('useAutomationExtension', False)
 
     print_lg("IF YOU HAVE MORE THAN 10 TABS OPENED, PLEASE CLOSE OR BOOKMARK THEM! Or it's highly likely that application will just open browser and not do anything!")
+    
+    # Profile selection priority:
+    # 1. If retry → guest/temp profile
+    # 2. If system profile available and not safe_mode → use system profile
+    #    (undetected_chromedriver copies it, so no conflict with user's Chrome)
+    # 3. If pilot_mode and project chrome_profile_pilot exists → use that
+    # 4. Otherwise → guest/temp profile
     profile_dir = find_default_profile_directory()
     if isRetry:
         print_lg("Will login with a guest profile, browsing history will not be saved in the browser!")
+        options.add_argument(f"--user-data-dir={get_default_temp_profile()}")
     elif profile_dir and not safe_mode:
         options.add_argument(f"--user-data-dir={profile_dir}")
+    elif pilot_mode_enabled:
+        # In pilot/scheduler mode, try the project-local chrome_profile_pilot directory
+        pilot_profile = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "chrome_profile_pilot")
+        if os.path.exists(pilot_profile):
+            print_lg(f"Using pilot Chrome profile: {pilot_profile}")
+            options.add_argument(f"--user-data-dir={pilot_profile}")
+        else:
+            print_lg("Logging in with a guest profile, Web history will not be saved!")
+            options.add_argument(f"--user-data-dir={get_default_temp_profile()}")
     else:
         print_lg("Logging in with a guest profile, Web history will not be saved!")
         options.add_argument(f"--user-data-dir={get_default_temp_profile()}")

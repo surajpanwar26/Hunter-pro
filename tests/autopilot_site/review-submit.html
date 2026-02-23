@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Apply - Review</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>Application - Final Review</h1>
+
+    <div class="card">
+      <h2>Review Data</h2>
+      <pre class="jd" id="reviewData"></pre>
+
+      <div class="actions">
+        <a class="btn-link secondary" href="apply-step2.html">Back</a>
+        <button id="submitButton" type="button">Submit Application</button>
+      </div>
+    </div>
+
+    <div id="resultCard" class="card" style="display:none; border-color: #10b981;">
+      <h2 style="color: #059669;">Application submitted successfully</h2>
+      <p id="submittedSummary"></p>
+      <div class="actions">
+        <a class="btn-link" href="index.html" onclick="clearAllData()">Apply Another</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+  <script>
+    const merged = mergeStoredData();
+    document.getElementById('reviewData').textContent = JSON.stringify(merged, null, 2);
+
+    document.getElementById('submitButton').addEventListener('click', function () {
+      document.getElementById('resultCard').style.display = 'block';
+      document.getElementById('submittedSummary').textContent = `Submitted for ${merged.first_name || ''} ${merged.last_name || ''}`.trim();
+      this.disabled = true;
+      this.textContent = 'Submitted';
+    });
+  </script>
+</body>
+</html>

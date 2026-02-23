@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Apply - Step 2</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div class="container">
+    <h1>Application - Step 2 of 3</h1>
+
+    <form id="step2Form" class="card">
+      <h2>Additional Information</h2>
+
+      <label for="currentCompany">Current Company</label>
+      <input id="currentCompany" name="current_company" type="text" />
+
+      <label for="currentTitle">Current Title</label>
+      <input id="currentTitle" name="current_title" type="text" />
+
+      <label for="yearsExperience">Years of Experience</label>
+      <input id="yearsExperience" name="years_experience" type="number" min="0" max="50" />
+
+      <label for="workAuthorization">Are you legally authorized to work in the United States?</label>
+      <select id="workAuthorization" name="work_authorization">
+        <option value="">Select</option>
+        <option value="yes">Yes</option>
+        <option value="no">No</option>
+      </select>
+
+      <div class="radio-group" id="priorAdobeGroup">
+        <label>Have you been employed by Adobe in the past?</label>
+        <div class="radio-inline">
+          <label for="priorAdobeYes"><input id="priorAdobeYes" type="radio" name="prior_adobe_worker" value="yes" /> Yes</label>
+          <label for="priorAdobeNo"><input id="priorAdobeNo" type="radio" name="prior_adobe_worker" value="no" /> No</label>
+        </div>
+      </div>
+
+      <div class="radio-group" id="sponsorshipGroup">
+        <label>Will you now or in the future require sponsorship for employment visa status?</label>
+        <div class="radio-inline">
+          <label for="sponsorshipNo"><input id="sponsorshipNo" type="radio" name="visa_sponsorship" value="no" /> No</label>
+          <label for="sponsorshipYes"><input id="sponsorshipYes" type="radio" name="visa_sponsorship" value="yes" /> Yes</label>
+        </div>
+      </div>
+
+      <div class="actions">
+        <a class="btn-link secondary" href="apply-step1.html">Back</a>
+        <button id="nextButtonStep2" type="submit">Next</button>
+      </div>
+    </form>
+  </div>
+
+  <script src="app.js"></script>
+  <script>
+    loadStepData('step2', 'step2Form');
+    document.getElementById('step2Form').addEventListener('submit', function (event) {
+      event.preventDefault();
+      saveStepData('step2', 'step2Form');
+      window.location.href = 'review-submit.html';
+    });
+  </script>
+</body>
+</html>

@@ -1,25 +1,30 @@
-__pycache__/
-.vscode/
-.venv/
+__pycache__
+.vscode
 
-all excels/
-all resumes/
-logs/
-old/
-data/
+all excels
+all resumes
+logs
 
-node_modules/
+old
 
-config/secrets.py
+secrets.py
 config/personals.py
+.venv
 apikeys.py
 .env
-
 chrome_profile/
 chrome_profile_pilot/
-chrome_profile_test/
-
 extension/user_config.json
 
-# Ignore local assistant instruction artifacts
-.github/instructions/
+# Generated / transient
+test-results/
+dash_out.txt
+dash_err.txt
+dashboard_err.log
+extension_rebuilt.zip
+node_modules/
+*.pma
+backups/
+data/*.db
+data/*.db-shm
+data/*.db-wal
