@@ -411,22 +411,36 @@ class AnswerEngine:
         
         # Professional
         (r'linkedin\s*(url|profile)?', 'linkedin_url'),
+        (r'github', 'github_url'),
         (r'website|portfolio', 'website'),
         (r'years?\s*(of)?\s*experience', 'years_of_experience'),
         (r'current\s*(employer|company)', 'current_employer'),
-        (r'salary|compensation|pay', 'desired_salary'),
+        (r'expected\s*(salary|ctc|package|compensation|pay)', 'desired_salary'),
+        (r'current\s*(salary|ctc|package|compensation)', 'current_salary'),
+        (r'salary|compensation|pay|ctc|package', 'desired_salary'),
         (r'notice\s*period', 'notice_period'),
+        (r'start\s*date|availab|earliest\s*(start|join)', 'start_date'),
+        (r'relocat', 'willing_to_relocate'),
+        (r'referral|hear\s*about|how\s*did\s*you|source', 'referral_source'),
         
         # Work authorization  
         (r'authorized|legally\s*allowed|right\s*to\s*work', 'work_authorized'),
         (r'sponsor|visa', 'visa_sponsorship'),
         (r'citizen', 'citizenship'),
         
+        # Education
+        (r'university|college|school|institution', 'university'),
+        (r'degree|education\s*level|qualification', 'degree'),
+        (r'field\s*of\s*study|major|specializ', 'field_of_study'),
+        (r'gpa|cgpa|grade\s*point|percentage', 'gpa'),
+        
         # Demographics (EEO)
         (r'gender', 'gender'),
+        (r'pronouns', 'pronouns'),
         (r'race|ethnicity', 'ethnicity'),
         (r'veteran', 'veteran_status'),
         (r'disability|disabled', 'disability_status'),
+        (r'date\s*of\s*birth|dob|birth\s*date', 'date_of_birth'),
         
         # Other
         (r'cover\s*letter', 'cover_letter'),
@@ -515,7 +529,9 @@ class AnswerEngine:
         
         # Check for specific patterns
         if 'country' in label:
-            return self._find_option(options, [self.config.get('country', ''), 'united states', 'usa', 'us'])
+            # Use ONLY user's configured country — no hardcoded US bias
+            user_country = self.config.get('country', '')
+            return self._find_option(options, [user_country] if user_country else [])
         if 'state' in label or 'province' in label:
             return self._find_option(options, [self.config.get('state', '')])
         if 'gender' in label:
@@ -611,6 +627,8 @@ class FormExecutor:
         Fill all elements on a form page.
         Returns True if all required fields were filled successfully.
         """
+        # Configurable confidence threshold (default 0.5)
+        confidence_threshold = self.answers.config.get('form_fill_confidence_threshold', 0.5)
         success = True
         
         for element in page.elements:
@@ -620,7 +638,7 @@ class FormExecutor:
                         self._fill_file(element, resume_path)
                 else:
                     answer, confidence = self.answers.get_answer(element)
-                    if answer and confidence > 0.5:
+                    if answer and confidence > confidence_threshold:
                         self._fill_element(element, answer)
                     elif element.is_required:
                         success = False
@@ -652,6 +670,10 @@ class FormExecutor:
                 self._fill_radio(element, value)
             elif elem_type == ElementType.CHECKBOX:
                 self._fill_checkbox(elem, value)
+            elif elem_type == ElementType.DATE_PICKER:
+                self._fill_date(elem, value)
+            elif elem_type == ElementType.AUTOCOMPLETE:
+                self._fill_autocomplete(elem, value)
             
             self.filled_count += 1
             
@@ -714,6 +736,65 @@ class FormExecutor:
         
         if should_check != is_checked:
             elem.click()
+    
+    def _fill_date(self, elem: WebElement, value: str):
+        """Fill a date picker input.
+        
+        Tries native date input first, falls back to text entry.
+        Accepts formats: YYYY-MM-DD, MM/DD/YYYY, DD-MM-YYYY.
+        """
+        from selenium.webdriver.common.keys import Keys
+        try:
+            # Try setting via JavaScript (works for HTML5 date inputs)
+            self.driver.execute_script("""
+                var el = arguments[0];
+                var val = arguments[1];
+                // Try native valueAsDate first
+                var nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                    window.HTMLInputElement.prototype, 'value').set;
+                nativeInputValueSetter.call(el, val);
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+            """, elem, value)
+        except Exception:
+            # Fallback: clear and type the date string
+            elem.click()
+            time.sleep(0.05)
+            elem.send_keys(Keys.CONTROL + "a")
+            elem.send_keys(value)
+    
+    def _fill_autocomplete(self, elem: WebElement, value: str):
+        """Fill an autocomplete/typeahead input.
+        
+        Types the value, waits for suggestions, and picks the best match.
+        """
+        from selenium.webdriver.common.keys import Keys
+        elem.click()
+        time.sleep(0.1)
+        elem.clear()
+        # Type the value character by character to trigger autocomplete
+        elem.send_keys(value)
+        time.sleep(0.5)  # Wait for suggestions to appear
+        
+        # Try to find and click matching suggestion in common dropdown patterns
+        suggestion_selectors = [
+            f"//li[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{value.lower()}')]",
+            f"//div[contains(@class, 'suggestion') or contains(@class, 'option') or contains(@class, 'autocomplete')]//span[contains(translate(., 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), '{value.lower()}')]",
+            "//ul[contains(@class, 'suggestion') or contains(@class, 'autocomplete') or contains(@role, 'listbox')]//li[1]",
+        ]
+        
+        for xpath in suggestion_selectors:
+            try:
+                suggestions = self.driver.find_elements(By.XPATH, xpath)
+                for suggestion in suggestions:
+                    if suggestion.is_displayed():
+                        suggestion.click()
+                        return
+            except Exception:
+                continue
+        
+        # Fallback: press Enter to accept first suggestion
+        elem.send_keys(Keys.RETURN)
     
     def _fill_file(self, element: FormElement, file_path: str):
         """Upload a file."""

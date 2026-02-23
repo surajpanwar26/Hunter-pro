@@ -1,25 +1,51 @@
 {
   "manifest_version": 3,
-  "name": "AI Hunter pro",
-  "version": "3.0.1",
-  "description": "AI Hunter pro: AI-powered auto-fill assistant for job portals including LinkedIn, Indeed, Glassdoor, Workday, Greenhouse, and more. Detects JDs, tailors resumes, and learns from your inputs.",
+  "name": "Universal Job Auto-Fill Pro",
+  "version": "3.0.0",
+  "description": "AI-powered auto-fill assistant for ALL job portals - LinkedIn, Indeed, Glassdoor, Workday, Greenhouse & more. Detects JDs, tailors resumes, and learns from your inputs.",
   "permissions": [
     "activeTab",
     "storage",
     "scripting",
     "notifications",
-    "contextMenus",
-    "sidePanel"
+    "contextMenus"
   ],
-  "side_panel": {
-    "default_path": "sidepanel.html"
-  },
   "host_permissions": [
     "http://127.0.0.1:5001/*",
-    "http://localhost:5001/*"
+    "http://localhost:5001/*",
+    "https://www.linkedin.com/*",
+    "https://linkedin.com/*",
+    "https://*.indeed.com/*",
+    "https://*.glassdoor.com/*",
+    "https://*.myworkday.com/*",
+    "https://*.workday.com/*",
+    "https://*.greenhouse.io/*",
+    "https://boards.greenhouse.io/*",
+    "https://*.lever.co/*",
+    "https://jobs.lever.co/*",
+    "https://*.smartrecruiters.com/*",
+    "https://*.bamboohr.com/*",
+    "https://*.icims.com/*",
+    "https://*.taleo.net/*",
+    "https://*.successfactors.com/*",
+    "https://*.jobvite.com/*",
+    "https://*.ashbyhq.com/*",
+    "https://*.breezy.hr/*",
+    "https://*.recruitee.com/*",
+    "https://*.jazz.co/*",
+    "https://*.wellfound.com/*",
+    "https://angel.co/*",
+    "https://*.monster.com/*",
+    "https://*.ziprecruiter.com/*",
+    "https://*.careerbuilder.com/*",
+    "https://*.dice.com/*",
+    "https://stackoverflow.com/jobs/*",
+    "https://*.remoteok.com/*",
+    "https://*.weworkremotely.com/*",
+    "https://*.flexjobs.com/*"
   ],
   "action": {
-    "default_popup": "popup_v2.html",
+    "default_popup": "popup.html",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",
@@ -81,15 +107,33 @@
         "https://stackoverflow.com/jobs/*",
         "https://*.remoteok.com/*",
         "https://*.weworkremotely.com/*",
-        "https://*.flexjobs.com/*"
+        "https://*.flexjobs.com/*",
+        "https://*.naukri.com/*",
+        "https://*.foundit.in/*",
+        "https://*.shine.com/*",
+        "https://*.seek.com.au/*",
+        "https://*.reed.co.uk/*",
+        "https://*.totaljobs.com/*",
+        "https://*.applytojob.com/*",
+        "https://*.paylocity.com/*",
+        "https://*.paycomonline.net/*",
+        "https://*.ultipro.com/*",
+        "https://*.adp.com/*",
+        "https://*.hirebridge.com/*",
+        "https://*.hiringthing.com/*",
+        "https://*.jazzhr.com/*",
+        "https://*.rippling.com/*",
+        "https://*.ycombinator.com/*",
+        "http://localhost/*",
+        "http://127.0.0.1/*"
       ],
-      "js": ["content_bridge_v2.js", "universal_content.js"],
+      "js": ["universal_content.js"],
       "css": ["styles.css"],
       "run_at": "document_idle"
     }
   ],
   "background": {
-    "service_worker": "background_v2.js"
+    "service_worker": "background.js"
   },
   "web_accessible_resources": [
     {

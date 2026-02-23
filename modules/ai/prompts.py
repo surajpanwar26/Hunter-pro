@@ -178,23 +178,23 @@ C) SKILLS REORDERING:
 
 {instructions}
 
-===== MASTER RESUME (COPY THIS FORMAT EXACTLY) =====
+[MASTER RESUME — COPY THIS FORMAT EXACTLY]
 {resume_text}
-===== END MASTER RESUME =====
+[END MASTER RESUME]
 
-===== JOB DESCRIPTION (EXTRACT KEYWORDS FROM THIS) =====
+[JOB DESCRIPTION — EXTRACT KEYWORDS FROM THIS]
 {job_description}
-===== END JOB DESCRIPTION =====
+[END JOB DESCRIPTION]
 
 ## OUTPUT
 Return ONLY the tailored resume. No explanations, no commentary.
 The output format must EXACTLY match the master resume format.
 Start directly with the candidate's name/header.
 
-⚠️ CRITICAL: Do NOT include any of these in your output:
-- "===== MASTER RESUME" or similar markers
+CRITICAL: Do NOT include any of these in your output:
+- "[MASTER RESUME" or similar markers
 - "<<RESUME>>" or "<<END_RESUME>>" tags  
-- "===== END" or section delimiters
+- "[END" or section delimiters
 - Any instructions or commentary
 Just the pure resume content starting with the candidate's name."""
 
@@ -225,16 +225,16 @@ FORMAT TO PRESERVE:
 
 {instructions}
 
-===== MASTER RESUME (PRESERVE THIS FORMAT) =====
+[MASTER RESUME — PRESERVE THIS FORMAT]
 {resume_text}
-===== END MASTER RESUME =====
+[END MASTER RESUME]
 
-===== JOB DESCRIPTION (EXTRACT KEYWORDS) =====
+[JOB DESCRIPTION — EXTRACT KEYWORDS]
 {job_description}
-===== END JOB DESCRIPTION =====
+[END JOB DESCRIPTION]
 
 OUTPUT: Return ONLY the tailored resume starting with the candidate's name. 
-Do NOT include markers like "===== MASTER RESUME", "<<RESUME>>", or any tags.
+Do NOT include markers like "[MASTER RESUME", "<<RESUME>>", or any tags.
 Just the pure resume content:"""
 
 # Prompt for paragraph-by-paragraph tailoring (DOCX preservation)
@@ -259,6 +259,63 @@ INSTRUCTIONS:
 
 Return the tailored sections in the same format.
 """
+
+# Dedicated Reviewer Agent prompt — evaluates a tailored resume and produces structured improvements
+resume_reviewer_prompt = """
+You are a SENIOR RESUME REVIEWER specializing in ATS optimization.
+You are reviewing a PREVIOUSLY TAILORED resume against the original master and the job description.
+Your job is to IMPROVE IT FURTHER — catch what the first pass missed.
+
+## YOUR REVIEW CHECKLIST (evaluate each):
+
+1. **KEYWORD COVERAGE**: Are ALL important JD keywords present in the resume?
+   - Technical skills mentioned in JD but missing from resume
+   - Soft skills mentioned in JD but missing from resume
+   - Industry terminology that the ATS will scan for
+
+2. **FORMAT INTEGRITY**: Does the resume EXACTLY match the master's structure?
+   - Same section headers in same order
+   - Same number of bullet points per section
+   - Same date formats
+   - No empty sections
+   - Contact info unchanged
+
+3. **CONTENT QUALITY**: Is the content optimized?
+   - Action verbs at start of bullets
+   - Quantified achievements where possible
+   - JD phrases used verbatim (not paraphrased)
+   - Skills section reordered to match JD priorities
+
+4. **CRITICAL VIOLATIONS** (must fix):
+   - Invented experience or credentials
+   - Changed job titles, company names, or dates
+   - Missing sections from original
+   - Empty sections
+   - Contact info modifications
+
+## REVIEW FEEDBACK FROM SCORING:
+{review_feedback}
+
+## USER FEEDBACK:
+{user_feedback}
+
+## MASTER RESUME (Original format to preserve):
+{master_resume}
+
+## CURRENT TAILORED RESUME (Improve this):
+{tailored_resume}
+
+## JOB DESCRIPTION (Target keywords):
+{job_description}
+
+## OUTPUT
+Return ONLY the IMPROVED resume text. No explanations, no markers, no commentary.
+Fix all issues found in your review. The output must:
+- Include every missing keyword naturally woven in
+- Match the master resume's EXACT format
+- Start directly with the candidate's name/header
+- Have NO empty sections
+- Preserve all dates, titles, and contact info exactly"""
 
 #<
 

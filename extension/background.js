@@ -9,34 +9,6 @@
 const SETTINGS_KEY = 'universalAutoFillSettings';
 const API_BASE_URL = 'http://127.0.0.1:5001';
 
-function ensureContextMenu() {
-    try {
-        chrome.contextMenus.remove('fillForm', () => {
-            // ignore remove errors when item does not exist
-            chrome.contextMenus.create({
-                id: 'fillForm',
-                title: 'Auto-Fill This Form',
-                contexts: ['page'],
-                documentUrlPatterns: [
-                    '*://*.linkedin.com/*',
-                    '*://*.indeed.com/*',
-                    '*://*.glassdoor.com/*',
-                    '*://*.greenhouse.io/*',
-                    '*://*.lever.co/*',
-                    '*://*.workday.com/*',
-                    '*://*.myworkday.com/*'
-                ]
-            }, () => {
-                if (chrome.runtime.lastError && !/duplicate id/i.test(chrome.runtime.lastError.message || '')) {
-                    console.warn('Context menu setup warning:', chrome.runtime.lastError.message);
-                }
-            });
-        });
-    } catch (e) {
-        console.warn('Context menu setup failed:', e?.message || e);
-    }
-}
-
 // ================================
 // INSTALLATION HANDLER
 // ================================
@@ -62,10 +34,22 @@ chrome.runtime.onInstalled.addListener((details) => {
         });
     }
     
-    ensureContextMenu();
+    // Create context menu item (on install AND update)
+    chrome.contextMenus.create({
+        id: 'fillForm',
+        title: 'Auto-Fill This Form',
+        contexts: ['page'],
+        documentUrlPatterns: [
+            '*://*.linkedin.com/*',
+            '*://*.indeed.com/*',
+            '*://*.glassdoor.com/*',
+            '*://*.greenhouse.io/*',
+            '*://*.lever.co/*',
+            '*://*.workday.com/*',
+            '*://*.myworkday.com/*'
+        ]
+    });
 });
-
-ensureContextMenu();
 
 // ================================
 // MESSAGE HANDLING
@@ -94,12 +78,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
                 .then(result => sendResponse(result))
                 .catch(err => sendResponse({ error: err.message }));
             return true; // Async response
-
-        case 'applicationFormDetected':
-        case 'jobDescriptionDetected':
-            // Passive signal events used by content script for observability.
-            sendResponse({ ok: true });
-            return true;
             
         default:
             console.log('Unknown action:', message.action);
@@ -218,18 +196,22 @@ if (chrome.commands && chrome.commands.onCommand) {
                     );
                 }
             });
-            return;
         }
-
+        
         if (command === 'detect-jd') {
             chrome.tabs.sendMessage(tab.id, { action: 'detectJD' }, response => {
-                if (response?.success && response?.jd) {
+                if (response && response.success && response.jobDescription) {
+                    // Store detected JD for popup usage
+                    chrome.storage.local.set({ detectedJobDescription: response.jobDescription });
                     showNotification(
                         'JD Detected',
-                        `${response.jd.title || 'Job description'} ready for tailoring`
+                        `Found job description (${response.jobDescription.length} chars)`
                     );
                 } else {
-                    showNotification('JD Detection', response?.error || 'No job description detected on this page');
+                    showNotification(
+                        'JD Detection',
+                        'No job description found on this page'
+                    );
                 }
             });
         }
